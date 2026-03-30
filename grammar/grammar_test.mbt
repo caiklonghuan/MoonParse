@@ -135,6 +135,42 @@ fn get_test_cases() -> Array[TestCase] {
         ("slash", "Literal"),
       ]),
     },
+    {
+      name: "负向前瞻",
+      dsl: "rule word: !digit letter\nrule digit: /\\d/\nrule letter: /[a-z]/",
+      expected_rules: ["word", "digit", "letter"],
+      expected_patterns: Map::from_array([("word", "Seq"), ("digit", "Regex"), ("letter", "Regex")]),
+    },
+    {
+      name: "正向前瞻",
+      dsl: "rule integer: &digit number\nrule digit: /\\d/\nrule number: /\\d+/",
+      expected_rules: ["integer", "digit", "number"],
+      expected_patterns: Map::from_array([("integer", "Seq"), ("digit", "Regex"), ("number", "Regex")]),
+    },
+    {
+      name: "任意字符",
+      dsl: "rule any: .",
+      expected_rules: ["any"],
+      expected_patterns: Map::from_array([("any", "AnyChar")]),
+    },
+    {
+      name: "命名字段",
+      dsl: "rule assign: lhs: identifier \"=\" rhs: expr",
+      expected_rules: ["assign"],
+      expected_patterns: Map::from_array([("assign", "Seq")]),
+    },
+    {
+      name: "重复区间 exact",
+      dsl: "rule hex_byte: digit{2}",
+      expected_rules: ["hex_byte"],
+      expected_patterns: Map::from_array([("hex_byte", "RepeatRange")]),
+    },
+    {
+      name: "重复区间 range",
+      dsl: "rule id: letter digit{0,10}",
+      expected_rules: ["id"],
+      expected_patterns: Map::from_array([("id", "Seq")]),
+    },
   ]
 }
 
@@ -166,6 +202,11 @@ fn run_table_driven_tests() -> Unit! { // 加上 ! 表示内部可能抛出 asse
                 Pattern::Plus(_) => "Plus"
                 Pattern::Optional(_) => "Optional"
                 Pattern::Tagged(_, _) => "Tagged"
+                Pattern::Not(_) => "Not"
+                Pattern::And(_) => "And"
+                Pattern::AnyChar => "AnyChar"
+                Pattern::Field(_, _) => "Field"
+                Pattern::RepeatRange(_, _, _) => "RepeatRange"
               }
               assert_eq(actual_type, expected_type)
             }
@@ -235,7 +276,14 @@ test "pattern_to_string_roundtrip" {
     ("序列", "rule seq: a b c", "seq"),
     ("重复", "rule rep: item*", "rep"),
     ("可选", "rule opt: item?", "opt"),
-    ("复杂组合", "rule complex: (a | b)* \"test\"?", "complex")
+    ("复杂组合", "rule complex: (a | b)* \"test\"?", "complex"),
+    ("一或多次", "rule rep: item+", "rep"),
+    ("负向前瞻", "rule word: !digit", "word"),
+    ("正向前瞻", "rule integer: &digit", "integer"),
+    ("任意字符", "rule any: .", "any"),
+    ("命名字段", "rule f: lhs: a", "f"),
+    ("重复精确", "rule s: item{3}", "s"),
+    ("重复区间", "rule r: item{2,4}", "r")
   ]
   
   for i in 0..<test_patterns.length() {
@@ -274,5 +322,28 @@ test "error_location_precision" {
         assert_eq(err.location.column, expected_col)
       }
     }
+  }
+}
+
+test "rule_is_named" {
+  // 命名节点：普通名称
+  match parse_grammar("rule expr: number") {
+    Success(grammar) => {
+      match grammar.rules.get("expr") {
+        Some(rule) => assert_true(rule.is_named)
+        None => abort("rule not found")
+      }
+    }
+    Error(err) => abort(err.message)
+  }
+  // 匿名节点：名称以 _ 开头
+  match parse_grammar("rule _whitespace: \" \"") {
+    Success(grammar) => {
+      match grammar.rules.get("_whitespace") {
+        Some(rule) => assert_true(rule.is_named == false)
+        None => abort("rule not found")
+      }
+    }
+    Error(err) => abort(err.message)
   }
 }

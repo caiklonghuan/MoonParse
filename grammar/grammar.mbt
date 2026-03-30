@@ -20,6 +20,16 @@ pub(all) enum Pattern {
   Optional(Pattern)
   /// 新增：语义动作标签，例如 @name pattern
   Tagged(String, Pattern)
+  /// 负向前瞻 !p（断言 p 不匹配，但不消耗输入）
+  Not(Pattern)
+  /// 正向前瞻 &p（断言 p 匹配，但不消耗输入）
+  And(Pattern)
+  /// 任意字符（匹配任意单个字符）
+  AnyChar
+  /// 命名字段 fieldname: pattern（Tree-Sitter 的 field()）
+  Field(String, Pattern)
+  /// 重复区间 p{n,m} 或 p{n}（精确重复）
+  RepeatRange(Pattern, Int, Int)
 }
 
 /// Rule 表示一个语法规则，包含名称和对应的模式
@@ -28,6 +38,8 @@ pub(all) struct Rule {
   name : String
   /// 规则的模式定义
   pattern : Pattern
+  /// 是否为命名节点（名称以 _ 开头则为匿名节点，不出现在 CST 查询结果中）
+  is_named : Bool
 }
 
 /// Grammar 表示整个语法定义，包含起始规则和规则映射
@@ -117,6 +129,49 @@ pub fn pattern_to_string(pattern : Pattern) -> String {
         _ => pattern_to_string(p)
       }
       inner + "?"
+    }
+    
+    /// 负向前瞻 !p
+    Not(p) => {
+      let inner = match p {
+        Seq(_) | Choice(_) => "(" + pattern_to_string(p) + ")"
+        _ => pattern_to_string(p)
+      }
+      "!" + inner
+    }
+    
+    /// 正向前瞻 &p
+    And(p) => {
+      let inner = match p {
+        Seq(_) | Choice(_) => "(" + pattern_to_string(p) + ")"
+        _ => pattern_to_string(p)
+      }
+      "&" + inner
+    }
+    
+    /// 任意字符 .
+    AnyChar => "."
+    
+    /// 命名字段 fieldname: pattern
+    Field(fname, p) => {
+      let inner = match p {
+        Seq(_) | Choice(_) => "(" + pattern_to_string(p) + ")"
+        _ => pattern_to_string(p)
+      }
+      fname + ": " + inner
+    }
+    
+    /// 重复区间 {n,m} 或 {n}
+    RepeatRange(p, min, max) => {
+      let inner = match p {
+        Seq(_) | Choice(_) => "(" + pattern_to_string(p) + ")"
+        _ => pattern_to_string(p)
+      }
+      if min == max {
+        inner + "{" + min.to_string() + "}"
+      } else {
+        inner + "{" + min.to_string() + "," + max.to_string() + "}"
+      }
     }
   }
 }
@@ -284,7 +339,7 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
         }
       }
       
-      ':' | '|' | '*' | '+' | '?' | '(' | ')' | '@' => {
+      ':' | '|' | '*' | '+' | '?' | '(' | ')' | '@' | '!' | '&' | '.' | '{' | '}' | ',' => {
         tokens.push({ token: Token::Symbol(c.to_string()), location: { line, column } })
         i = i + 1
         column = column + 1
@@ -327,25 +382,29 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
   tokens
 }
 /// 判断字符是否为空白字符
-/// 
-/// 参数:
-/// - c: 要判断的字符
-/// 
-/// 返回值:
-/// - Bool: 如果是空白字符返回 true，否则 false
 fn is_whitespace(c : Char) -> Bool {
   match c { ' ' | '\t' | '\n' | '\r' => true; _ => false }
 }
 
 /// 判断字符是否为语法符号
-/// 
-/// 参数:
-/// - c: 要判断的字符
-/// 
-/// 返回值:
-/// - Bool: 如果是语法符号返回 true，否则 false
 fn is_symbol(c : Char) -> Bool {
-  match c { ':' | '|' | '*' | '+' | '?' | '(' | ')' | '"' | '/' | '@' | '\\' => true; _ => false }
+  match c { ':' | '|' | '*' | '+' | '?' | '(' | ')' | '"' | '/' | '@' | '\\' | '!' | '&' | '.' | '{' | '}' | ',' => true; _ => false }
+}
+
+/// 将字符串解析为非负整数，返回 None 如果不是合法整数
+fn parse_int_str(s : String) -> Int? {
+  if s.length() == 0 {
+    return None
+  }
+  let mut result = 0
+  for i in 0..<s.length() {
+    let d = s[i].to_int() - '0'.to_int()
+    if d < 0 || d > 9 {
+      return None
+    }
+    result = result * 10 + d
+  }
+  Some(result)
 }
 
 // 4. 解析器状态
@@ -472,8 +531,9 @@ fn parse_rule(state : ParserState) -> ParseResult[Rule] {
         /// 期望冒号分隔符
         Symbol(":") => {
           state.pos = state.pos + 1
+          let is_named = name.length() == 0 || name[0] != '_'
           match parse_pattern(state) {
-            Success(pattern) => Success({ name, pattern })
+            Success(pattern) => Success({ name, pattern, is_named })
             Error(err) => Error(err)
           }
         }
@@ -542,7 +602,7 @@ fn parse_sequence(state : ParserState) -> ParseResult[Pattern] {
   /// 收集连续的模式
   while state.pos < state.tokens.length() {
     match state.tokens[state.pos].token {
-      Identifier(_) | StringLiteral(_) | RegexLiteral(_) | Symbol("(") | Symbol("@") => {
+      Identifier(_) | StringLiteral(_) | RegexLiteral(_) | Symbol("(") | Symbol("@") | Symbol("!") | Symbol("&") | Symbol(".") => {
         match parse_unary(state) {
           Success(pattern) => seqs.push(pattern)
           Error(err) => {
@@ -602,6 +662,61 @@ fn parse_unary(state : ParserState) -> ParseResult[Pattern] {
             state.pos = state.pos + 1
             Success(Optional(pattern))
           }
+          /// 重复区间 {n,m} 或 {n}
+          Symbol("{") => {
+            state.pos = state.pos + 1
+            if state.pos >= state.tokens.length() {
+              return Error({ message: "Expected number after '{'", location: state.tokens[state.tokens.length() - 1].location })
+            }
+            match state.tokens[state.pos].token {
+              Identifier(min_str) => {
+                match parse_int_str(min_str) {
+                  None => Error({ message: "Expected integer in repeat range", location: state.tokens[state.pos].location })
+                  Some(min) => {
+                    state.pos = state.pos + 1
+                    if state.pos >= state.tokens.length() {
+                      return Error({ message: "Expected ',' or '}' in repeat range", location: state.tokens[state.tokens.length() - 1].location })
+                    }
+                    match state.tokens[state.pos].token {
+                      Symbol("}") => {
+                        state.pos = state.pos + 1
+                        Success(RepeatRange(pattern, min, min))
+                      }
+                      Symbol(",") => {
+                        state.pos = state.pos + 1
+                        if state.pos >= state.tokens.length() {
+                          return Error({ message: "Expected number after ','", location: state.tokens[state.tokens.length() - 1].location })
+                        }
+                        match state.tokens[state.pos].token {
+                          Identifier(max_str) => {
+                            match parse_int_str(max_str) {
+                              None => Error({ message: "Expected integer after ','", location: state.tokens[state.pos].location })
+                              Some(max) => {
+                                state.pos = state.pos + 1
+                                if state.pos >= state.tokens.length() {
+                                  return Error({ message: "Expected '}' to close repeat range", location: state.tokens[state.tokens.length() - 1].location })
+                                }
+                                match state.tokens[state.pos].token {
+                                  Symbol("}") => {
+                                    state.pos = state.pos + 1
+                                    Success(RepeatRange(pattern, min, max))
+                                  }
+                                  _ => Error({ message: "Expected '}' to close repeat range", location: state.tokens[state.pos].location })
+                                }
+                              }
+                            }
+                          }
+                          _ => Error({ message: "Expected integer after ','", location: state.tokens[state.pos].location })
+                        }
+                      }
+                      _ => Error({ message: "Expected ',' or '}' in repeat range", location: state.tokens[state.pos].location })
+                    }
+                  }
+                }
+              }
+              _ => Error({ message: "Expected integer after '{'", location: state.tokens[state.pos].location })
+            }
+          }
           /// 无一元操作符
           _ => Success(pattern)
         }
@@ -630,10 +745,23 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
   }
   
   match state.tokens[state.pos].token {
-    /// 规则引用
+    /// 规则引用 或 命名字段 fieldname: pattern
     Identifier(name) => { 
       state.pos = state.pos + 1
-      Success(RuleRef(name))
+      if state.pos < state.tokens.length() {
+        match state.tokens[state.pos].token {
+          Symbol(":") => {
+            state.pos = state.pos + 1
+            match parse_primary(state) {
+              Success(inner) => Success(Field(name, inner))
+              Error(err) => Error(err)
+            }
+          }
+          _ => Success(RuleRef(name))
+        }
+      } else {
+        Success(RuleRef(name))
+      }
     }
     /// 字符串字面量
     StringLiteral(lit) => { 
@@ -693,6 +821,27 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
           location: state.tokens[state.pos].location
         })
       }
+    }
+    /// 负向前瞻 !p
+    Symbol("!") => {
+      state.pos = state.pos + 1
+      match parse_primary(state) {
+        Success(inner) => Success(Not(inner))
+        Error(err) => Error(err)
+      }
+    }
+    /// 正向前瞻 &p
+    Symbol("&") => {
+      state.pos = state.pos + 1
+      match parse_primary(state) {
+        Success(inner) => Success(And(inner))
+        Error(err) => Error(err)
+      }
+    }
+    /// 任意字符 .
+    Symbol(".") => {
+      state.pos = state.pos + 1
+      Success(AnyChar)
     }
     /// 错误处理
     _ => Error({

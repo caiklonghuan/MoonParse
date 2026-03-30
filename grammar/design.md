@@ -239,3 +239,38 @@ let grammar = Grammar {
 }
 ```
 这种方法适合工具链内部接口和代码生成功能，文本 DSL 仍是主要用户输入。
+## todo
+
+1.1 Pattern 扩展（对齐 GLR 需要） — 全部缺失
+
+Plus(Pattern) — 当前 + 展开为 Seq，不是独立变体
+Not(Pattern) — 无 !p 词法/解析
+And(Pattern) — 无 &p 词法/解析
+AnyChar — 无 . 处理
+Field(String, Pattern) — 无 field: 语法
+RepeatRange(Pattern, Int, Int) — 无 {n,m} 词法/解析
+1.2 节点可见性 — 完全缺失
+
+Rule 结构体里没有 is_named : Bool 字段
+_name 下划线前缀约定未实现
+1.3 Grammar 校验器 — 完全缺失
+
+无 validate_grammar()
+无规则引用完整性检查
+无左递归检测
+1.4 优先级/结合性 — 骨架存在但未实现
+
+Keyword("precedence") 在 parse_grammar() 里直接被跳过
+Pattern 无 Prec(Int, PrecKind, Pattern) 变体
+Grammar 无 precedences 字段
+1.6 Grammar 序列化 — 缺失
+
+grammar_to_string() 不存在（只有 pattern_to_string()）
+无 JSON 序列化
+建议的修复顺序
+修 Bug 优先：修 Tagged 解析（读标签名）、修 + 产生 Plus 变体、修空序列报错
+扩展 Pattern：加 Plus/Not/And/AnyChar，tokenizer 同步加 !/& 符号
+扩展 Rule：加 is_named 字段，解析 _name 前缀
+实现 prec：加 Prec Pattern 变体，解析 prec(n, ...) 语法
+Grammar 校验器：validate() 函数
+Grammar 序列化：grammar_to_string() 完整版
