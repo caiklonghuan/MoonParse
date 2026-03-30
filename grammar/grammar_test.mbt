@@ -101,13 +101,13 @@ fn get_test_cases() -> Array[TestCase] {
       name: "语义动作和节点命名 - 基础命名",
       dsl: "rule expr: @additive additive\nrule additive: number \"+\" number",
       expected_rules: ["expr", "additive"],
-      expected_patterns: Map::from_array([("expr", "Seq"), ("additive", "Seq")]), // @ 未实现，所以解析为序列
+      expected_patterns: Map::from_array([("expr", "Tagged"), ("additive", "Seq")]),
     },
     {
-      name: "语义动作和节点命名 - 复杂命名",
-      dsl: "rule program: @statement* statement*\nrule statement: @assign identifier \"=\" @expr expr",
+      name: "语义动作和节点命名 - 多标签序列",
+      dsl: "rule program: statement*\nrule statement: @lhs identifier \"=\" @rhs expr",
       expected_rules: ["program", "statement"],
-      expected_patterns: Map::from_array([("program", "Seq"), ("statement", "Seq")]), // @ 未实现，所以解析为序列
+      expected_patterns: Map::from_array([("program", "Repeat"), ("statement", "Seq")]),
     },
     {
       name: "优先级声明 - 左结合",
@@ -144,33 +144,41 @@ fn run_table_driven_tests() -> Unit! { // 加上 ! 表示内部可能抛出 asse
   for test_case in test_cases {
     println("运行测试: \{test_case.name}")
     
-    let grammar = parse_grammar(test_case.dsl)
-    
-    // 检查规则存在性
-    for expected_rule in test_case.expected_rules {
-      assert_true(grammar.rules.contains(expected_rule))
-    }
-    
-    // 检查模式类型
-    for rule_name, expected_type in test_case.expected_patterns {
-      match grammar.rules.get(rule_name) {
-        Some(r) => {
-          // 修正点：根据 Pattern 的定义补全路径
-          let actual_type = match r.pattern {
-            Pattern::RuleRef(_) => "RuleRef"
-            Pattern::Literal(_) => "Literal"
-            Pattern::Regex(_) => "Regex"
-            Pattern::Choice(_) => "Choice"
-            Pattern::Seq(_) => "Seq"
-            Pattern::Repeat(_) => "Repeat"
-            Pattern::Optional(_) => "Optional"
-          }
-          assert_eq(actual_type, expected_type)
+    match parse_grammar(test_case.dsl) {
+      Success(grammar) => {
+        // 检查规则存在性
+        for expected_rule in test_case.expected_rules {
+          assert_true(grammar.rules.contains(expected_rule))
         }
-        None => abort("规则 \{rule_name} 不存在")
+        
+        // 检查模式类型
+        for rule_name, expected_type in test_case.expected_patterns {
+          match grammar.rules.get(rule_name) {
+            Some(r) => {
+              // 修正点：根据 Pattern 的定义补全路径
+              let actual_type = match r.pattern {
+                Pattern::RuleRef(_) => "RuleRef"
+                Pattern::Literal(_) => "Literal"
+                Pattern::Regex(_) => "Regex"
+                Pattern::Choice(_) => "Choice"
+                Pattern::Seq(_) => "Seq"
+                Pattern::Repeat(_) => "Repeat"
+                Pattern::Plus(_) => "Plus"
+                Pattern::Optional(_) => "Optional"
+                Pattern::Tagged(_, _) => "Tagged"
+              }
+              assert_eq(actual_type, expected_type)
+            }
+            None => abort("规则 \{rule_name} 不存在")
+          }
+        }
+        println("测试通过: \{test_case.name}")
+      }
+      Error(err) => {
+        println("测试失败: \{test_case.name} - 解析错误: \{err.message} at line \{err.location.line}, col \{err.location.column}")
+        abort("解析失败")
       }
     }
-    println("测试通过: \{test_case.name}")
   }
 }
 
@@ -180,8 +188,10 @@ test "grammar_parser_table_driven" {
 }
 
 test "error_cases" {
-  let _ = parse_grammar("rule expr: num |")
-  println("错误处理测试完成")
+  match parse_grammar("rule expr: num |") {
+    Success(_) => println("错误处理测试完成")
+    Error(err) => println("预期的解析错误: \{err.message}")
+  }
 }
 
 test "advanced_error_handling" {
@@ -202,29 +212,67 @@ test "advanced_error_handling" {
   for i in 0..<error_cases.length() {
     let (description, invalid_dsl) = error_cases[i]
     println("测试错误情况: \{description}")
-    // 目前这些应该不会崩溃，而是返回包含错误信息的语法
-    let grammar = parse_grammar(invalid_dsl)
-    // 验证语法树的基本结构仍然存在
-    assert_true(grammar.rules.length() >= 0)
-    println("错误情况处理完成: \{description}")
+    // 现在这些应该返回 Error 而不是崩溃
+    match parse_grammar(invalid_dsl) {
+      Success(grammar) => {
+        assert_true(grammar.rules.length() >= 0)
+        println("错误情况处理完成: \{description} (解析成功)")
+      }
+      Error(err) => {
+        println("错误情况处理完成: \{description} (解析错误: \{err.message})")
+      }
+    }
   }
 }
 
-test "location_info_requirements" {
-  // 测试需要位置信息的场景
-  let location_case_1 = ("语法错误位置", "rule expr: number +\nrule number: /\\d+/")
-  let location_case_2 = ("未定义规则引用", "rule expr: undefined\nrule number: /\\d+/")
-  let location_case_3 = ("重复规则定义", "rule expr: number\nrule expr: string")
-  let location_case_4 = ("无效的模式组合", "rule expr: number | * string")
+test "pattern_to_string_roundtrip" {
+  // 测试 Pattern 的 to_string 方法是否正确
+  let test_patterns = [
+    ("简单规则引用", "rule expr: number", "expr"),
+    ("字面量", "rule str: \"hello\"", "str"),
+    ("正则表达式", "rule num: /\\d+/", "num"),
+    ("选择", "rule choice: a | b | c", "choice"),
+    ("序列", "rule seq: a b c", "seq"),
+    ("重复", "rule rep: item*", "rep"),
+    ("可选", "rule opt: item?", "opt"),
+    ("复杂组合", "rule complex: (a | b)* \"test\"?", "complex")
+  ]
   
-  let location_cases = [location_case_1, location_case_2, location_case_3, location_case_4]
-  
-  for i in 0..<location_cases.length() {
-    let (description, dsl_with_location) = location_cases[i]
-    println("测试位置信息需求: \{description}")
-    let grammar = parse_grammar(dsl_with_location)
-    // 验证解析器能够处理这些情况而不崩溃
-    assert_true(grammar.rules.length() >= 0)
-    println("位置信息测试完成: \{description}")
+  for i in 0..<test_patterns.length() {
+    let (description, dsl, rule_name) = test_patterns[i]
+    println("测试 Pattern 字符串转换: \{description}")
+    
+    match parse_grammar(dsl) {
+      Success(grammar) => {
+        match grammar.rules.get(rule_name) {
+          Some(rule) => {
+            let pattern_str = rule.pattern.to_string()
+            println("原始模式字符串: \{pattern_str}")
+            // 这里我们只是验证 to_string 不崩溃，具体的等价性测试需要更复杂的逻辑
+            assert_true(pattern_str.length() > 0)
+          }
+          None => abort("规则 \{rule_name} 不存在")
+        }
+      }
+      Error(err) => abort("解析失败: \{err.message}")
+    }
+  }
+  println("Pattern 字符串转换测试完成")
+}
+
+test "error_location_precision" {
+  let cases = [
+    ("rule expr: num |", 1, 16), // 期待在 | 处发现错误
+    ("rule : num", 1, 6),        // 期待在冒号处报错（缺少名称）
+  ]
+  for c in cases {
+    let (dsl, expected_line, expected_col) = c
+    match parse_grammar(dsl) {
+      Success(_) => abort("应该解析失败但成功了: \{dsl}")
+      Error(err) => {
+        assert_eq(err.location.line, expected_line)
+        assert_eq(err.location.column, expected_col)
+      }
+    }
   }
 }
