@@ -23,7 +23,7 @@ priv struct ParserState {
 pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
   let tokens = tokenize(dsl)
   let state = { tokens, pos: 0 }
-  let grammar : Grammar = { start: None, rules: Map::new() }
+  let grammar : Grammar = { start: None, rules: Map::new(), precedences: [] }
 
   while state.pos < state.tokens.length() {
     match state.tokens[state.pos].token {
@@ -55,14 +55,13 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
           })
         }
       }
-      // 优先级声明暂未实现，跳过直到下一个顶层关键字
+      // 优先级声明：记录到 grammar.precedences
       Keyword("precedence") => {
         state.pos = state.pos + 1
-        while state.pos < state.tokens.length() {
-          match state.tokens[state.pos].token {
-            Keyword("rule") | Keyword("start") | Keyword("precedence") => break
-            _ => state.pos = state.pos + 1
-          }
+        let level = grammar.precedences.length() + 1
+        match parse_prec_decl(state, level) {
+          Success(decl) => grammar.precedences.push(decl)
+          Error(err) => return Error(err)
         }
       }
       _ => state.pos = state.pos + 1
@@ -72,6 +71,46 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
 }
 
 // ─── 规则层 ──────────────────────────────────────────────────────────────────
+
+///|
+/// 解析顶层 precedence 声明：precedence [left|right|dynamic] name1, name2, ...
+fn parse_prec_decl(state : ParserState, level : Int) -> ParseResult[PrecDecl] {
+  // 可选结合性修饰词
+  let kind = if state.pos < state.tokens.length() {
+    match state.tokens[state.pos].token {
+      Keyword("left") => {
+        state.pos = state.pos + 1
+        PrecKind::Left
+      }
+      Keyword("right") => {
+        state.pos = state.pos + 1
+        PrecKind::Right
+      }
+      Identifier("dynamic") => {
+        state.pos = state.pos + 1
+        PrecKind::Dynamic
+      }
+      _ => PrecKind::Nonassoc
+    }
+  } else {
+    PrecKind::Nonassoc
+  }
+  // 逗号分隔的规则名列表
+  let rules : Array[String] = []
+  while state.pos < state.tokens.length() {
+    match state.tokens[state.pos].token {
+      Identifier(name) => {
+        rules.push(name)
+        state.pos = state.pos + 1
+      }
+      Symbol(",") => state.pos = state.pos + 1
+      _ => break
+    }
+  }
+  Success({ level, kind, rules })
+}
+
+///|
 /// 解析单条规则：`rule name: pattern`
 fn parse_rule(state : ParserState) -> ParseResult[Rule] {
   if state.pos >= state.tokens.length() {
@@ -158,7 +197,8 @@ fn parse_sequence(state : ParserState) -> ParseResult[Pattern] {
       Symbol("@") |
       Symbol("!") |
       Symbol("&") |
-      Symbol(".") => {
+      Symbol(".") |
+      Keyword("prec") => {
         match parse_unary(state) {
           Success(p) => seqs.push(p)
           Error(err) => {
@@ -414,6 +454,125 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
     Symbol(".") => {
       state.pos = state.pos + 1
       Success(AnyChar)
+    }
+    // 内联优先级标注 prec(...) / prec.left(...) / prec.right(...) / prec.dynamic(...)
+    Keyword("prec") => {
+      state.pos = state.pos + 1
+      // 检查是否有 .kind 修饰
+      let kind = if state.pos < state.tokens.length() {
+        match state.tokens[state.pos].token {
+          Symbol(".") => {
+            state.pos = state.pos + 1
+            if state.pos >= state.tokens.length() {
+              return Error({
+                message: "Expected 'left', 'right', or 'dynamic' after 'prec.'",
+                location: state.tokens[state.tokens.length() - 1].location,
+              })
+            }
+            match state.tokens[state.pos].token {
+              Keyword("left") => {
+                state.pos = state.pos + 1
+                PrecKind::Left
+              }
+              Keyword("right") => {
+                state.pos = state.pos + 1
+                PrecKind::Right
+              }
+              Identifier("dynamic") => {
+                state.pos = state.pos + 1
+                PrecKind::Dynamic
+              }
+              _ =>
+                return Error({
+                  message: "Expected 'left', 'right', or 'dynamic' after 'prec.'",
+                  location: state.tokens[state.pos].location,
+                })
+            }
+          }
+          _ => PrecKind::Nonassoc
+        }
+      } else {
+        PrecKind::Nonassoc
+      }
+      // 消耗 (
+      if state.pos >= state.tokens.length() {
+        return Error({
+          message: "Expected '(' after prec specifier",
+          location: state.tokens[state.tokens.length() - 1].location,
+        })
+      }
+      match state.tokens[state.pos].token {
+        Symbol("(") => state.pos = state.pos + 1
+        _ =>
+          return Error({
+            message: "Expected '(' after prec specifier",
+            location: state.tokens[state.pos].location,
+          })
+      }
+      // 读优先级数字
+      if state.pos >= state.tokens.length() {
+        return Error({
+          message: "Expected precedence level number",
+          location: state.tokens[state.tokens.length() - 1].location,
+        })
+      }
+      let level = match state.tokens[state.pos].token {
+        Identifier(n) =>
+          match parse_int_str(n) {
+            Some(v) => {
+              state.pos = state.pos + 1
+              v
+            }
+            None =>
+              return Error({
+                message: "Expected integer as precedence level",
+                location: state.tokens[state.pos].location,
+              })
+          }
+        _ =>
+          return Error({
+            message: "Expected precedence level number",
+            location: state.tokens[state.pos].location,
+          })
+      }
+      // 消耗 ,
+      if state.pos >= state.tokens.length() {
+        return Error({
+          message: "Expected ',' after precedence level",
+          location: state.tokens[state.tokens.length() - 1].location,
+        })
+      }
+      match state.tokens[state.pos].token {
+        Symbol(",") => state.pos = state.pos + 1
+        _ =>
+          return Error({
+            message: "Expected ',' after precedence level",
+            location: state.tokens[state.pos].location,
+          })
+      }
+      // 解析内部模式
+      match parse_pattern(state) {
+        Error(err) => Error(err)
+        Success(inner) => {
+          if state.pos >= state.tokens.length() {
+            return Error({
+              message: "Expected ')' to close prec()",
+              location: state.tokens[state.tokens.length() - 1].location,
+            })
+          }
+          match state.tokens[state.pos].token {
+            Symbol(")") => {
+              state.pos = state.pos + 1
+              Success(Prec(level, kind, inner))
+            }
+            _ =>
+              Error({
+                message: "Expected ')' to close prec()",
+                location: state.tokens[state.pos].location,
+              })
+          }
+        }
+      }
     }
     _ =>
       Error({

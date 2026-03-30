@@ -26,6 +26,7 @@ fn pattern_variant(p : Pattern) -> String {
     Pattern::AnyChar => "AnyChar"
     Pattern::Field(_, _) => "Field"
     Pattern::RepeatRange(_, _, _) => "RepeatRange"
+    Pattern::Prec(_, _, _) => "Prec"
   }
 }
 
@@ -207,6 +208,30 @@ fn get_parse_test_cases() -> Array[TestCase] {
         ("identifier", "Regex"),
       ]),
     },
+    {
+      name: "内联优先级 - 无结合性",
+      dsl: "rule r: prec(1, number)\nrule number: /\\d+/",
+      expected_rules: ["r", "number"],
+      expected_patterns: Map::from_array([("r", "Prec"), ("number", "Regex")]),
+    },
+    {
+      name: "内联优先级 - 左结合",
+      dsl: "rule expr: prec.left(2, number)\nrule number: /\\d+/",
+      expected_rules: ["expr", "number"],
+      expected_patterns: Map::from_array([("expr", "Prec"), ("number", "Regex")]),
+    },
+    {
+      name: "内联优先级 - 右结吆",
+      dsl: "rule expr: prec.right(3, number)\nrule number: /\\d+/",
+      expected_rules: ["expr", "number"],
+      expected_patterns: Map::from_array([("expr", "Prec"), ("number", "Regex")]),
+    },
+    {
+      name: "内联优先级 - 内嵌序列",
+      dsl: "rule expr: prec.left(2, expr \"+\" expr)\nrule expr: /\\d+/",
+      expected_rules: ["expr"],
+      expected_patterns: Map::from_array([("expr", "Regex")]),
+    },
   ]
 }
 
@@ -311,5 +336,97 @@ test "parse_rule_is_named" {
         None => abort("rule not found")
       }
     Error(err) => abort(err.message)
+  }
+}
+
+///|
+// 验证顶层 precedence 声明被正确解析并存入 grammar.precedences
+test "parse_precedences" {
+  let dsl =
+    "precedence left plus, minus\nprecedence right power\nrule plus: \"+\"\nrule minus: \"-\"\nrule power: \"^\""
+  match parse_grammar(dsl) {
+    Error(err) => abort(err.message)
+    Success(g) => {
+      assert_eq(g.precedences.length(), 2)
+      // 第一条：左结合，包含 plus 和 minus
+      let p0 = g.precedences[0]
+      assert_eq(p0.level, 1)
+      assert_eq(p0.rules.length(), 2)
+      let kind0 = match p0.kind {
+        PrecKind::Left => "Left"
+        _ => "other"
+      }
+      assert_eq(kind0, "Left")
+      // 第二条：右结合，包含 power
+      let p1 = g.precedences[1]
+      assert_eq(p1.level, 2)
+      assert_eq(p1.rules.length(), 1)
+      let kind1 = match p1.kind {
+        PrecKind::Right => "Right"
+        _ => "other"
+      }
+      assert_eq(kind1, "Right")
+      assert_eq(p1.rules[0], "power")
+    }
+  }
+}
+
+///|
+// 验证无结合性（无修饰词）和 dynamic 修饰词也能被正确识别
+test "parse_precedences_kinds" {
+  // Nonassoc：省略修饰词
+  match parse_grammar("precedence eq, neq\nrule eq: \"==\"\nrule neq: \"!=\"") {
+    Error(err) => abort(err.message)
+    Success(g) => {
+      assert_eq(g.precedences.length(), 1)
+      let kind = match g.precedences[0].kind {
+        PrecKind::Nonassoc => "Nonassoc"
+        _ => "other"
+      }
+      assert_eq(kind, "Nonassoc")
+      assert_eq(g.precedences[0].rules.length(), 2)
+    }
+  }
+  // Dynamic
+  match parse_grammar("precedence dynamic cmp\nrule cmp: \"<\"") {
+    Error(err) => abort(err.message)
+    Success(g) => {
+      assert_eq(g.precedences.length(), 1)
+      let kind = match g.precedences[0].kind {
+        PrecKind::Dynamic => "Dynamic"
+        _ => "other"
+      }
+      assert_eq(kind, "Dynamic")
+    }
+  }
+}
+
+///|
+// 验证 prec() 的错误路径
+test "parse_prec_errors" {
+  // 缺少 (
+  match parse_grammar("rule r: prec 1, a") {
+    Success(_) => abort("should fail")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+  // 级别不是整数
+  match parse_grammar("rule r: prec(abc, a)") {
+    Success(_) => abort("should fail")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+  // 缺少 ,
+  match parse_grammar("rule r: prec(1 a)") {
+    Success(_) => abort("should fail")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+  // 未闭合 )
+  match parse_grammar("rule r: prec(1, a") {
+    Success(_) => abort("should fail")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+  // prec. 后接无效词
+  match parse_grammar("rule r: prec.none(1, a)") {
+    Success(_) => abort("should fail")
+    Error(err) => assert_true(err.message.length() > 0)
   }
 }

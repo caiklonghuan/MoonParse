@@ -22,6 +22,12 @@ test "pattern_to_string" {
     // 括号优先级：序列中嵌套 Choice 需要括号
     ("序列含选择", "rule r: (a | b)*", "r", "(a | b)*"),
     ("复杂组合", "rule c: (a | b)* \"x\"?", "c", "(a | b)* \"x\"?"),
+    // Prec 变体
+    ("prec 无结合性", "rule r: prec(1, a)", "r", "prec(1, a)"),
+    ("prec.left", "rule r: prec.left(2, a)", "r", "prec.left(2, a)"),
+    ("prec.right", "rule r: prec.right(3, a)", "r", "prec.right(3, a)"),
+    ("prec.dynamic", "rule r: prec.dynamic(4, a)", "r", "prec.dynamic(4, a)"),
+    ("prec 含序列", "rule r: prec.left(1, a b)", "r", "prec.left(1, a b)"),
   ]
   for c in cases {
     let (description, dsl, rule_name, expected) = c

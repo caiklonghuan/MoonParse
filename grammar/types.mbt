@@ -1,3 +1,28 @@
+///|
+/// 优先级结合性
+pub(all) enum PrecKind {
+  /// 左结合（同级遇冲突取左侧规约）
+  Left
+  /// 右结合（同级遇冲突取右侧规约）
+  Right
+  /// 无结合性
+  Nonassoc
+  /// 运行时动态优先级
+  Dynamic
+}
+
+///|
+/// 顶层 `precedence` 声明（一条声明对应一个优先级层级）
+pub(all) struct PrecDecl {
+  /// 优先级层级（按声明顺序从 1 起，越大越高）
+  level : Int
+  /// 结合性
+  kind : PrecKind
+  /// 该层级包含的规则名列表
+  rules : Array[String]
+}
+
+///|
 /// Pattern 表示语法规则中的模式类型
 pub(all) enum Pattern {
   /// 规则引用
@@ -28,6 +53,8 @@ pub(all) enum Pattern {
   Field(String, Pattern)
   /// 精确或区间重复 p{n} / p{n,m}
   RepeatRange(Pattern, Int, Int)
+  /// 内联优先级标注 prec(n,p) / prec.left(n,p) / prec.right(n,p) / prec.dynamic(n,p)
+  Prec(Int, PrecKind, Pattern)
 }
 
 /// Rule 表示一条语法规则
@@ -46,6 +73,8 @@ pub(all) struct Grammar {
   mut start : String?
   /// 规则名称 → Rule 的映射
   rules : Map[String, Rule]
+  /// 顶层优先级声明列表（按声明顺序排列，越靠后层级越高）
+  precedences : Array[PrecDecl]
 }
 
 /// 将需要括号的子模式包裹起来
@@ -76,6 +105,15 @@ pub fn pattern_to_string(pattern : Pattern) -> String {
       } else {
         wrap_if_complex(p) + "{" + min.to_string() + "," + max.to_string() + "}"
       }
+    Prec(level, kind, p) => {
+      let prefix = match kind {
+        PrecKind::Left => "prec.left"
+        PrecKind::Right => "prec.right"
+        PrecKind::Dynamic => "prec.dynamic"
+        PrecKind::Nonassoc => "prec"
+      }
+      prefix + "(" + level.to_string() + ", " + pattern_to_string(p) + ")"
+    }
     Choice(patterns) => {
       let mut result = ""
       for i in 0..<patterns.length() {

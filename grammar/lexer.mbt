@@ -182,7 +182,8 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           word == "start" ||
           word == "precedence" ||
           word == "left" ||
-          word == "right" {
+          word == "right" ||
+          word == "prec" {
           tokens.push({ token: Token::Keyword(word), location: { line, column: start_col } })
         } else {
           tokens.push({ token: Token::Identifier(word), location: { line, column: start_col } })
