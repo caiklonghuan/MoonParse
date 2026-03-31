@@ -75,6 +75,8 @@ pub(all) struct AugmentedGrammar {
   terminal_patterns : Map[TerminalId, TerminalDef]
   /// Extras token（空白、注释等），可出现在任意 LR 状态
   extras : Array[TerminalId]
+  /// 终结符优先级表，从顶层 precedence 声明提取（TerminalId → (level, kind)）
+  prec_table : Map[TerminalId, (Int, @grammar.PrecKind)]
 }
 
 ///|
@@ -146,6 +148,8 @@ pub(all) struct ParseTable {
   lexer_dfa : LexerDfa
   /// 非终结符元数据，下标即 NonTerminalId
   symbol_metadata : Array[SymbolMeta]
+  /// 终结符词法定义（TerminalId → 词法规则），供 serialize 输出和 lexer 构建
+  terminal_patterns : Map[TerminalId, TerminalDef]
 }
 
 ///|

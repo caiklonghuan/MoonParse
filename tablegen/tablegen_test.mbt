@@ -32,41 +32,16 @@ fn gen_ok(dsl : String) -> (ParseTable, Array[ConflictReport]) {
 ///|
 test "基本数量属性" {
   let cases : Array[(String, String, Int, Int, Int)] = [
+    ("最简 s", "start s\nrule s: \"a\"", 4, 0, 1),
+    ("顺序 s", "start s\nrule s: \"a\" \"b\"", -1, 0, 1),
+    ("选择 s", "start s\nrule s: \"a\" | \"b\"", -1, 0, 1),
+    ("算术无prec", "start e\nrule e: e \"+\" e | \"n\"", 6, -1, 1),
     (
-      "最简 s",
-      "start s\nrule s: \"a\"",
-      4, 0, 1,
+      "算术prec.left", "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"", -1,
+      -1, 1,
     ),
-    (
-      "顺序 s",
-      "start s\nrule s: \"a\" \"b\"",
-      -1, 0, 1,
-    ),
-    (
-      "选择 s",
-      "start s\nrule s: \"a\" | \"b\"",
-      -1, 0, 1,
-    ),
-    (
-      "算术无prec",
-      "start e\nrule e: e \"+\" e | \"n\"",
-      6, -1, 1,
-    ),
-    (
-      "算术prec.left",
-      "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
-      -1, -1, 1,
-    ),
-    (
-      "e/t 分层",
-      "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",
-      -1, 0, 1,
-    ),
-    (
-      "Optional 展开",
-      "start s\nrule s: \"a\" \"b\"?",
-      -1, 0, 1,
-    ),
+    ("e/t 分层", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", -1, 0, 1),
+    ("Optional 展开", "start s\nrule s: \"a\" \"b\"?", -1, 0, 1),
   ]
   for case in cases {
     let (_l, dsl, exp_states, exp_reports, exp_accepts) = case
@@ -88,25 +63,15 @@ test "基本数量属性" {
 ///|
 test "冲突类型与消解" {
   let cases : Array[(String, String, Bool, Bool, Int)] = [
+    ("无歧义文法", "start s\nrule s: \"a\"", false, false, 0),
+    ("算术无prec", "start e\nrule e: e \"+\" e | \"n\"", true, false, -1),
     (
-      "无歧义文法",
-      "start s\nrule s: \"a\"",
-      false, false, 0,
+      "算术prec.left", "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"", false,
+      true, 0,
     ),
     (
-      "算术无prec",
-      "start e\nrule e: e \"+\" e | \"n\"",
-      true, false, -1,
-    ),
-    (
-      "算术prec.left",
-      "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
-      false, true, 0,
-    ),
-    (
-      "e/t 分层",
-      "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",
-      false, false, 0,
+      "e/t 分层", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", false, false,
+      0,
     ),
   ]
   for case in cases {
@@ -142,20 +107,11 @@ test "冲突类型与消解" {
 ///|
 test "Shift Reduce 动作存在性" {
   let cases : Array[(String, String, Bool, Bool)] = [
+    ("最简 s", "start s\nrule s: \"a\"", true, true),
+    ("e/t 分层", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", true, true),
     (
-      "最简 s",
-      "start s\nrule s: \"a\"",
-      true, true,
-    ),
-    (
-      "e/t 分层",
-      "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",
-      true, true,
-    ),
-    (
-      "算术prec.left",
-      "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
-      true, true,
+      "算术prec.left", "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"", true,
+      true,
     ),
   ]
   for case in cases {
@@ -167,7 +123,8 @@ test "Shift Reduce 动作存在性" {
           Shift(_) => true
           _ => false
         }
-      }) > 0,
+      }) >
+      0,
       want_shift,
     )
     assert_eq(
@@ -176,7 +133,8 @@ test "Shift Reduce 动作存在性" {
           Reduce(_) => true
           _ => false
         }
-      }) > 0,
+      }) >
+      0,
       want_reduce,
     )
   }
@@ -188,21 +146,9 @@ test "Shift Reduce 动作存在性" {
 ///|
 test "symbol_metadata 与 productions 结构" {
   let cases : Array[(String, String, Int)] = [
-    (
-      "最简文法",
-      "start s\nrule s: \"a\"",
-      2,
-    ),
-    (
-      "e/t 分层文法",
-      "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",
-      4,
-    ),
-    (
-      "prec.left 文法",
-      "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
-      2,
-    ),
+    ("最简文法", "start s\nrule s: \"a\"", 2),
+    ("e/t 分层文法", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", 4),
+    ("prec.left 文法", "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"", 2),
   ]
   for case in cases {
     let (_l, dsl, min_prods) = case
@@ -239,16 +185,12 @@ test "symbol_metadata 与 productions 结构" {
 ///|
 test "table_to_json 字段覆盖" {
   let grammars : Array[(String, String)] = [
-    ("最简文法",     "start s\nrule s: \"a\""),
+    ("最简文法", "start s\nrule s: \"a\""),
     ("e/t 分层文法", "start e\nrule e: e \"+\" t | t\nrule t: \"n\""),
     ("算术prec.left", "start e\nrule e: prec.left(1, e \"+\" e) | \"n\""),
   ]
   let required_keys = [
-    "\"states\"",
-    "\"productions\"",
-    "\"action\"",
-    "\"goto\"",
-    "\"symbol_metadata\"",
+    "\"states\"", "\"productions\"", "\"action\"", "\"goto\"", "\"symbol_metadata\"",
   ]
   for g in grammars {
     let (_l, dsl) = g

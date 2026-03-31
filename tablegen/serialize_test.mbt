@@ -14,17 +14,13 @@
 ///|
 test "table_to_json 顶层结构" {
   let cases : Array[(String, String, Int)] = [
-    ("最简 s",        "start s\nrule s: \"a\"",                             4),
-    ("e/t 分层",      "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",     -1),
-    ("选择",          "start s\nrule s: \"a\" | \"b\"",                    -1),
+    ("最简 s", "start s\nrule s: \"a\"", 4),
+    ("e/t 分层", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", -1),
+    ("选择", "start s\nrule s: \"a\" | \"b\"", -1),
     ("算术prec.left", "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"", -1),
   ]
   let required_keys = [
-    "\"states\"",
-    "\"productions\"",
-    "\"action\"",
-    "\"goto\"",
-    "\"symbol_metadata\"",
+    "\"states\"", "\"productions\"", "\"action\"", "\"goto\"", "\"symbol_metadata\"",
   ]
   for case in cases {
     let (_l, dsl, exp_states) = case
@@ -50,11 +46,7 @@ test "table_to_json 顶层结构" {
 ///|
 test "table_to_json productions 内容" {
   let cases : Array[(String, String, Array[String])] = [
-    (
-      "最简文法",
-      "start s\nrule s: \"a\"",
-      ["$accept", "s"],
-    ),
+    ("最简文法", "start s\nrule s: \"a\"", ["$accept", "s"]),
     (
       "e/t 分层",
       "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",
@@ -83,20 +75,14 @@ test "table_to_json productions 内容" {
 ///|
 test "table_to_json action 条目内容" {
   let cases : Array[(String, String, Bool, Bool, Bool)] = [
+    ("最简 s", "start s\nrule s: \"a\"", true, true, true),
     (
-      "最简 s",
-      "start s\nrule s: \"a\"",
-      true, true, true,
+      "e/t 分层", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", true, true,
+      true,
     ),
     (
-      "e/t 分层",
-      "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",
-      true, true, true,
-    ),
-    (
-      "算术prec.left",
-      "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
-      true, true, true,
+      "算术prec.left", "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"", true,
+      true, true,
     ),
   ]
   for case in cases {
@@ -121,32 +107,18 @@ test "table_to_json action 条目内容" {
 ///|
 test "table_to_json symbol_metadata 内容" {
   let cases : Array[(String, String, Array[String])] = [
-    (
-      "最简文法",
-      "start s\nrule s: \"a\"",
-      ["s"],
-    ),
-    (
-      "e/t 分层",
-      "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",
-      ["e", "t"],
-    ),
+    ("最简文法", "start s\nrule s: \"a\"", ["s"]),
+    ("e/t 分层", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", ["e", "t"]),
   ]
   for case in cases {
     let (_l, dsl, user_rules) = case
     let (table, _) = gen_ok(dsl)
     let json = table_to_json(table)
     // $accept 必须为 is_named:false
-    assert_eq(
-      json.contains("\"name\":\"$accept\",\"is_named\":false"),
-      true,
-    )
+    assert_eq(json.contains("\"name\":\"$accept\",\"is_named\":false"), true)
     // 用户规则名必须在 symbol_metadata 中以 is_named:true 出现
     for name in user_rules {
-      assert_eq(
-        json.contains("\"name\":\"\{name}\",\"is_named\":true"),
-        true,
-      )
+      assert_eq(json.contains("\"name\":\"\{name}\",\"is_named\":true"), true)
     }
   }
 }

@@ -25,7 +25,7 @@ fn count_items_with_dot(items : Set[LRItem], dot : Int) -> Int {
 ///|
 /// 检查项目集中是否含指定 (prod_id, dot) 的项目
 fn has_item(items : Set[LRItem], prod_id : ProductionId, dot : Int) -> Bool {
-  items.contains({ prod: prod_id, dot: dot })
+  items.contains({ prod: prod_id, dot })
 }
 
 // ─── closure 测试 ─────────────────────────────────────────────────────────────
@@ -182,7 +182,9 @@ test "build_item_sets / 初始状态（state 0）含 $accept 的 dot=0 项目" {
 ///|
 test "build_item_sets / 状态不重复（去重正确）" {
   // 文法中存在多条路径，但相同 kernel 应合并为同一状态
-  let ag = build_ag_i("start expr\nrule expr: num \"+\" num | num\nrule num: /d+/")
+  let ag = build_ag_i(
+    "start expr\nrule expr: num \"+\" num | num\nrule num: /d+/",
+  )
   let sets = build_item_sets(ag)
   // 验证无重复 key
   let seen : Map[String, Bool] = Map::new()
@@ -250,7 +252,9 @@ test "build_goto_map / state 0 见到起始 NT 应跳转到另一状态" {
 ///|
 test "build_goto_map / 转移目标与 item_sets 下标一致" {
   // 验证 goto_map 中所有目标 StateId 都在 [0, states.length) 范围内
-  let ag = build_ag_i("start expr\nrule expr: num \"+\" num | num\nrule num: /d+/")
+  let ag = build_ag_i(
+    "start expr\nrule expr: num \"+\" num | num\nrule num: /d+/",
+  )
   let sets = build_item_sets(ag)
   let n = sets.length()
   let gmap = build_goto_map(ag, sets)

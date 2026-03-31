@@ -26,10 +26,10 @@ let range_chars : String = "\t\n\r !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKL
 ///|
 /// NFA 边标签
 priv enum NfaTrans {
-  Eps               // ε-跳转（内部用）
-  Ch(Char)          // 精确字符匹配
+  Eps // ε-跳转（内部用）
+  Ch(Char) // 精确字符匹配
   Range(Char, Char) // 字符区间 [lo, hi]（闭区间）
-  Any               // 匹配任意字符（`.` 或 AnyChar）
+  Any // 匹配任意字符（`.` 或 AnyChar）
 }
 
 ///|
@@ -508,9 +508,15 @@ fn collect_alphabet(grammar : AugmentedGrammar) -> Array[Char] {
   let set : Set[Char] = Set::new()
   for _, def in grammar.terminal_patterns {
     match def {
-      Literal(s) => for c in s { set.add(c) }
+      Literal(s) =>
+        for c in s {
+          set.add(c)
+        }
       Regex(re) => collect_regex_alphabet(re, set)
-      AnyChar => for c in range_chars { set.add(c) }
+      AnyChar =>
+        for c in range_chars {
+          set.add(c)
+        }
     }
   }
   set.to_array()

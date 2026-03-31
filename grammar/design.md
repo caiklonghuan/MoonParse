@@ -81,7 +81,6 @@ rule primary: number | identifier | "(" expression ")"
 rule number: /\d+(\.\d+)?/
 rule identifier: /[a-zA-Z_]\w*/
 
-// 高级语法示例（包含新功能）
 start program
 rule program: @program statement*
 
@@ -119,9 +118,9 @@ pub(all) enum PrecKind { Left | Right | Nonassoc | Dynamic }
 
 /// 顶层 precedence 声明
 pub(all) struct PrecDecl {
-  level : Int           // 层级编号（1 起，越大越高）
+  level : Int
   kind  : PrecKind
-  rules : Array[String] // 该层包含的规则名
+  rules : Array[String]
 }
 
 /// Pattern 表示语法规则中的模式（15 个变体）

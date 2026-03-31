@@ -121,5 +121,6 @@ pub fn build_lalr_table(
     productions: grammar.productions,
     lexer_dfa: stub_dfa,
     symbol_metadata,
+    terminal_patterns: grammar.terminal_patterns,
   }
 }

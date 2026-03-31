@@ -353,7 +353,74 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     expand_into(ctx, nt_id, rule.pattern, name, None, None)
   }
 
-  // 5. 返回增广文法
+  // 5. 从 grammar.precedences 构建 prec_table，并补标产生式的 prec/assoc
+  let prec_table : Map[TerminalId, (Int, @grammar.PrecKind)] = Map::new()
+  let nt_prec_map : Map[NonTerminalId, (Int, @grammar.PrecKind)] = Map::new()
+  for pd in grammar.precedences {
+    for rule_name in pd.rules {
+      match ctx.nonterminals.get(rule_name) {
+        Some(nt_id) => nt_prec_map.set(nt_id, (pd.level, pd.kind))
+        None => ()
+      }
+    }
+  }
+  // 对含 prec-declared NT 的产生式补标 prec/assoc（取最右出现）
+  let n_prods = ctx.productions.length()
+  let mut pi = 0
+  while pi < n_prods {
+    let prod = ctx.productions[pi]
+    match prod.prec {
+      None => {
+        let mut rv : Int? = None
+        let mut rk : @grammar.PrecKind? = None
+        let mut j = prod.body.length() - 1
+        while j >= 0 {
+          match prod.body[j].symbol {
+            NonTerminal(nt) =>
+              match nt_prec_map.get(nt) {
+                Some((lv, lk)) => {
+                  rv = Some(lv)
+                  rk = Some(lk)
+                  break
+                }
+                None => ()
+              }
+            _ => ()
+          }
+          j = j - 1
+        }
+        match rv {
+          Some(_) =>
+            ctx.productions[pi] = {
+              id: prod.id,
+              head: prod.head,
+              body: prod.body,
+              prec: rv,
+              assoc: rk,
+              rule_name: prod.rule_name,
+            }
+          None => ()
+        }
+      }
+      Some(_) => ()
+    }
+    pi = pi + 1
+  }
+  // 从简单 token 产生式构建 prec_table（nt → [Terminal(t)]，nt ∈ nt_prec_map）
+  for prod in ctx.productions {
+    match nt_prec_map.get(prod.head) {
+      Some((lv, lk)) =>
+        if prod.body.length() == 1 {
+          match prod.body[0].symbol {
+            Terminal(t) => prec_table.set(t, (lv, lk))
+            _ => ()
+          }
+        }
+      None => ()
+    }
+  }
+
+  // 6. 返回增广文法
   // 注：grammar/ 层目前未建模 extras（空白、注释），Phase 1 留空
   {
     start: accept_id,
@@ -362,5 +429,6 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     productions: ctx.productions,
     terminal_patterns: ctx.term_patterns,
     extras: [],
+    prec_table,
   }
 }

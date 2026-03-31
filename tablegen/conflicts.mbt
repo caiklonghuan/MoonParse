@@ -45,7 +45,15 @@ fn shift_prec_for(grammar : AugmentedGrammar, t : TerminalId) -> Int? {
       }
     }
   }
-  best
+  // 优先级表回落：无产生式标注时查询 grammar.prec_table
+  match best {
+    Some(_) => best
+    None =>
+      match grammar.prec_table.get(t) {
+        Some((lv, _)) => Some(lv)
+        None => None
+      }
+  }
 }
 
 // ─── 辅助：单格冲突消解 ──────────────────────────────────────────────────────
@@ -225,6 +233,7 @@ pub fn resolve_conflicts(
     productions: table.productions,
     lexer_dfa: table.lexer_dfa,
     symbol_metadata: table.symbol_metadata,
+    terminal_patterns: table.terminal_patterns,
   }
   (new_table, reports)
 }

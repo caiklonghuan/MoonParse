@@ -147,6 +147,15 @@ fn symbol_meta_to_json(meta : SymbolMeta) -> String {
   ])
 }
 
+///|
+/// TerminalDef → JSON
+fn terminal_def_to_json(td : TerminalDef) -> String {
+  match td {
+    Literal(s) => jobj([("type", jstr("literal")), ("value", jstr(s))])
+    Regex(re) => jobj([("type", jstr("regex")), ("value", jstr(re))])
+    AnyChar => jobj([("type", jstr("anychar"))])
+  }
+}
 // ─── 公开 API ─────────────────────────────────────────────────────────────────
 
 ///|
@@ -204,12 +213,22 @@ pub fn table_to_json(table : ParseTable) -> String {
   // symbol_metadata 数组
   let meta_json = jarray(table.symbol_metadata.map(symbol_meta_to_json))
 
+  // terminal_patterns 数组
+  let tp_entries : Array[String] = []
+  for id, def in table.terminal_patterns {
+    tp_entries.push(
+      jobj([("id", "\{id}"), ("pattern", terminal_def_to_json(def))]),
+    )
+  }
+  let tp_json = jarray(tp_entries)
+
   jobj([
     ("states", "\{table.states}"),
     ("productions", prods_json),
     ("action", action_json),
     ("goto", goto_json),
     ("symbol_metadata", meta_json),
+    ("terminal_patterns", tp_json),
   ])
 }
 
