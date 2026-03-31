@@ -702,16 +702,165 @@ fn read_terminal_patterns(
   patterns
 }
 
-// ─── 公开 API（Phase 2 实现，当前为桩） ──────────────────────────────────────
+// ─── 公开 API ─────────────────────────────────────────────────────────────────
+//
+// 格式版本 1 —— 节区顺序（全部小端）：
+//
+//   [0] magic        4 B   0x4D 0x50 0x54 0x01  ("MPT\x01")
+//   [1] states       u32   LR 状态总数
+//   [2] action table       act_count u32
+//                          每条：state_id u16, term_id u16,
+//                                per_count u8, per_count × write_action(…)
+//   [3] goto table         goto_count u32
+//                          每条：state_id u16, nt_id u16, target u16
+//   [4] productions        prod_count u32, prod_count × write_production(…)
+//   [5] lexer dfa          write_lexer_dfa(…)
+//   [6] symbol_metadata    meta_count u16, meta_count × write_symbol_meta(…)
+//   [7] terminal_patterns  write_terminal_patterns(…)
 
 ///|
-/// 将 ParseTable 序列化为二进制格式（Phase 2 实现，当前返回空字节）。
-pub fn serialize_table(_table : ParseTable) -> Bytes {
-  Bytes::new(0)
+/// 将 ParseTable 序列化为二进制格式（版本 1，小端字节序）。
+///
+/// 节区顺序见文件顶部注释；可用 `deserialize_table` 完整还原。
+pub fn serialize_table(table : ParseTable) -> Bytes {
+  let w = BinWriter::new()
+
+  // [0] magic
+  w.write_u8(0x4D)
+  w.write_u8(0x50)
+  w.write_u8(0x54)
+  w.write_u8(0x01)
+
+  // [1] states
+  w.write_u32_le(table.states)
+
+  // [2] action table
+  // 收集 action 条目：同一 (state, terminal) 下可能有多个 Action（GLR）
+  let act_entries : Array[((StateId, TerminalId), Array[Action])] = []
+  for key, acts in table.action {
+    act_entries.push((key, acts))
+  }
+  w.write_u32_le(act_entries.length())
+  for entry in act_entries {
+    let ((state, term), acts) = entry
+    w.write_u16_le(state)
+    w.write_u16_le(term)
+    w.write_u8(acts.length())
+    for act in acts {
+      write_action(w, act)
+    }
+  }
+
+  // [3] goto table
+  let goto_entries : Array[((StateId, NonTerminalId), StateId)] = []
+  for key, target in table.goto_table {
+    goto_entries.push((key, target))
+  }
+  w.write_u32_le(goto_entries.length())
+  for entry in goto_entries {
+    let ((state, nt), target) = entry
+    w.write_u16_le(state)
+    w.write_u16_le(nt)
+    w.write_u16_le(target)
+  }
+
+  // [4] productions
+  w.write_u32_le(table.productions.length())
+  for prod in table.productions {
+    write_production(w, prod)
+  }
+
+  // [5] lexer dfa
+  write_lexer_dfa(w, table.lexer_dfa)
+
+  // [6] symbol_metadata
+  w.write_u16_le(table.symbol_metadata.length())
+  for meta in table.symbol_metadata {
+    write_symbol_meta(w, meta)
+  }
+
+  // [7] terminal_patterns
+  write_terminal_patterns(w, table.terminal_patterns)
+
+  w.to_bytes()
 }
 
 ///|
-/// 从二进制字节反序列化 ParseTable（Phase 2 实现，当前返回 Err）。
-pub fn deserialize_table(_bytes : Bytes) -> Result[ParseTable, String] {
-  Err("deserialize_table: not implemented yet")
+/// 从二进制字节流反序列化 ParseTable。
+///
+/// 失败时返回 `Err(msg)`，msg 描述出错位置与原因（magic 不符、截断、tag 越界等）。
+pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
+  let r = BinReader::new(bytes)
+  try {
+    // [0] magic
+    let m0 = r.read_u8()
+    let m1 = r.read_u8()
+    let m2 = r.read_u8()
+    let m3 = r.read_u8()
+    if m0 != 0x4D || m1 != 0x50 || m2 != 0x54 || m3 != 0x01 {
+      raise InvalidData(
+        "bad magic: \{m0} \{m1} \{m2} \{m3}, expected 77 80 84 1",
+      )
+    }
+
+    // [1] states
+    let states = r.read_u32_le()
+
+    // [2] action table
+    let action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
+    let act_count = r.read_u32_le()
+    for _ in 0..<act_count {
+      let state = r.read_u16_le()
+      let term = r.read_u16_le()
+      let per = r.read_u8()
+      let acts : Array[Action] = []
+      for _ in 0..<per {
+        acts.push(read_action(r))
+      }
+      action.set((state, term), acts)
+    }
+
+    // [3] goto table
+    let goto_table : Map[(StateId, NonTerminalId), StateId] = Map::new()
+    let goto_count = r.read_u32_le()
+    for _ in 0..<goto_count {
+      let state = r.read_u16_le()
+      let nt = r.read_u16_le()
+      let target = r.read_u16_le()
+      goto_table.set((state, nt), target)
+    }
+
+    // [4] productions
+    let prod_count = r.read_u32_le()
+    let productions : Array[Production] = []
+    for _ in 0..<prod_count {
+      productions.push(read_production(r))
+    }
+
+    // [5] lexer dfa
+    let lexer_dfa = read_lexer_dfa(r)
+
+    // [6] symbol_metadata
+    let meta_count = r.read_u16_le()
+    let symbol_metadata : Array[SymbolMeta] = []
+    for _ in 0..<meta_count {
+      symbol_metadata.push(read_symbol_meta(r))
+    }
+
+    // [7] terminal_patterns
+    let terminal_patterns = read_terminal_patterns(r)
+
+    Ok({
+      states,
+      action,
+      goto_table,
+      productions,
+      lexer_dfa,
+      symbol_metadata,
+      terminal_patterns,
+    })
+  } catch {
+    UnexpectedEof(msg) => Err("deserialize_table: unexpected EOF at \{msg}")
+    InvalidData(msg) => Err("deserialize_table: invalid data: \{msg}")
+  }
 }

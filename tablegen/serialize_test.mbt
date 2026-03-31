@@ -123,19 +123,33 @@ test "table_to_json symbol_metadata 内容" {
   }
 }
 
-// ─── Phase 2 桩实现 ───────────────────────────────────────────────────────────
+// ─── 公开 API ─────────────────────────────────────────────────────────────────
 
 ///|
-test "serialize_table Phase2 桩返回空字节" {
+test "serialize_table 返回非空字节" {
   let (table, _) = gen_ok("start s\nrule s: \"a\"")
   let b = serialize_table(table)
-  assert_eq(b.length(), 0)
+  assert_eq(b.length() > 0, true)
 }
 
 ///|
-test "deserialize_table Phase2 桩返回 Err" {
+test "deserialize_table magic 错误返回 Err" {
   match deserialize_table(Bytes::new(0)) {
     Err(_) => ()
     Ok(_) => assert_eq(false, true)
+  }
+}
+
+///|
+test "serialize_table / deserialize_table 往返一致" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\"")
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      assert_eq(t2.states, table.states)
+      assert_eq(t2.productions.length(), table.productions.length())
+      assert_eq(t2.symbol_metadata.length(), table.symbol_metadata.length())
+    }
   }
 }
