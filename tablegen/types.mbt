@@ -1,4 +1,5 @@
 // 用于区分语义
+
 ///|
 /// LALR 解析器状态编号
 pub type StateId = Int
