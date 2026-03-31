@@ -17,6 +17,8 @@ pub fn build_lalr_table(AugmentedGrammar, Array[@set.Set[LRItem]], Map[(Int, Sym
 
 pub fn closure(AugmentedGrammar, @set.Set[LRItem]) -> @set.Set[LRItem]
 
+pub fn deserialize_table(Bytes) -> Result[ParseTable, String]
+
 pub let eoi_id : Int
 
 pub fn first_seq(AugmentedGrammar, Array[Symbol]) -> @set.Set[Int]
@@ -30,6 +32,10 @@ pub fn goto_set(AugmentedGrammar, @set.Set[LRItem], Symbol) -> @set.Set[LRItem]
 pub fn nullable(AugmentedGrammar, Array[Symbol]) -> Bool
 
 pub fn resolve_conflicts(ParseTable, AugmentedGrammar) -> (ParseTable, Array[ConflictReport])
+
+pub fn serialize_table(ParseTable) -> Bytes
+
+pub fn table_to_json(ParseTable) -> String
 
 // Errors
 
