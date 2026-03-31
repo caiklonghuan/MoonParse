@@ -1,5 +1,6 @@
 import {
   "caiklonghuan/MoonParse/grammar" @grammar,
+  "caiklonghuan/MoonParse/tablegen" @tablegen,
 }
 
 options(
