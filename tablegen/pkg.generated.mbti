@@ -29,6 +29,8 @@ pub fn goto_set(AugmentedGrammar, @set.Set[LRItem], Symbol) -> @set.Set[LRItem]
 
 pub fn nullable(AugmentedGrammar, Array[Symbol]) -> Bool
 
+pub fn resolve_conflicts(ParseTable, AugmentedGrammar) -> (ParseTable, Array[ConflictReport])
+
 // Errors
 
 // Types and methods
