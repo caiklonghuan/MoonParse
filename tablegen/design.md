@@ -434,8 +434,8 @@ pub fn generate_parse_table(
 - [x] `conflicts.mbt` — 优先级过滤 + 冲突报告
 - [x] `serialize.mbt` — JSON 序列化（调试用）
 - [x] `tablegen.mbt` — `generate_parse_table()` 一键入口
-- [ ] `tablegen_test.mbt` — 用算术表达式文法（`E → E + T | T`）端到端验证
-- [ ] `serialize_test.mbt` — `table_to_json()` 输出格式验证
+- [x] `tablegen_test.mbt` — 用算术表达式文法（`E → E + T | T`）端到端验证
+- [x] `serialize_test.mbt` — `table_to_json()` 输出格式验证
 
 ### Phase 2（词法器集成）
 - [ ] `lexer.mbt` — NFA 构造（Thompson）
