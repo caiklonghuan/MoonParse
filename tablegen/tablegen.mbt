@@ -1,7 +1,7 @@
 ///|
 // ─── §8 一键入口 ──────────────────────────────────────────────────────────────
 //
-// 将 §1~§5 的流水线封装为单一公开函数：
+// 将 §1~§6 的流水线封装为单一公开函数：
 //   generate_parse_table(grammar) -> Result[(ParseTable, Array[ConflictReport]), String]
 //
 // 流水线：
@@ -21,15 +21,18 @@
 //     │ resolve_conflicts()        §5
 //     ▼
 //   (ParseTable, Array[ConflictReport])
+//     │ build_lexer_dfa()          §6
+//     ▼
+//   ParseTable (含词法 DFA)
 
 ///|
-/// 将用户 Grammar 一步生成 LALR(1) 解析表。
+/// 将用户 Grammar 一步生成 LALR(1) 解析表（含词法器 DFA）。
 ///
 /// 返回 `Ok((table, reports))`：
-/// - `table`   — 完成冲突解决后的解析表
+/// - `table`   — 完成冲突解决、词法 DFA 已接入的解析表
 /// - `reports` — 所有冲突报告（Warn / Ambiguous / DynamicConflict）
 ///
-/// 当前 Phase 1 不做输入校验，空文法会返回退化表而非 Err。
+/// 当前实现不做输入校验，空文法会返回退化表而非 Err（Phase 2 TODO）。
 pub fn generate_parse_table(
   grammar : @grammar.Grammar,
 ) -> Result[(ParseTable, Array[ConflictReport]), String] {
@@ -38,5 +41,15 @@ pub fn generate_parse_table(
   let goto_map = build_goto_map(aug, item_sets)
   let table = build_lalr_table(aug, item_sets, goto_map)
   let (resolved_table, reports) = resolve_conflicts(table, aug)
-  Ok((resolved_table, reports))
+  let real_dfa = build_lexer_dfa(aug, resolved_table)
+  let final_table = {
+    states: resolved_table.states,
+    action: resolved_table.action,
+    goto_table: resolved_table.goto_table,
+    productions: resolved_table.productions,
+    lexer_dfa: real_dfa,
+    symbol_metadata: resolved_table.symbol_metadata,
+    terminal_patterns: resolved_table.terminal_patterns,
+  }
+  Ok((final_table, reports))
 }
