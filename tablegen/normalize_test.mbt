@@ -3,7 +3,7 @@
 ///|
 priv struct NormalizeCase {
   name : String
-  dsl  : String
+  dsl : String
   /// 预期用户定义非终结符数量（不含辅助 NT，辅助 NT 以 _ 开头；含 $accept = +1）
   expected_named_nt_count : Int
   /// 预期注册的终结符 key（"lit:x" / "re:re" / "·"）
@@ -244,7 +244,9 @@ test "augment_grammar / 终结符注册正确" {
     }
     let ag = augment_grammar(g)
     if not(has_terminal_keys(ag, case.expected_terminals)) {
-      fail("[\{case.name}] 缺少预期终结符，期望: \{case.expected_terminals}")
+      fail(
+        "[\{case.name}] 缺少预期终结符，期望: \{case.expected_terminals}",
+      )
     }
   }
 }
@@ -317,7 +319,7 @@ test "augment_grammar / Field 元数据保留" {
     if prod.head == assign_id {
       for sym in prod.body {
         match sym.field_name {
-          Some("lhs")  => found_left = true
+          Some("lhs") => found_left = true
           Some("rhs") => found_right = true
           _ => ()
         }

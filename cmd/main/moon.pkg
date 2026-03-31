@@ -1,0 +1,7 @@
+import {
+  "caiklonghuan/MoonParse/grammar" @grammar,
+}
+
+options(
+  "is-main": true,
+)

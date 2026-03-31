@@ -2,33 +2,33 @@
 // ─── 规范化内部状态 ────────────────────────────────────────────────────────────
 
 priv struct NormCtx {
-  mut term_next   : Int
-  mut nt_next     : Int
-  mut prod_next   : Int
+  mut term_next : Int
+  mut nt_next : Int
+  mut prod_next : Int
   mut helper_next : Int
   /// "lit:s" / "re:re" / "·" → TerminalId
-  terminals        : Map[String, TerminalId]
+  terminals : Map[String, TerminalId]
   /// TerminalId → 词法定义
-  term_patterns    : Map[TerminalId, TerminalDef]
+  term_patterns : Map[TerminalId, TerminalDef]
   /// 规则名 → NonTerminalId
-  nonterminals     : Map[String, NonTerminalId]
+  nonterminals : Map[String, NonTerminalId]
   /// 与 nonterminals 同步增长，下标即 NonTerminalId
-  nt_metas         : Array[SymbolMeta]
-  productions      : Array[Production]
+  nt_metas : Array[SymbolMeta]
+  productions : Array[Production]
 }
 
 ///|
 fn NormCtx::new() -> NormCtx {
   {
-    term_next    : 0,
-    nt_next      : 0,
-    prod_next    : 0,
-    helper_next  : 0,
-    terminals    : Map::new(),
+    term_next: 0,
+    nt_next: 0,
+    prod_next: 0,
+    helper_next: 0,
+    terminals: Map::new(),
     term_patterns: Map::new(),
-    nonterminals : Map::new(),
-    nt_metas     : [],
-    productions  : [],
+    nonterminals: Map::new(),
+    nt_metas: [],
+    productions: [],
   }
 }
 
@@ -36,11 +36,7 @@ fn NormCtx::new() -> NormCtx {
 
 ///|
 /// 注册终结符；key 已存在则返回现有 ID（幂等）
-fn alloc_terminal(
-  ctx : NormCtx,
-  key : String,
-  def : TerminalDef
-) -> TerminalId {
+fn alloc_terminal(ctx : NormCtx, key : String, def : TerminalDef) -> TerminalId {
   match ctx.terminals.get(key) {
     Some(id) => id
     None => {
@@ -55,18 +51,14 @@ fn alloc_terminal(
 
 ///|
 /// 注册非终结符；name 已存在则返回现有 ID（幂等）
-fn alloc_nt(
-  ctx      : NormCtx,
-  name     : String,
-  is_named : Bool
-) -> NonTerminalId {
+fn alloc_nt(ctx : NormCtx, name : String, is_named : Bool) -> NonTerminalId {
   match ctx.nonterminals.get(name) {
     Some(id) => id
     None => {
       let id = ctx.nt_next
       ctx.nt_next = ctx.nt_next + 1
       ctx.nonterminals.set(name, id)
-      ctx.nt_metas.push({ name: name, is_named: is_named })
+      ctx.nt_metas.push({ name, is_named })
       id
     }
   }
@@ -75,31 +67,24 @@ fn alloc_nt(
 ///|
 /// 将一条产生式追加到 ctx
 fn add_production(
-  ctx       : NormCtx,
-  head      : NonTerminalId,
-  body      : Array[BodySymbol],
-  prec      : Int?,
-  assoc     : @grammar.PrecKind?,
-  rule_name : String
+  ctx : NormCtx,
+  head : NonTerminalId,
+  body : Array[BodySymbol],
+  prec : Int?,
+  assoc : @grammar.PrecKind?,
+  rule_name : String,
 ) -> Unit {
   let id = ctx.prod_next
   ctx.prod_next = ctx.prod_next + 1
-  ctx.productions.push({
-    id        : id,
-    head      : head,
-    body      : body,
-    prec      : prec,
-    assoc     : assoc,
-    rule_name : rule_name,
-  })
+  ctx.productions.push({ id, head, body, prec, assoc, rule_name })
 }
 
 ///|
 /// 分配辅助非终结符（is_named = false），命名带规则来源和类型后缀
 fn fresh_helper(
-  ctx       : NormCtx,
+  ctx : NormCtx,
   rule_name : String,
-  suffix    : String
+  suffix : String,
 ) -> NonTerminalId {
   let n = ctx.helper_next
   ctx.helper_next = ctx.helper_next + 1
@@ -111,13 +96,13 @@ fn fresh_helper(
 /// 用于生成辅助 NT 名称的后缀
 fn pattern_suffix(p : @grammar.Pattern) -> String {
   match p {
-    Seq(_)               => "seq"
-    Choice(_)            => "choice"
-    Repeat(_)            => "rep"
-    Plus(_)              => "plus"
-    Optional(_)          => "opt"
+    Seq(_) => "seq"
+    Choice(_) => "choice"
+    Repeat(_) => "rep"
+    Plus(_) => "plus"
+    Optional(_) => "opt"
     RepeatRange(_, n, m) => "r\{n}to\{m}"
-    _                    => "aux"
+    _ => "aux"
   }
 }
 
@@ -129,33 +114,33 @@ fn pattern_suffix(p : @grammar.Pattern) -> String {
 /// - 包装（Tagged/Field/Prec/Not/And）：透传并传递元数据。
 /// - 复杂（Seq/Choice/Repeat/Plus/Optional/RepeatRange）：创建辅助 NT 并展开。
 fn to_symbol(
-  ctx        : NormCtx,
-  p          : @grammar.Pattern,
-  rule_name  : String,
+  ctx : NormCtx,
+  p : @grammar.Pattern,
+  rule_name : String,
   field_name : String?,
-  prec       : Int?,
-  assoc      : @grammar.PrecKind?
+  prec : Int?,
+  assoc : @grammar.PrecKind?,
 ) -> BodySymbol {
   match p {
     Literal(s) => {
       let id = alloc_terminal(ctx, "lit:\{s}", TerminalDef::Literal(s))
-      { symbol: Symbol::Terminal(id), field_name: field_name }
+      { symbol: Symbol::Terminal(id), field_name }
     }
     Regex(re) => {
       let id = alloc_terminal(ctx, "re:\{re}", TerminalDef::Regex(re))
-      { symbol: Symbol::Terminal(id), field_name: field_name }
+      { symbol: Symbol::Terminal(id), field_name }
     }
     AnyChar => {
       let id = alloc_terminal(ctx, "\u00b7", TerminalDef::AnyChar)
-      { symbol: Symbol::Terminal(id), field_name: field_name }
+      { symbol: Symbol::Terminal(id), field_name }
     }
     RuleRef(name) =>
       // 前向引用在预注册阶段已处理，此处保底自动注册
       match ctx.nonterminals.get(name) {
-        Some(id) => { symbol: Symbol::NonTerminal(id), field_name: field_name }
+        Some(id) => { symbol: Symbol::NonTerminal(id), field_name }
         None => {
           let id = alloc_nt(ctx, name, false)
-          { symbol: Symbol::NonTerminal(id), field_name: field_name }
+          { symbol: Symbol::NonTerminal(id), field_name }
         }
       }
     // 包装类：传递元数据，递归处理内层
@@ -175,7 +160,7 @@ fn to_symbol(
       // 复杂 Pattern：创建辅助 NT，展开后返回对它的引用
       let fresh_id = fresh_helper(ctx, rule_name, pattern_suffix(p))
       expand_into(ctx, fresh_id, p, rule_name, prec, assoc)
-      { symbol: Symbol::NonTerminal(fresh_id), field_name: field_name }
+      { symbol: Symbol::NonTerminal(fresh_id), field_name }
     }
   }
 }
@@ -184,12 +169,12 @@ fn to_symbol(
 /// 将 Pattern 展平为 BodySymbol 序列。
 /// Seq 被内联展开（多个符号），其余委托给 to_symbol（单符号）。
 fn to_body(
-  ctx        : NormCtx,
-  p          : @grammar.Pattern,
-  rule_name  : String,
+  ctx : NormCtx,
+  p : @grammar.Pattern,
+  rule_name : String,
   field_name : String?,
-  prec       : Int?,
-  assoc      : @grammar.PrecKind?
+  prec : Int?,
+  assoc : @grammar.PrecKind?,
 ) -> Array[BodySymbol] {
   match p {
     Seq(elems) => {
@@ -208,12 +193,12 @@ fn to_body(
 ///|
 /// 将 Pattern 的全部产生式展开并挂到 head 非终结符。
 fn expand_into(
-  ctx       : NormCtx,
-  head      : NonTerminalId,
-  p         : @grammar.Pattern,
+  ctx : NormCtx,
+  head : NonTerminalId,
+  p : @grammar.Pattern,
   rule_name : String,
-  prec      : Int?,
-  assoc     : @grammar.PrecKind?
+  prec : Int?,
+  assoc : @grammar.PrecKind?,
 ) -> Unit {
   match p {
     Choice(alts) =>
@@ -221,45 +206,45 @@ fn expand_into(
       for alt in alts {
         expand_into(ctx, head, alt, rule_name, prec, assoc)
       }
-
     Prec(level, kind, inner) =>
       // 向内传递优先级，更新 prec/assoc
       expand_into(ctx, head, inner, rule_name, Some(level), Some(kind))
-
     Tagged(tag, inner) => {
       let sym = to_symbol(ctx, inner, rule_name, Some(tag), None, None)
       add_production(ctx, head, [sym], prec, assoc, rule_name)
     }
-
     Field(fname, inner) => {
       let sym = to_symbol(ctx, inner, rule_name, Some(fname), None, None)
       add_production(ctx, head, [sym], prec, assoc, rule_name)
     }
-
     Repeat(inner) => {
       let sym = to_symbol(ctx, inner, rule_name, None, None, None)
       // head → ε
       add_production(ctx, head, [], None, None, rule_name)
       // head → head inner  (左递归，GLR 天然处理)
       add_production(
-        ctx, head,
+        ctx,
+        head,
         [{ symbol: Symbol::NonTerminal(head), field_name: None }, sym],
-        None, None, rule_name,
+        None,
+        None,
+        rule_name,
       )
     }
-
     Plus(inner) => {
       let sym = to_symbol(ctx, inner, rule_name, None, None, None)
       // head → inner
       add_production(ctx, head, [sym], None, None, rule_name)
       // head → head inner  (左递归)
       add_production(
-        ctx, head,
+        ctx,
+        head,
         [{ symbol: Symbol::NonTerminal(head), field_name: None }, sym],
-        None, None, rule_name,
+        None,
+        None,
+        rule_name,
       )
     }
-
     Optional(inner) => {
       let sym = to_symbol(ctx, inner, rule_name, None, None, None)
       // head → ε
@@ -267,13 +252,17 @@ fn expand_into(
       // head → inner
       add_production(ctx, head, [sym], None, None, rule_name)
     }
-
     RepeatRange(inner, n, m) => {
       let sym = to_symbol(ctx, inner, rule_name, None, None, None)
       // 所有可选槽位共享一个辅助 NT：opt_id → ε | inner
       let opt_id = fresh_helper(ctx, rule_name, "opt")
       expand_into(
-        ctx, opt_id, @grammar.Pattern::Optional(inner), rule_name, None, None,
+        ctx,
+        opt_id,
+        @grammar.Pattern::Optional(inner),
+        rule_name,
+        None,
+        None,
       )
       let body : Array[BodySymbol] = []
       for _ in 0..<n {
@@ -284,21 +273,21 @@ fn expand_into(
       }
       add_production(ctx, head, body, prec, assoc, rule_name)
     }
-
     Not(inner) =>
       // Phase 1：忽略负向前瞻
       expand_into(ctx, head, inner, rule_name, prec, assoc)
-
     And(inner) =>
       // Phase 1：忽略正向前瞻
       expand_into(ctx, head, inner, rule_name, prec, assoc)
-
     _ =>
       // Seq / Literal / Regex / AnyChar / RuleRef
       add_production(
-        ctx, head,
+        ctx,
+        head,
         to_body(ctx, p, rule_name, None, prec, assoc),
-        prec, assoc, rule_name,
+        prec,
+        assoc,
+        rule_name,
       )
   }
 }
@@ -367,11 +356,11 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
   // 5. 返回增广文法
   // 注：grammar/ 层目前未建模 extras（空白、注释），Phase 1 留空
   {
-    start             : accept_id,
-    terminals         : ctx.terminals,
-    nonterminals      : ctx.nonterminals,
-    productions       : ctx.productions,
-    terminal_patterns : ctx.term_patterns,
-    extras            : [],
+    start: accept_id,
+    terminals: ctx.terminals,
+    nonterminals: ctx.nonterminals,
+    productions: ctx.productions,
+    terminal_patterns: ctx.term_patterns,
+    extras: [],
   }
 }

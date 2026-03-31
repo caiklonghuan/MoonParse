@@ -1,4 +1,4 @@
-
+///|
 /// Token 为词法单元类型（包内私有）
 enum Token {
   /// 标识符（含数字串，如 {3} 中的 "3"）
@@ -13,18 +13,21 @@ enum Token {
   Keyword(String)
 }
 
+///|
 /// 源码位置（行列号均从 1 开始）
 pub(all) struct SourceLocation {
   line : Int
   column : Int
 }
 
+///|
 /// 携带位置信息的词法单元
 pub(all) struct TokenWithLocation {
   token : Token
   location : SourceLocation
 }
 
+///|
 /// 将源码字符串转换为带位置信息的 Token 序列
 /// 自动跳过空白、行注释（//）和块注释（/* */）
 fn tokenize(input : String) -> Array[TokenWithLocation] {
@@ -48,7 +51,6 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
         i = i + 1
       }
       '\r' => i = i + 1
-
       '/' => {
         if i + 1 < len {
           let next_c = input[i + 1].to_int().to_char().unwrap()
@@ -103,7 +105,10 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
         }
         if j < len {
           let regex = input.substring(start=i + 1, end=j)
-          tokens.push({ token: Token::RegexLiteral(regex), location: { line, column: start_col } })
+          tokens.push({
+            token: Token::RegexLiteral(regex),
+            location: { line, column: start_col },
+          })
           i = j + 1
           column = column + 1
         } else {
@@ -111,7 +116,6 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           column = column + 1
         }
       }
-
       '"' => {
         let start_col = column
         let mut j = i + 1
@@ -136,7 +140,10 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
         }
         if j < len {
           let literal = input.substring(start=i + 1, end=j)
-          tokens.push({ token: Token::StringLiteral(literal), location: { line, column: start_col } })
+          tokens.push({
+            token: Token::StringLiteral(literal),
+            location: { line, column: start_col },
+          })
           i = j + 1
           column = column + 1
         } else {
@@ -144,13 +151,27 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           column = column + 1
         }
       }
-
-      ':' | '|' | '*' | '+' | '?' | '(' | ')' | '@' | '!' | '&' | '.' | '{' | '}' | ',' => {
-        tokens.push({ token: Token::Symbol(c.to_string()), location: { line, column } })
+      ':'
+      | '|'
+      | '*'
+      | '+'
+      | '?'
+      | '('
+      | ')'
+      | '@'
+      | '!'
+      | '&'
+      | '.'
+      | '{'
+      | '}'
+      | ',' => {
+        tokens.push({
+          token: Token::Symbol(c.to_string()),
+          location: { line, column },
+        })
         i = i + 1
         column = column + 1
       }
-
       _ => {
         if is_whitespace(c) {
           i = i + 1
@@ -184,9 +205,15 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           word == "left" ||
           word == "right" ||
           word == "prec" {
-          tokens.push({ token: Token::Keyword(word), location: { line, column: start_col } })
+          tokens.push({
+            token: Token::Keyword(word),
+            location: { line, column: start_col },
+          })
         } else {
-          tokens.push({ token: Token::Identifier(word), location: { line, column: start_col } })
+          tokens.push({
+            token: Token::Identifier(word),
+            location: { line, column: start_col },
+          })
         }
         i = j
       }
@@ -195,6 +222,7 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
   tokens
 }
 
+///|
 fn is_whitespace(c : Char) -> Bool {
   match c {
     ' ' | '\t' | '\n' | '\r' => true
@@ -202,14 +230,31 @@ fn is_whitespace(c : Char) -> Bool {
   }
 }
 
+///|
 fn is_symbol(c : Char) -> Bool {
   match c {
-    ':' | '|' | '*' | '+' | '?' | '(' | ')' | '"' | '/' | '@' | '\\' | '!' | '&' | '.' | '{' |
-    '}' | ',' => true
+    ':'
+    | '|'
+    | '*'
+    | '+'
+    | '?'
+    | '('
+    | ')'
+    | '"'
+    | '/'
+    | '@'
+    | '\\'
+    | '!'
+    | '&'
+    | '.'
+    | '{'
+    | '}'
+    | ',' => true
     _ => false
   }
 }
 
+///|
 /// 将字符串解析为非负整数；包含非数字字符时返回 None
 fn parse_int_str(s : String) -> Int? {
   if s.length() == 0 {

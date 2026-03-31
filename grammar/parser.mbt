@@ -1,16 +1,18 @@
-
+///|
 /// 解析错误，包含可读的消息和源码位置
 pub(all) struct ParseError {
   message : String
   location : SourceLocation
 }
 
+///|
 /// 解析结果：成功携带值，失败携带错误
 pub(all) enum ParseResult[T] {
   Success(T)
   Error(ParseError)
 }
 
+///|
 /// 解析器内部状态（包内私有）
 priv struct ParserState {
   tokens : Array[TokenWithLocation]
@@ -19,6 +21,7 @@ priv struct ParserState {
 
 // ─── 公开入口 ────────────────────────────────────────────────────────────────
 
+///|
 /// 解析 Grammar DSL 字符串，返回完整的 Grammar 对象
 pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
   let tokens = tokenize(dsl)
@@ -155,6 +158,7 @@ fn parse_rule(state : ParserState) -> ParseResult[Rule] {
 
 // ─── 表达式层（优先级从低到高：选择 > 序列 > 一元 > 原子）────────────────────
 
+///|
 /// 解析选择表达式：`A | B | C`
 fn parse_pattern(state : ParserState) -> ParseResult[Pattern] {
   match parse_sequence(state) {
@@ -182,6 +186,7 @@ fn parse_pattern(state : ParserState) -> ParseResult[Pattern] {
   }
 }
 
+///|
 /// 解析序列表达式：`A B C`（连续的一元表达式）
 fn parse_sequence(state : ParserState) -> ParseResult[Pattern] {
   let seqs = []
@@ -190,15 +195,15 @@ fn parse_sequence(state : ParserState) -> ParseResult[Pattern] {
 
   while state.pos < state.tokens.length() {
     match state.tokens[state.pos].token {
-      Identifier(_) |
-      StringLiteral(_) |
-      RegexLiteral(_) |
-      Symbol("(") |
-      Symbol("@") |
-      Symbol("!") |
-      Symbol("&") |
-      Symbol(".") |
-      Keyword("prec") => {
+      Identifier(_)
+      | StringLiteral(_)
+      | RegexLiteral(_)
+      | Symbol("(")
+      | Symbol("@")
+      | Symbol("!")
+      | Symbol("&")
+      | Symbol(".")
+      | Keyword("prec") =>
         match parse_unary(state) {
           Success(p) => seqs.push(p)
           Error(err) => {
@@ -207,7 +212,6 @@ fn parse_sequence(state : ParserState) -> ParseResult[Pattern] {
             break
           }
         }
-      }
       _ => break
     }
   }
@@ -230,6 +234,7 @@ fn parse_sequence(state : ParserState) -> ParseResult[Pattern] {
   }
 }
 
+///|
 /// 解析一元后缀表达式：`A*`、`A+`、`A?`、`A{n}`、`A{n,m}`
 fn parse_unary(state : ParserState) -> ParseResult[Pattern] {
   match parse_primary(state) {
@@ -258,8 +263,12 @@ fn parse_unary(state : ParserState) -> ParseResult[Pattern] {
   }
 }
 
+///|
 /// 解析 `{n}` 或 `{n,m}` 重复区间（调用前 `{` 尚未消耗）
-fn parse_repeat_range(state : ParserState, pattern : Pattern) -> ParseResult[Pattern] {
+fn parse_repeat_range(
+  state : ParserState,
+  pattern : Pattern,
+) -> ParseResult[Pattern] {
   state.pos = state.pos + 1 // 消耗 {
   if state.pos >= state.tokens.length() {
     return Error({
@@ -268,7 +277,7 @@ fn parse_repeat_range(state : ParserState, pattern : Pattern) -> ParseResult[Pat
     })
   }
   match state.tokens[state.pos].token {
-    Identifier(min_str) => {
+    Identifier(min_str) =>
       match parse_int_str(min_str) {
         None =>
           Error({
@@ -340,7 +349,6 @@ fn parse_repeat_range(state : ParserState, pattern : Pattern) -> ParseResult[Pat
           }
         }
       }
-    }
     _ =>
       Error({
         message: "Expected integer after '{'",
@@ -349,6 +357,7 @@ fn parse_repeat_range(state : ParserState, pattern : Pattern) -> ParseResult[Pat
   }
 }
 
+///|
 /// 解析原子表达式：标识符、字面量、正则、分组、前缀操作符
 fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
   if state.pos >= state.tokens.length() {

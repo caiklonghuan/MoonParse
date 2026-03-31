@@ -133,7 +133,10 @@ fn get_parse_test_cases() -> Array[TestCase] {
       name: "顶层声明 - start",
       dsl: "start program\nrule program: statement*\nrule statement: \"print\" expr",
       expected_rules: ["program", "statement"],
-      expected_patterns: Map::from_array([("program", "Repeat"), ("statement", "Seq")]),
+      expected_patterns: Map::from_array([
+        ("program", "Repeat"),
+        ("statement", "Seq"),
+      ]),
     },
     {
       name: "顶层声明 - 优先级左结合",
@@ -154,7 +157,9 @@ fn get_parse_test_cases() -> Array[TestCase] {
     {
       name: "顶层声明 - 多级优先级",
       dsl: "precedence left plus, minus\nprecedence left star, slash\nrule expr: term ((plus | minus) term)*\nrule term: factor ((star | slash) factor)*\nrule factor: number | \"(\" expr \")\"\nrule plus: \"+\"\nrule minus: \"-\"\nrule star: \"*\"\nrule slash: \"/\"",
-      expected_rules: ["expr", "term", "factor", "plus", "minus", "star", "slash"],
+      expected_rules: [
+        "expr", "term", "factor", "plus", "minus", "star", "slash",
+      ],
       expected_patterns: Map::from_array([
         ("expr", "Seq"),
         ("term", "Seq"),
@@ -169,25 +174,37 @@ fn get_parse_test_cases() -> Array[TestCase] {
       name: "注释 - 行注释",
       dsl: "rule expr: number // 这是一个注释\nrule number: /\\d+/",
       expected_rules: ["expr", "number"],
-      expected_patterns: Map::from_array([("expr", "RuleRef"), ("number", "Regex")]),
+      expected_patterns: Map::from_array([
+        ("expr", "RuleRef"),
+        ("number", "Regex"),
+      ]),
     },
     {
       name: "注释 - 块注释",
       dsl: "rule expr: /* 这是块注释 */ number\nrule number: /\\d+/",
       expected_rules: ["expr", "number"],
-      expected_patterns: Map::from_array([("expr", "RuleRef"), ("number", "Regex")]),
+      expected_patterns: Map::from_array([
+        ("expr", "RuleRef"),
+        ("number", "Regex"),
+      ]),
     },
     {
       name: "标签 - 单标签",
       dsl: "rule expr: @additive additive\nrule additive: number \"+\" number",
       expected_rules: ["expr", "additive"],
-      expected_patterns: Map::from_array([("expr", "Tagged"), ("additive", "Seq")]),
+      expected_patterns: Map::from_array([
+        ("expr", "Tagged"),
+        ("additive", "Seq"),
+      ]),
     },
     {
       name: "标签 - 多标签序列",
       dsl: "rule program: statement*\nrule statement: @lhs identifier \"=\" @rhs expr",
       expected_rules: ["program", "statement"],
-      expected_patterns: Map::from_array([("program", "Repeat"), ("statement", "Seq")]),
+      expected_patterns: Map::from_array([
+        ("program", "Repeat"),
+        ("statement", "Seq"),
+      ]),
     },
     {
       name: "命名字段",
@@ -198,7 +215,9 @@ fn get_parse_test_cases() -> Array[TestCase] {
     {
       name: "复杂表达式语法",
       dsl: "rule expression: additive\nrule additive: multiplicative ((\"+\" | \"-\") multiplicative)*\nrule multiplicative: primary ((\"*\" | \"/\") primary)*\nrule primary: number | identifier | \"(\" expression \")\"\nrule number: /\\d+(\\.\\d+)?/\nrule identifier: /[a-zA-Z_]\\w*/",
-      expected_rules: ["expression", "additive", "multiplicative", "primary", "number", "identifier"],
+      expected_rules: [
+        "expression", "additive", "multiplicative", "primary", "number", "identifier",
+      ],
       expected_patterns: Map::from_array([
         ("expression", "RuleRef"),
         ("additive", "Seq"),
@@ -274,12 +293,12 @@ test "parse_error_handling" {
     ("空规则体", "rule empty: ", true),
     ("无效标签 @", "rule expr: @", true),
     ("未闭合括号", "rule expr: (number", true),
-    ("空字面量", "rule empty: \"\"", false),       // 空字面量合法
+    ("空字面量", "rule empty: \"\"", false), // 空字面量合法
     ("重复规则名", "rule expr: number\nrule expr: string", false), // 后者覆盖前者
-    ("未引用规则", "rule expr: undefined_rule", false),            // 无引用校验
-    ("无效正则", "rule num: /unclosed", false),                    // 无正则校验
-    ("无效优先级", "precedence invalid plus", false),              // 跳过处理
-    ("后缀叠加", "rule expr: number*+", false),                    // * 消耗后 + 单独报错
+    ("未引用规则", "rule expr: undefined_rule", false), // 无引用校验
+    ("无效正则", "rule num: /unclosed", false), // 无正则校验
+    ("无效优先级", "precedence invalid plus", false), // 跳过处理
+    ("后缀叠加", "rule expr: number*+", false), // * 消耗后 + 单独报错
   ]
   for c in cases {
     let (description, dsl, expect_error) = c
@@ -290,11 +309,10 @@ test "parse_error_handling" {
         }
         assert_true(g.rules.length() >= 0)
       }
-      Error(err) => {
+      Error(err) =>
         if not(expect_error) {
           abort("意外失败: \{description} — \{err.message}")
         }
-      }
     }
   }
 }
@@ -303,8 +321,8 @@ test "parse_error_handling" {
 test "parse_error_locations" {
   let cases = [
     ("rule expr: num |", 1, 16), // | 后无分支
-    ("rule : num", 1, 6),        // 缺少规则名
-  ]
+    ("rule : num", 1, 6),
+  ] // 缺少规则名
   for c in cases {
     let (dsl, expected_line, expected_col) = c
     match parse_grammar(dsl) {
@@ -342,8 +360,7 @@ test "parse_rule_is_named" {
 ///|
 // 验证顶层 precedence 声明被正确解析并存入 grammar.precedences
 test "parse_precedences" {
-  let dsl =
-    "precedence left plus, minus\nprecedence right power\nrule plus: \"+\"\nrule minus: \"-\"\nrule power: \"^\""
+  let dsl = "precedence left plus, minus\nprecedence right power\nrule plus: \"+\"\nrule minus: \"-\"\nrule power: \"^\""
   match parse_grammar(dsl) {
     Error(err) => abort(err.message)
     Success(g) => {
