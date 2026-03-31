@@ -406,3 +406,47 @@ test "augment_grammar / TerminalDef 类型正确" {
     None => fail("缺少 AnyChar terminal")
   }
 }
+
+///|
+test "augment_grammar / extras 透传到 AugmentedGrammar" {
+  let dsl = "start s\nrule s: \"a\"\nextras [/\\s+/]"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  assert_eq(g.extras.length(), 1)
+  let ag = augment_grammar(g)
+  assert_eq(ag.extras.length(), 1)
+  // extras terminal 应被注册到 terminal_patterns
+  let tid = ag.extras[0]
+  assert_eq(ag.terminal_patterns.get(tid), Some(TerminalDef::Regex("\\s+")))
+}
+
+///|
+test "augment_grammar / 多个 extras 注册为独立 terminal" {
+  let dsl = "start s\nrule s: \"a\"\nextras [/\\s+/, /\\t+/]"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  assert_eq(ag.extras.length(), 2)
+}
+
+///|
+test "augment_grammar / extras 不重复注册同一 terminal" {
+  // extras 里和 rule 里都用了 /\\s+/，terminal ID 应相同
+  let dsl = "start s\nrule s: /\\s+/\nextras [/\\s+/]"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  // extras[0] 的 ID 应和 rule body 里的 ID 相同（幂等注册）
+  let extras_tid = ag.extras[0]
+  let rule_tid = match ag.terminals.get("re:\\s+") {
+    Some(id) => id
+    None => fail("缺少 re:\\s+ terminal")
+  }
+  assert_eq(extras_tid, rule_tid)
+}

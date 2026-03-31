@@ -164,7 +164,9 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
       | '.'
       | '{'
       | '}'
-      | ',' => {
+      | ','
+      | '['
+      | ']' => {
         tokens.push({
           token: Token::Symbol(c.to_string()),
           location: { line, column },
@@ -204,7 +206,8 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           word == "precedence" ||
           word == "left" ||
           word == "right" ||
-          word == "prec" {
+          word == "prec" ||
+          word == "extras" {
           tokens.push({
             token: Token::Keyword(word),
             location: { line, column: start_col },
@@ -249,7 +252,9 @@ fn is_symbol(c : Char) -> Bool {
     | '.'
     | '{'
     | '}'
-    | ',' => true
+    | ','
+    | '['
+    | ']' => true
     _ => false
   }
 }
