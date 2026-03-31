@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-`tablegen/` 是 MoonParse 的**编译时核心**，对应 Tree-Sitter 的 `tree-sitter generate` 命令。
+`tablegen/` 是 MoonParse 的**编译时核心**。
 
 - **输入**：`grammar/` 包产出的 `Grammar` AST
 - **输出**：序列化的 `ParseTable`（`.parse_table` 文件 / 内存字节）
@@ -426,14 +426,16 @@ pub fn generate_parse_table(
 ### Phase 1（核心路径，无词法器）
 目标：能为无 Regex 的纯 Literal 语法生成正确 LALR 表
 
-- [ ] `types.mbt` — 完整类型定义
-- [ ] `normalize.mbt` — Grammar → AugmentedGrammar（不含 Regex）
-- [ ] `sets.mbt` — FIRST / FOLLOW / nullable
-- [ ] `items.mbt` — LR(0) 项目集构建
-- [ ] `lalr.mbt` — LALR(1) 表
-- [ ] `conflicts.mbt` — 优先级过滤 + 冲突报告
-- [ ] `serialize.mbt` — JSON 序列化（调试用）
+- [x] `types.mbt` — 完整类型定义
+- [x] `normalize.mbt` — Grammar → AugmentedGrammar（不含 Regex）
+- [x] `sets.mbt` — FIRST / FOLLOW / nullable
+- [x] `items.mbt` — LR(0) 项目集构建
+- [x] `lalr.mbt` — LALR(1) 表
+- [x] `conflicts.mbt` — 优先级过滤 + 冲突报告
+- [x] `serialize.mbt` — JSON 序列化（调试用）
+- [x] `tablegen.mbt` — `generate_parse_table()` 一键入口
 - [ ] `tablegen_test.mbt` — 用算术表达式文法（`E → E + T | T`）端到端验证
+- [ ] `serialize_test.mbt` — `table_to_json()` 输出格式验证
 
 ### Phase 2（词法器集成）
 - [ ] `lexer.mbt` — NFA 构造（Thompson）
@@ -455,3 +457,121 @@ pub fn generate_parse_table(
 - 词法优先：Regex 冲突按 DFA 最长匹配 + 声明顺序决定，暂不支持动态优先词法
 - SPPF：歧义时当前取优先级最高路径，不保留完整歧义森林（后续 runtime/ 阶段决策）
 - 增量编译：每次全量重新生成表。表缓存（基于语法哈希）可在 CLI 层实现
+
+types.mbt — 所有公开类型定义（Symbol、BodySymbol、Production、ParseTable 等，~200 行）
+normalize.mbt — augment_grammar()：Grammar → AugmentedGrammar（~300 行）
+sets.mbt — first_set() / follow_set() / nullable()（~250 行）
+items.mbt — closure() / goto_set() / build_item_sets()（~350 行）
+lalr.mbt — build_lalr_table()（~300 行）
+conflicts.mbt — 优先级过滤 + 冲突报告（~200 行）
+serialize.mbt — JSON 序列化（Phase 1 只需 JSON）（~150 行）
+
+---
+
+## Phase 1 代码审查报告
+
+> 审查时间：代码提交至 `37da446` 后。96/96 单元测试通过，`moon build` 干净。
+
+### 缺失文件（硬性阻塞）
+
+| 文件 | 状态 | 说明 |
+|------|------|------|
+| `tablegen.mbt` | ❌ 未创建 | `generate_parse_table()` 一键入口，Phase 1 最终对外 API 无法调用 |
+| `tablegen_test.mbt` | ❌ 未创建 | design.md Phase 1 目标"用算术表达式文法端到端验证"尚未完成 |
+| `serialize_test.mbt` | ❌ 未创建 | `table_to_json()` 零测试覆盖；输出格式是否正确无法验证 |
+
+### 功能缺陷（影响正确性）
+
+#### 1. 顶层 `grammar.precedences` 未被 normalize.mbt 消费
+
+`grammar/types.mbt` 中 `Grammar.precedences : Array[PrecDecl]` 存储用户写的顶层优先级声明（如 `precedence left "+", "-"`）。`normalize.mbt` 的 `augment_grammar()` **完全不读取** `grammar.precedences`——只有内联 `Prec(level, kind, inner)` 模式产生式才携带 prec/assoc。
+
+**后果**：用顶层声明定义优先级的语法，冲突解决时所有优先级均为 `None`，退化为 `Ambiguous`。
+
+**修复方向**：在 `augment_grammar()` 步骤 4 展开规则时，将 `grammar.precedences` 转换为 `(Terminal, Int, PrecKind)` 的查找表，并在 `add_production()` 时主动附加 prec/assoc（若产生式 body 含对应终结符）。或者修改 `augment_grammar` 返回 `AugmentedGrammar` 时额外携带 `prec_table : Map[TerminalId, (Int, PrecKind)]`，由 `resolve_conflicts` 在查找 `shift_prec_for` 时优先使用。
+
+#### 2. `AugmentedGrammar.extras` 始终为空
+
+`normalize.mbt` 第 5 步硬编码 `extras: []`，注释写明"grammar/ 层目前未建模 extras"。但 `Grammar` 类型**实际上没有** `extras` 字段——grammar DSL 层确实未暴露此概念。
+
+**后果**：目前无 extras 机制，空白符必须在每条产生式中手写可选空白，无法生成支持跳过空白的解析器。
+
+**修复方向（Phase 2 前置）**：在 `Grammar` 中添加 `extras : Array[Pattern]`，parser.mbt 解析 `extras [...]` 声明；`augment_grammar()` 将 extras Pattern 注册为终结符后填入 `AugmentedGrammar.extras`。
+
+#### 3. `is_named` 使用名称启发式而非来源信息
+
+`lalr.mbt` step 3（`symbol_metadata` 构建）用以下启发式判断：
+
+```moonbit
+let is_named = name != "$accept" && not(name.has_prefix("_"))
+```
+
+但 `NormCtx.nt_metas : Array[SymbolMeta]` 在 `normalize.mbt` 中已按 `rule.is_named` 准确填充，该信息在返回 `AugmentedGrammar` 时**被丢弃**——`AugmentedGrammar` 结构体没有 `nt_metas` 字段。
+
+**后果**：以 `_` 开头但实际是命名节点的规则、以及不以 `_` 开头但应匿名的辅助规则，`is_named` 都会错误。这直接影响运行时 AST 节点类型的可见性。
+
+**修复方向**：在 `AugmentedGrammar` 中增加 `nt_metas : Array[SymbolMeta]`（indexed by NonTerminalId），由 `normalize.mbt` 从 `ctx.nt_metas` 填入；`lalr.mbt` step 3 改为直接从 `grammar.nt_metas` 读取。
+
+### 接口不一致
+
+#### 4. design.md 公开 API 与实现签名不符
+
+design.md "公开 API 汇总"中写：
+
+```moonbit
+pub fn build_item_sets(grammar : AugmentedGrammar)
+  -> (Array[Set[LRItem]], Map[(StateId, Symbol), StateId])
+```
+
+实际实现将 item_sets 和 goto_map 拆分为两个独立函数：
+
+```moonbit
+pub fn build_item_sets(grammar : AugmentedGrammar) -> Array[Set[LRItem]]
+pub fn build_goto_map(grammar : AugmentedGrammar, item_sets : Array[Set[LRItem]]) -> Map[(StateId, Symbol), StateId]
+```
+
+这是合理的设计拆分，但 `generate_parse_table()` 需调用两步，design.md API 汇总需更新。
+
+#### 5. Phase 1 实现阶段 checklist 全部未勾选
+
+design.md "Phase 1"下 7 个 `[ ]` 均未更新为 `[x]`，但代码已全部实现并测试通过。
+
+### serialize.mbt 输出缺失字段
+
+#### 6. `table_to_json()` 缺少 `terminal_patterns`
+
+JSON 输出有 `symbol_metadata`（非终结符名称）但无终结符元数据。工具链读取 JSON 后无法得知 `TerminalId 3` 对应哪个字面量或正则，无法重建词法器。
+
+**修复方向**：在 `table_to_json()` 输出增加 `"terminal_patterns"` 数组：
+
+```json
+"terminal_patterns": [
+  { "id": 0, "type": "literal", "value": "+" },
+  { "id": 1, "type": "regex",   "value": "[0-9]+" }
+]
+```
+
+需为 `ParseTable` 增加 `terminal_patterns : Map[TerminalId, TerminalDef]` 字段（或由 `generate_parse_table()` 从 `AugmentedGrammar.terminal_patterns` 传入）。
+
+#### 7. `table_to_json()` 缺少 `ConflictReport` 输出
+
+`resolve_conflicts()` 返回 `(ParseTable, Array[ConflictReport])`，但 `table_to_json()` 只接受 `ParseTable`，冲突报告无法序列化到 JSON。
+
+**修复方向**：新增 `table_and_conflicts_to_json(table, reports)` 或在 JSON 顶层加 `"conflicts"` 字段（可选参数）。
+
+### 次要问题（不阻塞 MVP）
+
+| # | 位置 | 描述 |
+|---|------|------|
+| 8 | `conflicts.mbt: shift_prec_for()` | O(P×B) 全产生式扫描；大型语法下为二次方复杂度，可改为预构建 `Map[TerminalId, Int]` |
+| 9 | `normalize.mbt: Not/And` | 注释标明"Phase 1 忽略"，但 design.md §1 展开规则表中写了"生成前瞻约束"，文档与实现不符，需修正文档 |
+| 10 | `items.mbt: item_set_key()` | 用字符串拼接作 Map key（`"\{prod},\{dot};..."`），性能差且有 ID 碰撞理论风险；建议改为 `Array[LRItem]` Hash |
+
+### 小结：完成 Phase 1 MVP 的最小工作量
+
+1. **必做**：创建 `tablegen.mbt`，实现 `generate_parse_table()`（约 20 行流水线胶水代码）
+2. **必做**：创建 `tablegen_test.mbt`，编写算术表达式文法端到端测试（验证状态数、shift/reduce 动作、冲突解决）
+3. **必做**：创建 `serialize_test.mbt`，验证 `table_to_json()` 输出的关键字段
+4. **建议**：将 `AugmentedGrammar` 增加 `nt_metas` 字段修复 `is_named` bug（5 行改动）
+5. **建议**：`table_to_json()` 补充 `terminal_patterns` 输出
+6. **推迟至 Phase 2**：顶层 `grammar.precedences`、extras 机制、二进制序列化
