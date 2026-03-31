@@ -66,10 +66,10 @@ test "Literal 精确接受且拒绝前缀/超长/无关词" {
   let dfa = build_lexer_dfa(aug, table)
   let tid = term_id(aug, "lit:if")
   assert_eq(dfa_run(dfa, "if"), Some(tid))
-  assert_eq(dfa_run(dfa, ""), None)       // 空串：start 状态不接受
-  assert_eq(dfa_run(dfa, "i"), None)      // 前缀：接受状态在第 2 跳后
-  assert_eq(dfa_run(dfa, "iff"), None)    // 超长：接受后无 transition
-  assert_eq(dfa_run(dfa, "hello"), None)  // 无关词
+  assert_eq(dfa_run(dfa, ""), None) // 空串：start 状态不接受
+  assert_eq(dfa_run(dfa, "i"), None) // 前缀：接受状态在第 2 跳后
+  assert_eq(dfa_run(dfa, "iff"), None) // 超长：接受后无 transition
+  assert_eq(dfa_run(dfa, "hello"), None) // 无关词
 }
 
 ///|
@@ -96,8 +96,8 @@ test "AnyChar 接受任意单字符，拒绝空串和多字符" {
   assert_eq(dfa_run(dfa, "a"), Some(tid))
   assert_eq(dfa_run(dfa, "Z"), Some(tid))
   assert_eq(dfa_run(dfa, "0"), Some(tid))
-  assert_eq(dfa_run(dfa, ""), None)    // 空串不接受
-  assert_eq(dfa_run(dfa, "ab"), None)  // 接受一字符后无 transition
+  assert_eq(dfa_run(dfa, ""), None) // 空串不接受
+  assert_eq(dfa_run(dfa, "ab"), None) // 接受一字符后无 transition
 }
 
 // ─── parse_char_class_trans ──────────────────────────────────────────────────
@@ -112,7 +112,7 @@ test "Regex 字符类 [0-9]+ 接受数字序列" {
   assert_eq(dfa_run(dfa, "999"), Some(tid))
   assert_eq(dfa_run(dfa, ""), None)
   assert_eq(dfa_run(dfa, "abc"), None)
-  assert_eq(dfa_run(dfa, "1a"), None)  // 数字后跟非数字，DFA 无 transition
+  assert_eq(dfa_run(dfa, "1a"), None) // 数字后跟非数字，DFA 无 transition
 }
 
 ///|
@@ -121,7 +121,7 @@ test "Regex 字符类 [a-z]+ 接受小写字母序列" {
   assert_true(dfa_run(dfa, "hello") is Some(_))
   assert_true(dfa_run(dfa, "x") is Some(_))
   assert_eq(dfa_run(dfa, ""), None)
-  assert_eq(dfa_run(dfa, "Hello"), None)  // 'H' 不在字母表中
+  assert_eq(dfa_run(dfa, "Hello"), None) // 'H' 不在字母表中
   assert_eq(dfa_run(dfa, "0"), None)
 }
 
@@ -156,7 +156,7 @@ test "Regex 量词 * — 起始态即接受，接受零或多个" {
 ///|
 test "Regex 量词 + — 起始态不接受，需至少一个字符" {
   let dfa = lexer_for("start s\nrule s: /a+/")
-  assert_eq(dfa_run(dfa, ""), None)  // 空串：start 状态不接受
+  assert_eq(dfa_run(dfa, ""), None) // 空串：start 状态不接受
   assert_true(dfa_run(dfa, "a") is Some(_))
   assert_true(dfa_run(dfa, "aaa") is Some(_))
 }
@@ -164,9 +164,9 @@ test "Regex 量词 + — 起始态不接受，需至少一个字符" {
 ///|
 test "Regex 量词 ? — 接受零或恰好一个字符" {
   let dfa = lexer_for("start s\nrule s: /a?/")
-  assert_true(dfa_run(dfa, "") is Some(_))   // 空串接受（start 可选）
-  assert_true(dfa_run(dfa, "a") is Some(_))  // 单字符接受
-  assert_eq(dfa_run(dfa, "aa"), None)         // 接受一个 'a' 后无 transition
+  assert_true(dfa_run(dfa, "") is Some(_)) // 空串接受（start 可选）
+  assert_true(dfa_run(dfa, "a") is Some(_)) // 单字符接受
+  assert_eq(dfa_run(dfa, "aa"), None) // 接受一个 'a' 后无 transition
 }
 
 // ─── 交替 ─────────────────────────────────────────────────────────────────────
@@ -176,9 +176,9 @@ test "Regex 交替 a|b — 接受各分支，拒绝拼接和其他字符" {
   let dfa = lexer_for("start s\nrule s: /a|b/")
   assert_true(dfa_run(dfa, "a") is Some(_))
   assert_true(dfa_run(dfa, "b") is Some(_))
-  assert_eq(dfa_run(dfa, "c"), None)   // 'c' 不在字母表
-  assert_eq(dfa_run(dfa, "ab"), None)  // 接受后无 transition
-  assert_eq(dfa_run(dfa, ""), None)    // 空串不接受
+  assert_eq(dfa_run(dfa, "c"), None) // 'c' 不在字母表
+  assert_eq(dfa_run(dfa, "ab"), None) // 接受后无 transition
+  assert_eq(dfa_run(dfa, ""), None) // 空串不接受
 }
 
 // ─── terminal_priority ───────────────────────────────────────────────────────

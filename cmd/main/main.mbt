@@ -14,7 +14,9 @@ fn print_conflicts(reports : Array[@tablegen.ConflictReport]) -> Unit {
   if reports.length() == 0 {
     return
   }
-  println("── 冲突报告（\{reports.length()} 条）────────────────────")
+  println(
+    "── 冲突报告（\{reports.length()} 条）────────────────────",
+  )
   for r in reports {
     let label = severity_label(r.severity)
     let msg = match r.severity {
@@ -67,7 +69,9 @@ fn main {
   // ── 2. 语义校验（警告性，不阻断）────────────────────────────────────────
   let errors = @grammar.validate_grammar(grammar)
   if errors.length() > 0 {
-    println("── 校验警告（\{errors.length()} 条）────────────────────")
+    println(
+      "── 校验警告（\{errors.length()} 条）────────────────────",
+    )
     for e in errors {
       println("  [warn] \{e.to_string()}")
     }
@@ -87,6 +91,8 @@ fn main {
   print_conflicts(reports)
 
   // ── 5. 输出 JSON 解析表 ──────────────────────────────────────────────────
-  println("── 解析表 JSON ─────────────────────────────────────────")
+  println(
+    "── 解析表 JSON ─────────────────────────────────────────",
+  )
   println(@tablegen.table_to_json(table))
 }
