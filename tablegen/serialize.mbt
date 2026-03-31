@@ -285,11 +285,12 @@ fn BinWriter::write_u32_le(self : BinWriter, v : Int) -> Unit {
 }
 
 ///|
-/// 写入字符串：先写 u16 字节数（小端），再逐字符写低 8 位字节
+/// 写入字符串：先写 u16 字符数（小端），再逐字符写 UTF-16 LE（2 字节/字符）
+/// 覆盖完整 BMP（U+0000~U+FFFF），包括 CJK；字符数上限 65535
 fn BinWriter::write_str(self : BinWriter, s : String) -> Unit {
   self.write_u16_le(s.length())
   for ch in s {
-    self.write_u8(ch.to_int() & 0xFF)
+    self.write_u16_le(ch.to_int())
   }
 }
 
@@ -372,15 +373,15 @@ fn BinReader::read_u32_le(self : BinReader) -> Int raise BinError {
 }
 
 ///|
-/// 读取字符串：先读 u16 字节数（小端），再逐字节还原为字符（低 8 位即 Unicode 码点）
+/// 读取字符串：先读 u16 字符数（小端），再逐字符读 UTF-16 LE（2 字节/字符）
 fn BinReader::read_str(self : BinReader) -> String raise BinError {
   let n = self.read_u16_le()
-  let mut s = ""
+  let buf = StringBuilder::new()
   for _ in 0..<n {
-    let b = self.read_u8()
-    s = s + b.unsafe_to_char().to_string()
+    let code = self.read_u16_le()
+    buf.write_char(code.unsafe_to_char())
   }
-  s
+  buf.to_string()
 }
 
 // ─── 领域类型序列化辅助 ────────────────────────────────────────────────────────
