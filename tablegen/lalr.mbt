@@ -106,8 +106,13 @@ pub fn build_lalr_table(
     is_named: false,
   })
   for name, id in grammar.nonterminals {
-    // $accept 及内部辅助规则保持 is_named: false；其余规则标记为 true
-    let is_named = name != "$accept" && not(name.has_prefix("_"))
+    // grammar.nt_metas 已由 normalize.mbt 按 rule.is_named 准确填充，直接读取
+    // （趋吧：$accept 和辅助 NT 名称以 _ 开头，is_named 已称 false）
+    let is_named = if id < grammar.nt_metas.length() {
+      grammar.nt_metas[id].is_named
+    } else {
+      false
+    }
     symbol_metadata[id] = { name, is_named }
   }
 

@@ -430,5 +430,6 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     terminal_patterns: ctx.term_patterns,
     extras: [],
     prec_table,
+    nt_metas: ctx.nt_metas,
   }
 }

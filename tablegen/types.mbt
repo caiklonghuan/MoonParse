@@ -77,6 +77,8 @@ pub(all) struct AugmentedGrammar {
   extras : Array[TerminalId]
   /// 终结符优先级表，从顶层 precedence 声明提取（TerminalId → (level, kind)）
   prec_table : Map[TerminalId, (Int, @grammar.PrecKind)]
+  /// 非终结符元数据，下标即 NonTerminalId（从 normalize 的 NormCtx.nt_metas 填入）
+  nt_metas : Array[SymbolMeta]
 }
 
 ///|
