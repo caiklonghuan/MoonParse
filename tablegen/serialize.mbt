@@ -383,6 +383,325 @@ fn BinReader::read_str(self : BinReader) -> String raise BinError {
   s
 }
 
+// ─── 领域类型序列化辅助 ────────────────────────────────────────────────────────
+//
+// tag 编码（全局固定）：
+//   Symbol:      0=Terminal  1=NonTerminal  2=EndOfInput
+//   Action:      0=Shift     1=Reduce       2=Accept
+//   TerminalDef: 0=Literal   1=Regex        2=AnyChar
+//   PrecKind:    0=Left      1=Right        2=Nonassoc  3=Dynamic
+
+// ── Symbol ───────────────────────────────────────────────────────────────────
+
+///|
+fn write_symbol(w : BinWriter, sym : Symbol) -> Unit {
+  match sym {
+    Terminal(id) => {
+      w.write_u8(0)
+      w.write_u16_le(id)
+    }
+    NonTerminal(id) => {
+      w.write_u8(1)
+      w.write_u16_le(id)
+    }
+    EndOfInput => {
+      w.write_u8(2)
+      w.write_u16_le(0)
+    }
+  }
+}
+
+///|
+fn read_symbol(r : BinReader) -> Symbol raise BinError {
+  let tag = r.read_u8()
+  let id = r.read_u16_le()
+  match tag {
+    0 => Terminal(id)
+    1 => NonTerminal(id)
+    2 => EndOfInput
+    _ => raise InvalidData("symbol tag=\{tag}")
+  }
+}
+
+// ── Action ───────────────────────────────────────────────────────────────────
+
+///|
+fn write_action(w : BinWriter, act : Action) -> Unit {
+  match act {
+    Shift(s) => {
+      w.write_u8(0)
+      w.write_u16_le(s)
+    }
+    Reduce(p) => {
+      w.write_u8(1)
+      w.write_u16_le(p)
+    }
+    Accept => {
+      w.write_u8(2)
+      w.write_u16_le(0)
+    }
+  }
+}
+
+///|
+fn read_action(r : BinReader) -> Action raise BinError {
+  let tag = r.read_u8()
+  let target = r.read_u16_le()
+  match tag {
+    0 => Shift(target)
+    1 => Reduce(target)
+    2 => Accept
+    _ => raise InvalidData("action tag=\{tag}")
+  }
+}
+
+// ── TerminalDef ──────────────────────────────────────────────────────────────
+
+///|
+fn write_terminal_def(w : BinWriter, td : TerminalDef) -> Unit {
+  match td {
+    Literal(s) => {
+      w.write_u8(0)
+      w.write_str(s)
+    }
+    Regex(re) => {
+      w.write_u8(1)
+      w.write_str(re)
+    }
+    AnyChar => w.write_u8(2)
+  }
+}
+
+///|
+fn read_terminal_def(r : BinReader) -> TerminalDef raise BinError {
+  let tag = r.read_u8()
+  match tag {
+    0 => Literal(r.read_str())
+    1 => Regex(r.read_str())
+    2 => AnyChar
+    _ => raise InvalidData("terminal_def tag=\{tag}")
+  }
+}
+
+// ── BodySymbol ───────────────────────────────────────────────────────────────
+
+///|
+fn write_body_symbol(w : BinWriter, bs : BodySymbol) -> Unit {
+  write_symbol(w, bs.symbol)
+  match bs.field_name {
+    None => w.write_u8(0)
+    Some(name) => {
+      w.write_u8(1)
+      w.write_str(name)
+    }
+  }
+}
+
+///|
+fn read_body_symbol(r : BinReader) -> BodySymbol raise BinError {
+  let symbol = read_symbol(r)
+  let has_field = r.read_u8()
+  let field_name = if has_field == 1 { Some(r.read_str()) } else { None }
+  { symbol, field_name }
+}
+
+// ── Production ───────────────────────────────────────────────────────────────
+
+///|
+fn write_production(w : BinWriter, prod : Production) -> Unit {
+  w.write_u16_le(prod.id)
+  w.write_u16_le(prod.head)
+  w.write_u16_le(prod.body.length())
+  for bs in prod.body {
+    write_body_symbol(w, bs)
+  }
+  match prod.prec {
+    None => w.write_u8(0)
+    Some(p) => {
+      w.write_u8(1)
+      w.write_u32_le(p)
+    }
+  }
+  match prod.assoc {
+    None => w.write_u8(0)
+    Some(k) => {
+      w.write_u8(1)
+      let tag = match k {
+        @grammar.PrecKind::Left => 0
+        @grammar.PrecKind::Right => 1
+        @grammar.PrecKind::Nonassoc => 2
+        @grammar.PrecKind::Dynamic => 3
+      }
+      w.write_u8(tag)
+    }
+  }
+  w.write_str(prod.rule_name)
+}
+
+///|
+fn read_production(r : BinReader) -> Production raise BinError {
+  let id = r.read_u16_le()
+  let head = r.read_u16_le()
+  let body_len = r.read_u16_le()
+  let body : Array[BodySymbol] = []
+  for _ in 0..<body_len {
+    body.push(read_body_symbol(r))
+  }
+  let has_prec = r.read_u8()
+  let prec = if has_prec == 1 { Some(r.read_u32_le()) } else { None }
+  let has_assoc = r.read_u8()
+  let assoc : @grammar.PrecKind? = if has_assoc == 1 {
+    let tag = r.read_u8()
+    let k : @grammar.PrecKind = match tag {
+      0 => @grammar.PrecKind::Left
+      1 => @grammar.PrecKind::Right
+      2 => @grammar.PrecKind::Nonassoc
+      3 => @grammar.PrecKind::Dynamic
+      _ => raise InvalidData("prec_kind tag=\{tag}")
+    }
+    Some(k)
+  } else {
+    None
+  }
+  let rule_name = r.read_str()
+  { id, head, body, prec, assoc, rule_name }
+}
+
+// ── SymbolMeta ───────────────────────────────────────────────────────────────
+
+///|
+fn write_symbol_meta(w : BinWriter, meta : SymbolMeta) -> Unit {
+  w.write_u8(if meta.is_named { 1 } else { 0 })
+  w.write_str(meta.name)
+}
+
+///|
+fn read_symbol_meta(r : BinReader) -> SymbolMeta raise BinError {
+  let is_named = r.read_u8() != 0
+  let name = r.read_str()
+  { name, is_named }
+}
+
+// ── DfaState ─────────────────────────────────────────────────────────────────
+
+///|
+fn write_dfa_state(w : BinWriter, state : DfaState) -> Unit {
+  w.write_u16_le(state.id)
+  // transitions: Map[Char, DfaStateId] — 收集后写 count + 条目
+  let trans_entries : Array[(Char, DfaStateId)] = []
+  for ch, tgt in state.transitions {
+    trans_entries.push((ch, tgt))
+  }
+  w.write_u16_le(trans_entries.length())
+  for entry in trans_entries {
+    let (ch, tgt) = entry
+    w.write_u16_le(ch.to_int())
+    w.write_u16_le(tgt)
+  }
+  match state.accept {
+    None => w.write_u8(0)
+    Some(t) => {
+      w.write_u8(1)
+      w.write_u16_le(t)
+    }
+  }
+}
+
+///|
+fn read_dfa_state(r : BinReader) -> DfaState raise BinError {
+  let id = r.read_u16_le()
+  let trans_count = r.read_u16_le()
+  let transitions : Map[Char, DfaStateId] = Map::new()
+  for _ in 0..<trans_count {
+    let ch_code = r.read_u16_le()
+    let tgt = r.read_u16_le()
+    transitions.set(ch_code.unsafe_to_char(), tgt)
+  }
+  let has_accept = r.read_u8()
+  let accept = if has_accept == 1 { Some(r.read_u16_le()) } else { None }
+  { id, transitions, accept }
+}
+
+// ── LexerDfa ─────────────────────────────────────────────────────────────────
+
+///|
+fn write_lexer_dfa(w : BinWriter, dfa : LexerDfa) -> Unit {
+  w.write_u32_le(dfa.states.length())
+  for state in dfa.states {
+    write_dfa_state(w, state)
+  }
+  w.write_u16_le(dfa.start)
+  // valid_tokens: Map[StateId, Array[TerminalId]]
+  let vt_entries : Array[(StateId, Array[TerminalId])] = []
+  for state_id, tids in dfa.valid_tokens {
+    vt_entries.push((state_id, tids))
+  }
+  w.write_u32_le(vt_entries.length())
+  for entry in vt_entries {
+    let (state_id, tids) = entry
+    w.write_u16_le(state_id)
+    w.write_u16_le(tids.length())
+    for tid in tids {
+      w.write_u16_le(tid)
+    }
+  }
+}
+
+///|
+fn read_lexer_dfa(r : BinReader) -> LexerDfa raise BinError {
+  let states_count = r.read_u32_le()
+  let states : Array[DfaState] = []
+  for _ in 0..<states_count {
+    states.push(read_dfa_state(r))
+  }
+  let start = r.read_u16_le()
+  let vt_count = r.read_u32_le()
+  let valid_tokens : Map[StateId, Array[TerminalId]] = Map::new()
+  for _ in 0..<vt_count {
+    let state_id = r.read_u16_le()
+    let tid_count = r.read_u16_le()
+    let tids : Array[TerminalId] = []
+    for _ in 0..<tid_count {
+      tids.push(r.read_u16_le())
+    }
+    valid_tokens.set(state_id, tids)
+  }
+  { states, start, valid_tokens }
+}
+
+// ── terminal_patterns ────────────────────────────────────────────────────────
+
+///|
+fn write_terminal_patterns(
+  w : BinWriter,
+  patterns : Map[TerminalId, TerminalDef],
+) -> Unit {
+  let entries : Array[(TerminalId, TerminalDef)] = []
+  for tid, td in patterns {
+    entries.push((tid, td))
+  }
+  w.write_u32_le(entries.length())
+  for entry in entries {
+    let (tid, td) = entry
+    w.write_u16_le(tid)
+    write_terminal_def(w, td)
+  }
+}
+
+///|
+fn read_terminal_patterns(
+  r : BinReader,
+) -> Map[TerminalId, TerminalDef] raise BinError {
+  let count = r.read_u32_le()
+  let patterns : Map[TerminalId, TerminalDef] = Map::new()
+  for _ in 0..<count {
+    let tid = r.read_u16_le()
+    let td = read_terminal_def(r)
+    patterns.set(tid, td)
+  }
+  patterns
+}
+
 // ─── 公开 API（Phase 2 实现，当前为桩） ──────────────────────────────────────
 
 ///|
