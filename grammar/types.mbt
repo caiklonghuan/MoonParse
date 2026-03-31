@@ -9,7 +9,7 @@ pub(all) enum PrecKind {
   Nonassoc
   /// 运行时动态优先级
   Dynamic
-}
+} derive(Eq, Show)
 
 ///|
 /// 顶层 `precedence` 声明（一条声明对应一个优先级层级）
@@ -57,6 +57,7 @@ pub(all) enum Pattern {
   Prec(Int, PrecKind, Pattern)
 }
 
+///|
 /// Rule 表示一条语法规则
 pub(all) struct Rule {
   /// 规则名称
@@ -67,6 +68,7 @@ pub(all) struct Rule {
   is_named : Bool
 }
 
+///|
 /// Grammar 表示整个语法，包含起始规则和全部规则映射
 pub(all) struct Grammar {
   /// 起始规则名称
@@ -77,6 +79,7 @@ pub(all) struct Grammar {
   precedences : Array[PrecDecl]
 }
 
+///|
 /// 将需要括号的子模式包裹起来
 fn wrap_if_complex(p : Pattern) -> String {
   match p {
@@ -85,6 +88,7 @@ fn wrap_if_complex(p : Pattern) -> String {
   }
 }
 
+///|
 /// 将 Pattern 渲染为 DSL 字符串，自动处理括号优先级
 pub fn pattern_to_string(pattern : Pattern) -> String {
   match pattern {
@@ -142,6 +146,7 @@ pub fn pattern_to_string(pattern : Pattern) -> String {
   }
 }
 
+///|
 pub fn Pattern::to_string(self : Pattern) -> String {
   pattern_to_string(self)
 }
