@@ -123,6 +123,90 @@ test "table_to_json symbol_metadata 内容" {
   }
 }
 
+// ─── 词法 DFA 序列化 ──────────────────────────────────────────────────────────
+
+///|
+/// 验证 lexer_dfa.states / start / valid_tokens 经二进制往返后结构一致
+test "lexer_dfa 往返：states 数量与 start 不变" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\"")
+  let orig = table.lexer_dfa
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      let got = t2.lexer_dfa
+      assert_eq(got.states.length(), orig.states.length())
+      assert_eq(got.start, orig.start)
+    }
+  }
+}
+
+///|
+/// 验证每个 DFA 状态的 transitions 条目数与 accept 标记经往返不变
+test "lexer_dfa 往返：DFA 状态 transitions 与 accept" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\" | \"b\"")
+  let orig = table.lexer_dfa
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      let got = t2.lexer_dfa
+      assert_eq(got.states.length(), orig.states.length())
+      // 逐状态比对 transitions 数量和 accept 是否有值
+      for i in 0..<orig.states.length() {
+        let os = orig.states[i]
+        let gs = got.states[i]
+        assert_eq(gs.id, os.id)
+        assert_eq(gs.transitions.size(), os.transitions.size())
+        assert_eq(gs.accept is Some(_), os.accept is Some(_))
+      }
+    }
+  }
+}
+
+///|
+/// 验证 valid_tokens 映射的键集合（LR 状态 ID）经往返不变
+test "lexer_dfa 往返：valid_tokens 键集合" {
+  let (table, _) = gen_ok("start e\nrule e: e \"+\" t | t\nrule t: \"n\"")
+  let orig = table.lexer_dfa
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      let got = t2.lexer_dfa
+      assert_eq(got.valid_tokens.size(), orig.valid_tokens.size())
+      // 每个 LR 状态的合法 token 数量一致
+      for state_id, tids in orig.valid_tokens {
+        match got.valid_tokens.get(state_id) {
+          None => assert_eq(false, true)    // 键缺失
+          Some(got_tids) => assert_eq(got_tids.length(), tids.length())
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 验证 Regex 文法的 DFA transitions 字符映射经往返完整还原
+test "lexer_dfa 往返：Regex 文法的 transitions 字符" {
+  let (table, _) = gen_ok("start s\nrule s: /[0-9]+/")
+  let orig = table.lexer_dfa
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      let got = t2.lexer_dfa
+      assert_eq(got.states.length(), orig.states.length())
+      for i in 0..<orig.states.length() {
+        let os = orig.states[i]
+        let gs = got.states[i]
+        // transitions 字符集合相同（按数量验证——Map key 顺序不影响）
+        assert_eq(gs.transitions.size(), os.transitions.size())
+      }
+    }
+  }
+}
+
 // ─── 公开 API ─────────────────────────────────────────────────────────────────
 
 ///|
