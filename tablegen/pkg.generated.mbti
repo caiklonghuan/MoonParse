@@ -1,0 +1,149 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/tablegen"
+
+import {
+  "caiklonghuan/MoonParse/grammar",
+  "moonbitlang/core/set",
+}
+
+// Values
+pub fn augment_grammar(@grammar.Grammar) -> AugmentedGrammar
+
+pub fn build_goto_map(AugmentedGrammar, Array[@set.Set[LRItem]]) -> Map[(Int, Symbol), Int]
+
+pub fn build_item_sets(AugmentedGrammar) -> Array[@set.Set[LRItem]]
+
+pub fn build_lalr_table(AugmentedGrammar, Array[@set.Set[LRItem]], Map[(Int, Symbol), Int]) -> ParseTable
+
+pub fn closure(AugmentedGrammar, @set.Set[LRItem]) -> @set.Set[LRItem]
+
+pub let eoi_id : Int
+
+pub fn first_seq(AugmentedGrammar, Array[Symbol]) -> @set.Set[Int]
+
+pub fn first_set(AugmentedGrammar, Symbol) -> @set.Set[Int]
+
+pub fn follow_set(AugmentedGrammar, Int) -> @set.Set[Int]
+
+pub fn goto_set(AugmentedGrammar, @set.Set[LRItem], Symbol) -> @set.Set[LRItem]
+
+pub fn nullable(AugmentedGrammar, Array[Symbol]) -> Bool
+
+// Errors
+
+// Types and methods
+pub(all) enum Action {
+  Shift(Int)
+  Reduce(Int)
+  Accept
+}
+pub impl Eq for Action
+pub impl Show for Action
+
+pub(all) struct AugmentedGrammar {
+  start : Int
+  terminals : Map[String, Int]
+  nonterminals : Map[String, Int]
+  productions : Array[Production]
+  terminal_patterns : Map[Int, TerminalDef]
+  extras : Array[Int]
+}
+
+pub(all) struct BodySymbol {
+  symbol : Symbol
+  field_name : String?
+}
+pub impl Show for BodySymbol
+
+pub(all) struct ConflictReport {
+  state : Int
+  terminal : Int
+  actions : Array[Action]
+  severity : ConflictSeverity
+}
+pub impl Show for ConflictReport
+
+pub(all) enum ConflictSeverity {
+  Warn(String)
+  Ambiguous(String)
+  DynamicConflict(Int)
+}
+pub impl Show for ConflictSeverity
+
+pub(all) struct DfaState {
+  id : Int
+  transitions : Map[Char, Int]
+  accept : Int?
+}
+pub impl Show for DfaState
+
+pub(all) struct LRItem {
+  prod : Int
+  dot : Int
+}
+pub impl Compare for LRItem
+pub impl Eq for LRItem
+pub impl Hash for LRItem
+pub impl Show for LRItem
+
+pub(all) struct LexerDfa {
+  states : Array[DfaState]
+  start : Int
+  valid_tokens : Map[Int, Array[Int]]
+}
+
+pub(all) struct ParseTable {
+  states : Int
+  action : Map[(Int, Int), Array[Action]]
+  goto_table : Map[(Int, Int), Int]
+  productions : Array[Production]
+  lexer_dfa : LexerDfa
+  symbol_metadata : Array[SymbolMeta]
+}
+
+pub(all) struct Production {
+  id : Int
+  head : Int
+  body : Array[BodySymbol]
+  prec : Int?
+  assoc : @grammar.PrecKind?
+  rule_name : String
+}
+pub impl Show for Production
+
+pub(all) enum Symbol {
+  Terminal(Int)
+  NonTerminal(Int)
+  EndOfInput
+}
+pub impl Eq for Symbol
+pub impl Hash for Symbol
+pub impl Show for Symbol
+
+pub(all) struct SymbolMeta {
+  name : String
+  is_named : Bool
+}
+pub impl Show for SymbolMeta
+
+pub(all) enum TerminalDef {
+  Literal(String)
+  Regex(String)
+  AnyChar
+}
+pub impl Eq for TerminalDef
+pub impl Show for TerminalDef
+
+// Type aliases
+pub type DfaStateId = Int
+
+pub type NonTerminalId = Int
+
+pub type ProductionId = Int
+
+pub type StateId = Int
+
+pub type TerminalId = Int
+
+// Traits
+
