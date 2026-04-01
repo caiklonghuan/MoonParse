@@ -71,6 +71,11 @@ pub fn build_lalr_table(
   }
 
   // ── Step 2：从 reduce 项目填充 Reduce / Accept ──────────────────────────────
+  // 预计算所有非终结符的 FOLLOW（不动点迭代每轮只计算一次，而非每个 reduce 项一次）
+  let follow_cache : Map[NonTerminalId, Set[TerminalId]] = Map::new()
+  for _, nt_id in grammar.nonterminals {
+    follow_cache.set(nt_id, follow_set(grammar, nt_id))
+  }
   let n = item_sets.length()
   let mut i = 0
   while i < n {
@@ -83,8 +88,11 @@ pub fn build_lalr_table(
           // 增广起始产生式 $accept → start $ — Accept
           add_action(action, state, eoi_id, Accept)
         } else {
-          // 普通产生式 — LALR lookahead = FOLLOW(head) 经前瞻约束过滤
-          let follow = follow_set(grammar, prod.head)
+          // 普通产生式 — LALR lookahead = FOLLOW(head)（查缓存，O(1)）经前瞻约束过滤
+          let follow = match follow_cache.get(prod.head) {
+            Some(f) => f
+            None => Set::new()
+          }
           for t in follow {
             let ok = match prod.lookahead {
               None => true

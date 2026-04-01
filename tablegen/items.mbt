@@ -30,6 +30,83 @@ fn item_set_key(items : Set[LRItem]) -> String {
   key
 }
 
+// ─── 内部加速辅助 ─────────────────────────────────────────────────────────────
+
+///|
+/// 预构建 NonTerminalId → [ProductionId] 索引。
+/// build_item_sets / build_goto_map 各构建一次，closure_fast 用它替代 O(P) 全量扫描。
+fn build_head_prods_index(grammar : AugmentedGrammar) -> Map[Int, Array[Int]] {
+  let idx : Map[Int, Array[Int]] = Map::new()
+  for p in grammar.productions {
+    match idx.get(p.head) {
+      None => idx.set(p.head, [p.id])
+      Some(arr) => arr.push(p.id)
+    }
+  }
+  idx
+}
+
+///|
+/// 使用预构建索引的 closure（O(1) 查 head→prods，省去每次 O(P) 扫描）。
+fn closure_fast(
+  grammar : AugmentedGrammar,
+  items : Set[LRItem],
+  head_prods : Map[Int, Array[Int]],
+) -> Set[LRItem] {
+  let result : Set[LRItem] = Set::new()
+  let queue : Array[LRItem] = []
+  for item in items {
+    if result.add_and_check(item) {
+      queue.push(item)
+    }
+  }
+  let mut qi = 0
+  while qi < queue.length() {
+    let item = queue[qi]
+    qi = qi + 1
+    let prod = grammar.productions[item.prod]
+    if item.dot < prod.body.length() {
+      match prod.body[item.dot].symbol {
+        NonTerminal(nt) =>
+          match head_prods.get(nt) {
+            None => ()
+            Some(prod_ids) =>
+              for pid in prod_ids {
+                let new_item = { prod: pid, dot: 0 }
+                if result.add_and_check(new_item) {
+                  queue.push(new_item)
+                }
+              }
+          }
+        _ => ()
+      }
+    }
+  }
+  result
+}
+
+///|
+/// 使用预构建索引的 GOTO(I, X)。
+fn goto_set_fast(
+  grammar : AugmentedGrammar,
+  items : Set[LRItem],
+  sym : Symbol,
+  head_prods : Map[Int, Array[Int]],
+) -> Set[LRItem] {
+  let kernel : Set[LRItem] = Set::new()
+  for item in items {
+    let prod = grammar.productions[item.prod]
+    if item.dot < prod.body.length() && prod.body[item.dot].symbol == sym {
+      kernel.add({ prod: item.prod, dot: item.dot + 1 })
+    }
+  }
+  if kernel.is_empty() {
+    Set::new()
+  } else {
+    closure_fast(grammar, kernel, head_prods)
+  }
+}
+
 // ─── 公开 API ─────────────────────────────────────────────────────────────────
 
 ///|
@@ -110,6 +187,9 @@ pub fn build_item_sets(grammar : AugmentedGrammar) -> Array[Set[LRItem]] {
   // key → StateId，用于去重
   let seen : Map[String, StateId] = Map::new()
 
+  // 预构建 head→productions 索引（只构建一次，供所有 closure_fast 调用共享）
+  let head_prods = build_head_prods_index(grammar)
+
   // 找到增广起始产生式（head == grammar.start，即 $accept）
   let mut start_prod_id : ProductionId = 0
   for p in grammar.productions {
@@ -121,7 +201,7 @@ pub fn build_item_sets(grammar : AugmentedGrammar) -> Array[Set[LRItem]] {
   let init_item : LRItem = { prod: start_prod_id, dot: 0 }
   let init_set : Set[LRItem] = Set::new()
   init_set.add(init_item)
-  let s0 = closure(grammar, init_set)
+  let s0 = closure_fast(grammar, init_set, head_prods)
   let s0_key = item_set_key(s0)
   states.push(s0)
   seen.set(s0_key, 0)
@@ -143,7 +223,7 @@ pub fn build_item_sets(grammar : AugmentedGrammar) -> Array[Set[LRItem]] {
 
     // 对每个符号计算 GOTO
     for sym in syms {
-      let next = goto_set(grammar, state, sym)
+      let next = goto_set_fast(grammar, state, sym, head_prods)
       if !next.is_empty() {
         let key = item_set_key(next)
         if seen.get(key) is None {
@@ -165,6 +245,9 @@ pub fn build_goto_map(
   grammar : AugmentedGrammar,
   item_sets : Array[Set[LRItem]],
 ) -> Map[(StateId, Symbol), StateId] {
+  // 预构建 head→productions 索引
+  let head_prods = build_head_prods_index(grammar)
+
   // 先建立 key → StateId 索引，O(n)
   let key_to_id : Map[String, StateId] = Map::new()
   let mut sid = 0
@@ -186,7 +269,7 @@ pub fn build_goto_map(
     }
     // 计算 GOTO 并查表
     for sym in syms {
-      let next = goto_set(grammar, state, sym)
+      let next = goto_set_fast(grammar, state, sym, head_prods)
       if !next.is_empty() {
         let key = item_set_key(next)
         match key_to_id.get(key) {
