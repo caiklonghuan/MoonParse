@@ -14,20 +14,23 @@
 
 ///|
 /// 将项目集转为确定性字符串 key，用于 Map 去重。
-/// 格式：逗号拼接的 "prod:dot" 列表（按 LRItem 自然序排序）。
+///
+/// 格式：`prod:dot` 对按 LRItem 自然序排序后以 `,` 拼接。
+/// 编码无歧义：prod 与 dot 均为非负整数，不含 `:` / `,`，分隔符唯一确定边界。
+/// 使用 StringBuilder 避免 O(n²) 字符串拼接。
 fn item_set_key(items : Set[LRItem]) -> String {
   let arr = items.to_array()
   arr.sort_by(fn(a, b) { a.compare(b) })
-  let mut key = ""
+  let buf = StringBuilder::new()
   let mut first = true
   for item in arr {
     if !first {
-      key = key + ","
+      buf.write_char(',')
     }
-    key = key + "\{item.prod}:\{item.dot}"
+    buf.write_string("\{item.prod}:\{item.dot}")
     first = false
   }
-  key
+  buf.to_string()
 }
 
 // ─── 内部加速辅助 ─────────────────────────────────────────────────────────────
