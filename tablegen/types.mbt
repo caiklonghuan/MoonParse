@@ -1,7 +1,7 @@
 // 用于区分语义
 
 ///|
-/// LALR 解析器状态编号
+/// LALR 解析器状态编号（LR 自动机的状态，与 DfaStateId 是不同的 ID 空间）
 pub type StateId = Int
 
 ///|
@@ -17,7 +17,8 @@ pub type NonTerminalId = Int
 pub type ProductionId = Int
 
 ///|
-/// 词法器 DFA 状态编号
+/// 词法器 DFA 状态编号（词法 DFA 的内部状态，与 StateId 是不同的 ID 空间）
+/// ⚠️ 注意：LexerDfa.valid_tokens 的 key 是 StateId（LR 状态），不是 DfaStateId
 pub type DfaStateId = Int
 
 // ─── §1 增广文法 ──────────────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ pub(all) struct SymbolMeta {
 // ─── §6 词法器 DFA ────────────────────────────────────────────────────────────
 
 ///|
-/// 最小化 DFA 的单个状态
+/// 词法器 DFA 的单个状态（ID 空间：DfaStateId，与 LR 的 StateId 无关）
 pub(all) struct DfaState {
   id : DfaStateId
   transitions : Map[Char, DfaStateId]
@@ -139,9 +140,17 @@ pub(all) struct DfaState {
 
 ///|
 /// 上下文敏感词法器 DFA
+///
+/// ID 空间说明：
+///   · states / start / DfaState.id  — 词法 DFA 内部状态，类型为 DfaStateId
+///   · valid_tokens 的 key            — LR 解析器状态，类型为 StateId
+/// 两个 ID 空间在底层都是 Int，但语义完全不同，不可混用。
 pub(all) struct LexerDfa {
+  /// 词法 DFA 的全部状态（按 DfaStateId 索引）
   states : Array[DfaState]
+  /// 词法 DFA 的起始状态（DfaStateId）
   start : DfaStateId
+  /// LR 状态 → 当前合法 token 列表（key 是 StateId，不是 DfaStateId）
   /// valid_tokens[s] = { t | action[(s,t)] ≠ ∅ } ∪ extras_set
   valid_tokens : Map[StateId, Array[TerminalId]]
 }
