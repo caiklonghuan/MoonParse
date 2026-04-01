@@ -26,7 +26,12 @@ priv struct ParserState {
 pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
   let tokens = tokenize(dsl)
   let state = { tokens, pos: 0 }
-  let grammar : Grammar = { start: None, rules: Map::new(), precedences: [] }
+  let grammar : Grammar = {
+    start: None,
+    rules: Map::new(),
+    precedences: [],
+    extras: [],
+  }
 
   while state.pos < state.tokens.length() {
     match state.tokens[state.pos].token {
@@ -64,6 +69,17 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
         let level = grammar.precedences.length() + 1
         match parse_prec_decl(state, level) {
           Success(decl) => grammar.precedences.push(decl)
+          Error(err) => return Error(err)
+        }
+      }
+      // extras 声明：extras [pattern, ...]
+      Keyword("extras") => {
+        state.pos = state.pos + 1
+        match parse_extras(state) {
+          Success(patterns) =>
+            for p in patterns {
+              grammar.extras.push(p)
+            }
           Error(err) => return Error(err)
         }
       }
@@ -589,4 +605,47 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
         location: state.tokens[state.pos].location,
       })
   }
+}
+
+// ─── extras 解析 ─────────────────────────────────────────────────────────────
+
+///|
+/// 解析 `extras [pattern, pattern, ...]` 声明
+/// 'extras' 关键字已被调用方消费，当前 token 应为 '['
+fn parse_extras(state : ParserState) -> ParseResult[Array[Pattern]] {
+  // 消耗 '['
+  if state.pos >= state.tokens.length() {
+    return Error({
+      message: "Expected '[' after 'extras'",
+      location: state.tokens[state.tokens.length() - 1].location,
+    })
+  }
+  match state.tokens[state.pos].token {
+    Symbol("[") => state.pos = state.pos + 1
+    _ =>
+      return Error({
+        message: "Expected '[' after 'extras'",
+        location: state.tokens[state.pos].location,
+      })
+  }
+  let patterns : Array[Pattern] = []
+  // 解析逗号分隔的 pattern 列表直到 ']'
+  while state.pos < state.tokens.length() {
+    match state.tokens[state.pos].token {
+      Symbol("]") => {
+        state.pos = state.pos + 1
+        return Success(patterns)
+      }
+      Symbol(",") => state.pos = state.pos + 1
+      _ =>
+        match parse_pattern(state) {
+          Success(p) => patterns.push(p)
+          Error(err) => return Error(err)
+        }
+    }
+  }
+  Error({
+    message: "Unexpected end of input, expected ']' to close 'extras'",
+    location: state.tokens[state.tokens.length() - 1].location,
+  })
 }

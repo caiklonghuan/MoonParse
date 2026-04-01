@@ -77,6 +77,9 @@ pub(all) struct Grammar {
   rules : Map[String, Rule]
   /// 顶层优先级声明列表（按声明顺序排列，越靠后层级越高）
   precedences : Array[PrecDecl]
+  /// extras：可出现在任意位置的 token 模式（空白、注释等）
+  /// 对应 DSL 中的 `extras [pattern, ...]` 声明
+  extras : Array[Pattern]
 }
 
 ///|

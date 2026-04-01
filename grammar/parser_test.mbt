@@ -447,3 +447,37 @@ test "parse_prec_errors" {
     Error(err) => assert_true(err.message.length() > 0)
   }
 }
+
+///|
+test "parse_grammar extras: Regex and Literal patterns" {
+  let dsl =
+    #|
+    #|start s
+    #|rule s: "a"
+    #|extras [/\s+/, "//"]
+  match parse_grammar(dsl) {
+    Error(e) => fail(e.message)
+    Success(g) => {
+      assert_eq(g.extras.length(), 2)
+      assert_true(g.extras[0] is Regex("\\s+"))
+      assert_true(g.extras[1] is Literal("//"))
+    }
+  }
+}
+
+///|
+test "parse_grammar extras: empty list" {
+  let dsl = "start s\nrule s: \"a\"\nextras []"
+  match parse_grammar(dsl) {
+    Error(e) => fail(e.message)
+    Success(g) => assert_eq(g.extras.length(), 0)
+  }
+}
+
+///|
+test "parse_grammar extras: missing bracket returns error" {
+  match parse_grammar("extras /\\s+/") {
+    Success(_) => fail("should error")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+}

@@ -178,7 +178,7 @@ test "lexer_dfa 往返：valid_tokens 键集合" {
       // 每个 LR 状态的合法 token 数量一致
       for state_id, tids in orig.valid_tokens {
         match got.valid_tokens.get(state_id) {
-          None => assert_eq(false, true)    // 键缺失
+          None => assert_eq(false, true) // 键缺失
           Some(got_tids) => assert_eq(got_tids.length(), tids.length())
         }
       }
