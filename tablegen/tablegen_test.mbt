@@ -203,3 +203,58 @@ test "table_to_json 字段覆盖" {
     }
   }
 }
+
+///|
+test "generate_parse_table: empty grammar returns Err" {
+  let empty : @grammar.Grammar = {
+    rules: {},
+    start: None,
+    precedences: [],
+    extras: [],
+  }
+  match generate_parse_table(empty) {
+    Err(msg) => assert_true(msg.length() > 0)
+    Ok(_) => fail("expected Err for empty grammar")
+  }
+}
+
+///|
+test "generate_parse_table: missing start rule returns Err" {
+  // parse_grammar 不能构造出 start 指向不存在规则的情况，直接手动构造 Grammar
+  let g : @grammar.Grammar = {
+    rules: {
+      "s": {
+        name: "s",
+        pattern: @grammar.Pattern::Literal("a"),
+        is_named: true,
+      },
+    },
+    start: Some("missing"),
+    precedences: [],
+    extras: [],
+  }
+  match generate_parse_table(g) {
+    Err(msg) => assert_true(msg.length() > 0)
+    Ok(_) => fail("expected Err for missing start rule")
+  }
+}
+
+///|
+test "generate_parse_table: no start declared returns Err" {
+  let g : @grammar.Grammar = {
+    rules: {
+      "s": {
+        name: "s",
+        pattern: @grammar.Pattern::Literal("a"),
+        is_named: true,
+      },
+    },
+    start: None,
+    precedences: [],
+    extras: [],
+  }
+  match generate_parse_table(g) {
+    Err(msg) => assert_true(msg.length() > 0)
+    Ok(_) => fail("expected Err for no start")
+  }
+}

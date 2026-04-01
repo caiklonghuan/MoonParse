@@ -481,3 +481,25 @@ test "parse_grammar extras: missing bracket returns error" {
     Error(err) => assert_true(err.message.length() > 0)
   }
 }
+
+///|
+test "regex literal \\/ escape parsed correctly" {
+  // /\/\/.*/  应解析为包含 \/ 的正则词法，而非在第一个 / 处截断
+  let dsl = "start s\nrule s: /\\/\\/\\//"
+  match parse_grammar(dsl) {
+    Error(e) => fail("parse failed: \{e.message}")
+    Success(g) =>
+      // 规则应该存在且模式中包含正则
+      assert_eq(g.rules.contains("s"), true)
+  }
+}
+
+///|
+test "regex literal with escaped slash in extras" {
+  // extras [ /\/\/.*/] — 行注释正则
+  let dsl = "start s\nrule s: \"a\"\nextras [/\\/\\/.*/]"
+  match parse_grammar(dsl) {
+    Error(e) => fail("parse failed: \{e.message}")
+    Success(g) => assert_eq(g.extras.length(), 1)
+  }
+}

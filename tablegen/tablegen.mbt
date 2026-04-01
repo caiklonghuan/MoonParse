@@ -32,10 +32,21 @@
 /// - `table`   — 完成冲突解决、词法 DFA 已接入的解析表
 /// - `reports` — 所有冲突报告（Warn / Ambiguous / DynamicConflict）
 ///
-/// 当前实现不做输入校验，空文法会返回退化表而非 Err（Phase 2 TODO）。
+/// 输入校验：空文法（无规则）或 start 指向不存在的规则时返回 Err。
 pub fn generate_parse_table(
   grammar : @grammar.Grammar,
 ) -> Result[(ParseTable, Array[ConflictReport]), String] {
+  // ── 输入校验 ──────────────────────────────────────────────────────────────
+  if grammar.rules.size() == 0 {
+    return Err("generate_parse_table: empty grammar (no rules)")
+  }
+  match grammar.start {
+    None => return Err("generate_parse_table: no start rule declared")
+    Some(s) =>
+      if not(grammar.rules.contains(s)) {
+        return Err("generate_parse_table: start rule '\{s}' not found")
+      }
+  }
   let aug = augment_grammar(grammar)
   let item_sets = build_item_sets(aug)
   let goto_map = build_goto_map(aug, item_sets)

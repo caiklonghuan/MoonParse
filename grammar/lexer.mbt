@@ -94,14 +94,23 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
         let start_col = column
         let mut j = i + 1
         column = column + 1
-        while j < len && input[j].to_int().to_char().unwrap() != '/' {
-          if input[j].to_int().to_char().unwrap() == '\n' {
+        // 支持 \/ 转义：跳过 \\ 后紧跟的字符（不视为结束 /）
+        while j < len {
+          let ch = input[j].to_int().to_char().unwrap()
+          if ch == '/' {
+            break
+          } else if ch == '\\' && j + 1 < len {
+            // 转义序列：跳过 \\ 和紧跟的字符
+            j = j + 2
+            column = column + 2
+          } else if ch == '\n' {
             line = line + 1
             column = 1
+            j = j + 1
           } else {
             column = column + 1
+            j = j + 1
           }
-          j = j + 1
         }
         if j < len {
           let regex = input.substring(start=i + 1, end=j)
