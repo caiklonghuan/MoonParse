@@ -42,6 +42,11 @@ pub fn generate_parse_table(
   let table = build_lalr_table(aug, item_sets, goto_map)
   let (resolved_table, reports) = resolve_conflicts(table, aug)
   let real_dfa = build_lexer_dfa(aug, resolved_table)
+  // 从 aug.terminals（名称→ID）反转得到 terminal_names（ID→名称）
+  let terminal_names : Map[TerminalId, String] = Map::new()
+  for name, tid in aug.terminals {
+    terminal_names.set(tid, name)
+  }
   let final_table = {
     states: resolved_table.states,
     action: resolved_table.action,
@@ -50,6 +55,7 @@ pub fn generate_parse_table(
     lexer_dfa: real_dfa,
     symbol_metadata: resolved_table.symbol_metadata,
     terminal_patterns: resolved_table.terminal_patterns,
+    terminal_names,
   }
   Ok((final_table, reports))
 }

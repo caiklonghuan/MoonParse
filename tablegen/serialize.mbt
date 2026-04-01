@@ -222,6 +222,13 @@ pub fn table_to_json(table : ParseTable) -> String {
   }
   let tp_json = jarray(tp_entries)
 
+  // terminal_names 数组（TerminalId → 名称，runtime 错误信息用）
+  let tn_entries : Array[String] = []
+  for id, name in table.terminal_names {
+    tn_entries.push(jobj([("id", "\{id}"), ("name", jstr(name))]))
+  }
+  let tn_json = jarray(tn_entries)
+
   jobj([
     ("states", "\{table.states}"),
     ("productions", prods_json),
@@ -229,6 +236,7 @@ pub fn table_to_json(table : ParseTable) -> String {
     ("goto", goto_json),
     ("symbol_metadata", meta_json),
     ("terminal_patterns", tp_json),
+    ("terminal_names", tn_json),
   ])
 }
 
@@ -843,6 +851,19 @@ pub fn serialize_table(table : ParseTable) -> Bytes {
   // [7] terminal_patterns
   write_terminal_patterns(w, table.terminal_patterns)
 
+  // [8] terminal_names
+  let tn_entries : Array[(TerminalId, String)] = []
+  for tid, name in table.terminal_names {
+    tn_entries.push((tid, name))
+  }
+  tn_entries.sort_by(fn(a, b) { a.0.compare(b.0) })
+  w.write_u32_le(tn_entries.length())
+  for entry in tn_entries {
+    let (tid, name) = entry
+    w.write_u16_le(tid)
+    w.write_str(name)
+  }
+
   w.to_bytes()
 }
 
@@ -911,6 +932,15 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
     // [7] terminal_patterns
     let terminal_patterns = read_terminal_patterns(r)
 
+    // [8] terminal_names
+    let tn_count = r.read_u32_le()
+    let terminal_names : Map[TerminalId, String] = Map::new()
+    for _ in 0..<tn_count {
+      let tid = r.read_u16_le()
+      let name = r.read_str()
+      terminal_names.set(tid, name)
+    }
+
     Ok({
       states,
       action,
@@ -919,6 +949,7 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       lexer_dfa,
       symbol_metadata,
       terminal_patterns,
+      terminal_names,
     })
   } catch {
     UnexpectedEof(msg) => Err("deserialize_table: unexpected EOF at \{msg}")

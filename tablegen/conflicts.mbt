@@ -246,6 +246,7 @@ pub fn resolve_conflicts(
     lexer_dfa: table.lexer_dfa,
     symbol_metadata: table.symbol_metadata,
     terminal_patterns: table.terminal_patterns,
+    terminal_names: table.terminal_names,
   }
   (new_table, reports)
 }

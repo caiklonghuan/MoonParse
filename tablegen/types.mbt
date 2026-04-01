@@ -17,8 +17,7 @@ pub type NonTerminalId = Int
 pub type ProductionId = Int
 
 ///|
-/// 词法器 DFA 状态编号（词法 DFA 的内部状态，与 StateId 是不同的 ID 空间）
-/// ⚠️ 注意：LexerDfa.valid_tokens 的 key 是 StateId（LR 状态），不是 DfaStateId
+/// 词法器 DFA 状态编号
 pub type DfaStateId = Int
 
 // ─── §1 增广文法 ──────────────────────────────────────────────────────────────
@@ -150,7 +149,7 @@ pub(all) struct LexerDfa {
   states : Array[DfaState]
   /// 词法 DFA 的起始状态（DfaStateId）
   start : DfaStateId
-  /// LR 状态 → 当前合法 token 列表（key 是 StateId，不是 DfaStateId）
+  /// LR 状态 → 当前合法 token 列表
   /// valid_tokens[s] = { t | action[(s,t)] ≠ ∅ } ∪ extras_set
   valid_tokens : Map[StateId, Array[TerminalId]]
 }
@@ -172,6 +171,9 @@ pub(all) struct ParseTable {
   symbol_metadata : Array[SymbolMeta]
   /// 终结符词法定义（TerminalId → 词法规则），供 serialize 输出和 lexer 构建
   terminal_patterns : Map[TerminalId, TerminalDef]
+  /// 终结符名称反查表（TerminalId → 显示名称），runtime 错误信息用
+  /// 例：expected `+` or `)` 需要靠此表把 TerminalId 还原为可读字符串
+  terminal_names : Map[TerminalId, String]
 }
 
 ///|

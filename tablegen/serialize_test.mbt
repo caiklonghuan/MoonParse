@@ -249,3 +249,30 @@ test "serialize_table deterministic: same bytes on repeated calls" {
     assert_eq(b1[i], b2[i])
   }
 }
+
+///|
+/// terminal_names 往返：TerminalId → 名称映射完整还原
+test "serialize/deserialize preserves terminal_names" {
+  let (table, _) = gen_ok("start e\nrule e: e \"+\" t | t\nrule t: \"n\"")
+  // terminal_names 非空（有终结符）
+  assert_eq(table.terminal_names.size() > 0, true)
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      assert_eq(t2.terminal_names.size(), table.terminal_names.size())
+      // 同一 TerminalId 名称一致
+      for tid, name in table.terminal_names {
+        assert_eq(t2.terminal_names.get(tid), Some(name))
+      }
+    }
+  }
+}
+
+///|
+/// table_to_json 包含 terminal_names 字段
+test "table_to_json includes terminal_names" {
+  let (table, _) = gen_ok("start s\nrule s: \"hello\"")
+  let json = table_to_json(table)
+  assert_eq(json.contains("terminal_names"), true)
+}

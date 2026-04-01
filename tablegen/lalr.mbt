@@ -160,5 +160,6 @@ pub fn build_lalr_table(
     lexer_dfa: stub_dfa,
     symbol_metadata,
     terminal_patterns: grammar.terminal_patterns,
+    terminal_names: Map::new(), // 由 generate_parse_table() 在 augment 后填充
   }
 }
