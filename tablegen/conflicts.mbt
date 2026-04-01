@@ -247,6 +247,7 @@ pub fn resolve_conflicts(
     symbol_metadata: table.symbol_metadata,
     terminal_patterns: table.terminal_patterns,
     terminal_names: table.terminal_names,
+    extras: table.extras,
   }
   (new_table, reports)
 }

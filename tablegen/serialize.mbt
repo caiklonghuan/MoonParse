@@ -229,6 +229,9 @@ pub fn table_to_json(table : ParseTable) -> String {
   }
   let tn_json = jarray(tn_entries)
 
+  // extras 数组（runtime 跳过不推栈的 token）
+  let extras_json = jarray(table.extras.map(fn(tid) { "\{tid}" }))
+
   jobj([
     ("states", "\{table.states}"),
     ("productions", prods_json),
@@ -237,6 +240,7 @@ pub fn table_to_json(table : ParseTable) -> String {
     ("symbol_metadata", meta_json),
     ("terminal_patterns", tp_json),
     ("terminal_names", tn_json),
+    ("extras", extras_json),
   ])
 }
 
@@ -864,6 +868,14 @@ pub fn serialize_table(table : ParseTable) -> Bytes {
     w.write_str(name)
   }
 
+  // [9] extras
+  let extras_sorted = table.extras.copy()
+  extras_sorted.sort_by(fn(a, b) { a.compare(b) })
+  w.write_u16_le(extras_sorted.length())
+  for tid in extras_sorted {
+    w.write_u16_le(tid)
+  }
+
   w.to_bytes()
 }
 
@@ -941,6 +953,13 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       terminal_names.set(tid, name)
     }
 
+    // [9] extras
+    let extras_count = r.read_u16_le()
+    let extras : Array[TerminalId] = []
+    for _ in 0..<extras_count {
+      extras.push(r.read_u16_le())
+    }
+
     Ok({
       states,
       action,
@@ -950,6 +969,7 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       symbol_metadata,
       terminal_patterns,
       terminal_names,
+      extras,
     })
   } catch {
     UnexpectedEof(msg) => Err("deserialize_table: unexpected EOF at \{msg}")

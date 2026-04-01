@@ -276,3 +276,36 @@ test "table_to_json includes terminal_names" {
   let json = table_to_json(table)
   assert_eq(json.contains("terminal_names"), true)
 }
+
+///|
+/// extras 往返：DSL extras 声明的 TerminalId 列表完整还原
+test "serialize/deserialize preserves extras" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\"\nextras [/\\s+/]")
+  // extras 非空（有空白 extra）
+  assert_eq(table.extras.length() > 0, true)
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => assert_eq(t2.extras.length(), table.extras.length())
+  }
+}
+
+///|
+/// extras 为空时往返正常
+test "serialize/deserialize extras empty" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\"")
+  assert_eq(table.extras.length(), 0)
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => assert_eq(t2.extras.length(), 0)
+  }
+}
+
+///|
+/// table_to_json 包含 extras 字段
+test "table_to_json includes extras" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\"")
+  let json = table_to_json(table)
+  assert_eq(json.contains("extras"), true)
+}

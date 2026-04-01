@@ -56,6 +56,7 @@ pub fn generate_parse_table(
     symbol_metadata: resolved_table.symbol_metadata,
     terminal_patterns: resolved_table.terminal_patterns,
     terminal_names,
+    extras: aug.extras,
   }
   Ok((final_table, reports))
 }

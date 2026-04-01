@@ -174,6 +174,9 @@ pub(all) struct ParseTable {
   /// 终结符名称反查表（TerminalId → 显示名称），runtime 错误信息用
   /// 例：expected `+` or `)` 需要靠此表把 TerminalId 还原为可读字符串
   terminal_names : Map[TerminalId, String]
+  /// Extras token 列表（空白、注释等），runtime 识别后直接跳过不推 LR 栈
+  /// 与 LexerDfa.valid_tokens 里的 extras union 对应，语义层的权威来源
+  extras : Array[TerminalId]
 }
 
 ///|
