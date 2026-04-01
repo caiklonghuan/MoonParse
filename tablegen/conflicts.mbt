@@ -22,38 +22,45 @@
 // ─── 辅助：终结符 t 对应的 Shift 优先级 ────────────────────────────────────
 
 ///|
-/// 在 grammar.productions 中查找所有 body 含 Terminal(t) 的产生式，
-/// 返回其 .prec 的最大值；所有产生式均无 prec 标注时返回 None。
-fn shift_prec_for(grammar : AugmentedGrammar, t : TerminalId) -> Int? {
-  let mut best : Int? = None
+/// 预构建 Map[TerminalId, Int]：扫描全部产生式（O(P×B)）各做一次，
+/// 返回每个终结符作为 Shift 目标时的最高优先级。
+/// 已有 prec_table 的条目作为回落（顶层优先级声明）。
+///
+/// 调用方应在 resolve_conflicts 入口调用一次，之后 O(1) 查询。
+fn build_shift_prec_map(grammar : AugmentedGrammar) -> Map[TerminalId, Int] {
+  let m : Map[TerminalId, Int] = Map::new()
+  // 产生式内联 prec
   for prod in grammar.productions {
-    let mut has_t = false
-    for bs in prod.body {
-      if bs.symbol == Terminal(t) {
-        has_t = true
-        break
-      }
-    }
-    if has_t {
-      match prod.prec {
-        Some(p) =>
-          match best {
-            None => best = Some(p)
-            Some(b) => if p > b { best = Some(p) }
+    match prod.prec {
+      None => ()
+      Some(p) =>
+        for bs in prod.body {
+          match bs.symbol {
+            Terminal(t) =>
+              match m.get(t) {
+                None => m.set(t, p)
+                Some(cur) => if p > cur { m.set(t, p) }
+              }
+            _ => ()
           }
-        None => ()
-      }
+        }
     }
   }
-  // 优先级表回落：无产生式标注时查询 grammar.prec_table
-  match best {
-    Some(_) => best
-    None =>
-      match grammar.prec_table.get(t) {
-        Some((lv, _)) => Some(lv)
-        None => None
-      }
+  // prec_table 回落（顶层声明，已有值时只升不降）
+  for t, entry in grammar.prec_table {
+    let (lv, _) = entry
+    match m.get(t) {
+      None => m.set(t, lv)
+      Some(cur) => if lv > cur { m.set(t, lv) }
+    }
   }
+  m
+}
+
+///|
+/// O(1) 查询预构建表；t 不在表中则返回 None。
+fn shift_prec_lookup(shift_map : Map[TerminalId, Int], t : TerminalId) -> Int? {
+  shift_map.get(t)
 }
 
 // ─── 辅助：单格冲突消解 ──────────────────────────────────────────────────────
@@ -69,6 +76,7 @@ fn resolve_cell(
   terminal : TerminalId,
   actions : Array[Action],
   grammar : AugmentedGrammar,
+  shift_map : Map[TerminalId, Int],
 ) -> (Array[Action], ConflictReport?) {
   // 拆分 Shift（含 Accept）与 Reduce
   let shifts : Array[Action] = []
@@ -90,7 +98,7 @@ fn resolve_cell(
   }
 
   // ── Shift-Reduce ──────────────────────────────────────────────────────────
-  let sp = shift_prec_for(grammar, terminal)
+  let sp = shift_prec_lookup(shift_map, terminal)
 
   // 先扫描 Dynamic assoc（编译期无法消解，直接返回 DynamicConflict）
   for a in reduces {
@@ -211,11 +219,15 @@ pub fn resolve_conflicts(
 ) -> (ParseTable, Array[ConflictReport]) {
   let reports : Array[ConflictReport] = []
   let new_action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
+  // 预构建 shift 优先级查找表（O(P×B) 一次，后续每格 O(1)）
+  let shift_map = build_shift_prec_map(grammar)
 
   for key, actions in table.action {
     let (state, terminal) = key
     if actions.length() > 1 {
-      let (kept, report) = resolve_cell(state, terminal, actions, grammar)
+      let (kept, report) = resolve_cell(
+        state, terminal, actions, grammar, shift_map,
+      )
       new_action.set(key, kept)
       match report {
         Some(r) => reports.push(r)
