@@ -237,3 +237,15 @@ test "serialize_table / deserialize_table 往返一致" {
     }
   }
 }
+
+///|
+/// 同一 ParseTable 序列化两次结果完全相同（确定性）
+test "serialize_table deterministic: same bytes on repeated calls" {
+  let (table, _) = gen_ok("start e\nrule e: e \"+\" t | t\nrule t: \"n\"")
+  let b1 = serialize_table(table)
+  let b2 = serialize_table(table)
+  assert_eq(b1.length(), b2.length())
+  for i in 0..<b1.length() {
+    assert_eq(b1[i], b2[i])
+  }
+}

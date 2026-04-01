@@ -632,6 +632,7 @@ fn write_dfa_state(w : BinWriter, state : DfaState) -> Unit {
   for ch, tgt in state.transitions {
     trans_entries.push((ch, tgt))
   }
+  trans_entries.sort_by(fn(a, b) { a.0.to_int().compare(b.0.to_int()) })
   w.write_u16_le(trans_entries.length())
   for entry in trans_entries {
     let (ch, tgt) = entry
@@ -676,6 +677,7 @@ fn write_lexer_dfa(w : BinWriter, dfa : LexerDfa) -> Unit {
   for state_id, tids in dfa.valid_tokens {
     vt_entries.push((state_id, tids))
   }
+  vt_entries.sort_by(fn(a, b) { a.0.compare(b.0) })
   w.write_u32_le(vt_entries.length())
   for entry in vt_entries {
     let (state_id, tids) = entry
@@ -720,6 +722,7 @@ fn write_terminal_patterns(
   for tid, td in patterns {
     entries.push((tid, td))
   }
+  entries.sort_by(fn(a, b) { a.0.compare(b.0) })
   w.write_u32_le(entries.length())
   for entry in entries {
     let (tid, td) = entry
@@ -780,6 +783,15 @@ pub fn serialize_table(table : ParseTable) -> Bytes {
   for key, acts in table.action {
     act_entries.push((key, acts))
   }
+  act_entries.sort_by(fn(a, b) {
+    let ((sa, ta), _) = a
+    let ((sb, tb), _) = b
+    if sa != sb {
+      sa.compare(sb)
+    } else {
+      ta.compare(tb)
+    }
+  })
   w.write_u32_le(act_entries.length())
   for entry in act_entries {
     let ((state, term), acts) = entry
@@ -796,6 +808,15 @@ pub fn serialize_table(table : ParseTable) -> Bytes {
   for key, target in table.goto_table {
     goto_entries.push((key, target))
   }
+  goto_entries.sort_by(fn(a, b) {
+    let ((sa, na), _) = a
+    let ((sb, nb), _) = b
+    if sa != sb {
+      sa.compare(sb)
+    } else {
+      na.compare(nb)
+    }
+  })
   w.write_u32_le(goto_entries.length())
   for entry in goto_entries {
     let ((state, nt), target) = entry
