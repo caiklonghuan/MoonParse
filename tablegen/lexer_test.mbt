@@ -209,6 +209,27 @@ test "接受优先级 AnyChar(20000+tid) < Literal(tid)，Literal 胜出" {
   assert_eq(dfa_run(dfa, "0"), Some(any_id))
 }
 
+// ─── Unicode charset range ───────────────────────────────────────────────────
+
+///|
+test "Regex Unicode range [α-ω] accepts Greek letters" {
+  let dfa = lexer_for("start s\nrule s: /[α-ω]+/")
+  assert_true(dfa_run(dfa, "α") is Some(_))
+  assert_true(dfa_run(dfa, "ω") is Some(_))
+  assert_true(dfa_run(dfa, "λ") is Some(_))
+  assert_eq(dfa_run(dfa, "a"), None) // ASCII letter outside range
+  assert_eq(dfa_run(dfa, ""), None)
+}
+
+///|
+test "Regex Unicode range [中-龥] accepts CJK characters" {
+  let dfa = lexer_for("start s\nrule s: /[中-龥]+/")
+  assert_true(dfa_run(dfa, "中") is Some(_))
+  assert_true(dfa_run(dfa, "文") is Some(_))
+  assert_eq(dfa_run(dfa, "a"), None)
+  assert_eq(dfa_run(dfa, "α"), None)
+}
+
 // ─── build_valid_tokens ───────────────────────────────────────────────────────
 
 ///|

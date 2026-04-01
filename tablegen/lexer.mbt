@@ -17,8 +17,9 @@
 // ─── 字符常量 ─────────────────────────────────────────────────────────────────
 
 ///|
-/// 用于 AnyChar / `.` 展开及字符区间展开的基准字符集
-/// （覆盖 ASCII 控制字符子集 + 全部可打印 ASCII，共 ~100 个字符）
+/// 仅用于 AnyChar / `.` 展开的字符集（ASCII 可打印字符 + 常用控制字符）。
+/// 字符区间 `[lo-hi]` 的展开由 `add_range_chars` 直接按码点枚举，不依赖此字符串，
+/// 因此 `[α-ω]`、`[中-龥]` 等 Unicode 区间均可正确处理。
 let range_chars : String = "\t\n\r !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
 // ─── NFA 内部类型 ─────────────────────────────────────────────────────────────
@@ -395,12 +396,13 @@ fn nfa_from_regex(ctx : NfaCtx, re : String) -> (Int, Int) {
 // ─── 字母表收集 ──────────────────────────────────────────────────────────────
 
 ///|
-/// 将字符区间 [lo, hi] 中的字符加入集合（在 range_chars 范围内展开）
+/// 将字符区间 [lo, hi] 中的所有字符加入集合（直接按 Unicode 码点枚举）。
+/// 支持任意 BMP 字符，例如 `[α-ω]`、`[中-龥]`。
 fn add_range_chars(set : Set[Char], lo : Char, hi : Char) -> Unit {
-  for c in range_chars {
-    if lo <= c && c <= hi {
-      set.add(c)
-    }
+  let lo_code = lo.to_int()
+  let hi_code = hi.to_int()
+  for code in lo_code..<(hi_code + 1) {
+    set.add(code.unsafe_to_char())
   }
 }
 
