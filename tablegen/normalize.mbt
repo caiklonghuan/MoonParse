@@ -76,7 +76,39 @@ fn add_production(
 ) -> Unit {
   let id = ctx.prod_next
   ctx.prod_next = ctx.prod_next + 1
-  ctx.productions.push({ id, head, body, prec, assoc, rule_name })
+  ctx.productions.push({
+    id,
+    head,
+    body,
+    prec,
+    assoc,
+    rule_name,
+    lookahead: None,
+  })
+}
+
+///|
+/// 带前瞻约束的产生式添加（用于 Not / And 断言提取后调用）
+fn add_production_with_lookahead(
+  ctx : NormCtx,
+  head : NonTerminalId,
+  body : Array[BodySymbol],
+  prec : Int?,
+  assoc : @grammar.PrecKind?,
+  rule_name : String,
+  lookahead : LookaheadConstraint,
+) -> Unit {
+  let id = ctx.prod_next
+  ctx.prod_next = ctx.prod_next + 1
+  ctx.productions.push({
+    id,
+    head,
+    body,
+    prec,
+    assoc,
+    rule_name,
+    lookahead: Some(lookahead),
+  })
 }
 
 ///|
@@ -168,6 +200,7 @@ fn to_symbol(
 ///|
 /// 将 Pattern 展平为 BodySymbol 序列。
 /// Seq 被内联展开（多个符号），其余委托给 to_symbol（单符号）。
+/// Not / And 均为零宽断言，不向 body 贡献符号（约束由 expand_into 的 Seq 分支提取）。
 fn to_body(
   ctx : NormCtx,
   p : @grammar.Pattern,
@@ -180,13 +213,44 @@ fn to_body(
     Seq(elems) => {
       let result : Array[BodySymbol] = []
       for elem in elems {
-        for sym in to_body(ctx, elem, rule_name, None, prec, assoc) {
-          result.push(sym)
+        match elem {
+          Not(_) => () // 零宽断言，不贡献符号
+          And(_) => () // 零宽断言，不贡献符号
+          _ =>
+            for sym in to_body(ctx, elem, rule_name, None, prec, assoc) {
+              result.push(sym)
+            }
         }
       }
       result
     }
+    Not(_) => [] // 零宽断言
+    And(_) => [] // 零宽断言
     _ => [to_symbol(ctx, p, rule_name, field_name, prec, assoc)]
+  }
+}
+
+///|
+/// 从原子 pattern 提取约束终结符集合（用于 Not/And 前瞻约束）。
+/// 仅处理 Literal / Regex / AnyChar / Choice；复杂 pattern 返回空数组。
+fn collect_constraint_tids(
+  ctx : NormCtx,
+  p : @grammar.Pattern,
+) -> Array[TerminalId] {
+  match p {
+    Literal(s) => [alloc_terminal(ctx, "lit:\{s}", TerminalDef::Literal(s))]
+    Regex(re) => [alloc_terminal(ctx, "re:\{re}", TerminalDef::Regex(re))]
+    AnyChar => [alloc_terminal(ctx, "\u00b7", TerminalDef::AnyChar)]
+    Choice(alts) => {
+      let result : Array[TerminalId] = []
+      for alt in alts {
+        for tid in collect_constraint_tids(ctx, alt) {
+          result.push(tid)
+        }
+      }
+      result
+    }
+    _ => []
   }
 }
 
@@ -273,14 +337,81 @@ fn expand_into(
       }
       add_production(ctx, head, body, prec, assoc, rule_name)
     }
-    Not(inner) =>
-      // Phase 1：忽略负向前瞻
-      expand_into(ctx, head, inner, rule_name, prec, assoc)
-    And(inner) =>
-      // Phase 1：忽略正向前瞻
-      expand_into(ctx, head, inner, rule_name, prec, assoc)
+    Not(q) => {
+      // 负向前瞻（零宽断言）：head → ε [!q]
+      let tids = collect_constraint_tids(ctx, q)
+      if tids.length() > 0 {
+        add_production_with_lookahead(
+          ctx,
+          head,
+          [],
+          prec,
+          assoc,
+          rule_name,
+          NotFollowedBy(tids),
+        )
+      } else {
+        // 复杂 pattern：回退到透传（Phase 1 行为）
+        expand_into(ctx, head, q, rule_name, prec, assoc)
+      }
+    }
+    And(q) => {
+      // 正向前瞻（零宽断言）：head → ε [&q]
+      let tids = collect_constraint_tids(ctx, q)
+      if tids.length() > 0 {
+        add_production_with_lookahead(
+          ctx,
+          head,
+          [],
+          prec,
+          assoc,
+          rule_name,
+          FollowedBy(tids),
+        )
+      } else {
+        // 复杂 pattern：回退到透传（Phase 1 行为）
+        expand_into(ctx, head, q, rule_name, prec, assoc)
+      }
+    }
+    Seq(elems) => {
+      // 检测 Seq 尾部零宽断言，提取为前瞻约束
+      let mut body_count = elems.length()
+      let mut constraint : LookaheadConstraint? = None
+      if body_count > 0 {
+        match elems[body_count - 1] {
+          Not(q) => {
+            let tids = collect_constraint_tids(ctx, q)
+            if tids.length() > 0 {
+              constraint = Some(NotFollowedBy(tids))
+              body_count = body_count - 1
+            }
+          }
+          And(q) => {
+            let tids = collect_constraint_tids(ctx, q)
+            if tids.length() > 0 {
+              constraint = Some(FollowedBy(tids))
+              body_count = body_count - 1
+            }
+          }
+          _ => ()
+        }
+      }
+      let body : Array[BodySymbol] = []
+      for i in 0..<body_count {
+        for sym in to_body(ctx, elems[i], rule_name, None, prec, assoc) {
+          body.push(sym)
+        }
+      }
+      match constraint {
+        None => add_production(ctx, head, body, prec, assoc, rule_name)
+        Some(c) =>
+          add_production_with_lookahead(
+            ctx, head, body, prec, assoc, rule_name, c,
+          )
+      }
+    }
     _ =>
-      // Seq / Literal / Regex / AnyChar / RuleRef
+      // Literal / Regex / AnyChar / RuleRef
       add_production(
         ctx,
         head,
@@ -398,6 +529,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
               prec: rv,
               assoc: rk,
               rule_name: prod.rule_name,
+              lookahead: prod.lookahead,
             }
           None => ()
         }
@@ -420,15 +552,26 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     }
   }
 
-  // 6. 返回增广文法
-  // 注：grammar/ 层目前未建模 extras（空白、注释），Phase 1 留空
+  // 6. 处理 extras：将每个 extras Pattern 注册为 terminal，收集 TerminalId
+  let extras : Array[TerminalId] = []
+  for pat in grammar.extras {
+    let tid = match pat {
+      Literal(s) => alloc_terminal(ctx, "lit:\{s}", TerminalDef::Literal(s))
+      Regex(re) => alloc_terminal(ctx, "re:\{re}", TerminalDef::Regex(re))
+      AnyChar => alloc_terminal(ctx, "·", TerminalDef::AnyChar)
+      _ => continue // 复杂 pattern 作 extras 不支持，忽略
+    }
+    extras.push(tid)
+  }
+
+  // 7. 返回增广文法
   {
     start: accept_id,
     terminals: ctx.terminals,
     nonterminals: ctx.nonterminals,
     productions: ctx.productions,
     terminal_patterns: ctx.term_patterns,
-    extras: [],
+    extras,
     prec_table,
     nt_metas: ctx.nt_metas,
   }

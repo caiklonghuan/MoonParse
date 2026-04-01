@@ -83,10 +83,35 @@ pub fn build_lalr_table(
           // 增广起始产生式 $accept → start $ — Accept
           add_action(action, state, eoi_id, Accept)
         } else {
-          // 普通产生式 — LALR lookahead = FOLLOW(head)
-          let lookahead = follow_set(grammar, prod.head)
-          for t in lookahead {
-            add_action(action, state, t, Reduce(prod.id))
+          // 普通产生式 — LALR lookahead = FOLLOW(head) 经前瞻约束过滤
+          let follow = follow_set(grammar, prod.head)
+          for t in follow {
+            let ok = match prod.lookahead {
+              None => true
+              Some(NotFollowedBy(tids)) => {
+                let mut found = false
+                for tid in tids {
+                  if tid == t {
+                    found = true
+                    break
+                  }
+                }
+                not(found)
+              }
+              Some(FollowedBy(tids)) => {
+                let mut found = false
+                for tid in tids {
+                  if tid == t {
+                    found = true
+                    break
+                  }
+                }
+                found
+              }
+            }
+            if ok {
+              add_action(action, state, t, Reduce(prod.id))
+            }
           }
         }
       }

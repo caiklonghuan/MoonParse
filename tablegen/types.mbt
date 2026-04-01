@@ -39,6 +39,15 @@ pub(all) struct BodySymbol {
 } derive(Show)
 
 ///|
+/// Reduce 时的前瞻约束（由 Not(p) / And(p) 零宽断言产生）
+pub(all) enum LookaheadConstraint {
+  /// 负向前瞻 !p：当前 lookahead 不得属于此集合
+  NotFollowedBy(Array[TerminalId])
+  /// 正向前瞻 &p ：当前 lookahead 必须属于此集合
+  FollowedBy(Array[TerminalId])
+} derive(Show)
+
+///|
 /// 扁平化产生式：A → β
 pub(all) struct Production {
   id : ProductionId
@@ -50,6 +59,8 @@ pub(all) struct Production {
   assoc : @grammar.PrecKind?
   /// 来源规则名，调试 / 错误信息用
   rule_name : String
+  /// Reduce 前瞻约束（由 Not/And 断言提取；None = 无约束）
+  lookahead : LookaheadConstraint?
 } derive(Show)
 
 ///|

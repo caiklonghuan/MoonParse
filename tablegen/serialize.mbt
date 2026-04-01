@@ -537,6 +537,24 @@ fn write_production(w : BinWriter, prod : Production) -> Unit {
     }
   }
   w.write_str(prod.rule_name)
+  // lookahead constraint
+  match prod.lookahead {
+    None => w.write_u8(0)
+    Some(NotFollowedBy(tids)) => {
+      w.write_u8(1)
+      w.write_u16_le(tids.length())
+      for tid in tids {
+        w.write_u16_le(tid)
+      }
+    }
+    Some(FollowedBy(tids)) => {
+      w.write_u8(2)
+      w.write_u16_le(tids.length())
+      for tid in tids {
+        w.write_u16_le(tid)
+      }
+    }
+  }
 }
 
 ///|
@@ -565,7 +583,28 @@ fn read_production(r : BinReader) -> Production raise BinError {
     None
   }
   let rule_name = r.read_str()
-  { id, head, body, prec, assoc, rule_name }
+  let la_tag = r.read_u8()
+  let lookahead : LookaheadConstraint? = match la_tag {
+    0 => None
+    1 => {
+      let cnt = r.read_u16_le()
+      let tids : Array[TerminalId] = []
+      for _ in 0..<cnt {
+        tids.push(r.read_u16_le())
+      }
+      Some(NotFollowedBy(tids))
+    }
+    2 => {
+      let cnt = r.read_u16_le()
+      let tids : Array[TerminalId] = []
+      for _ in 0..<cnt {
+        tids.push(r.read_u16_le())
+      }
+      Some(FollowedBy(tids))
+    }
+    _ => raise InvalidData("lookahead tag=\{la_tag}")
+  }
+  { id, head, body, prec, assoc, rule_name, lookahead }
 }
 
 // ── SymbolMeta ───────────────────────────────────────────────────────────────
