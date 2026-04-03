@@ -93,8 +93,8 @@ pub fn glr_parse(
 /// 每轮：
 ///   1. EOF → run_reduce(eoi_id) → collect_root_glr
 ///   2. 合并所有活跃栈顶的 valid_tokens，调用 DFA 词法
-///   3. extras token → 前进 pos，active_tops 不变（Phase 2b: 暂不追踪入 GSS）
-///   4. 普通 token → run_reduce_worklist → run_shift → 替换 active_tops
+///   3. extras token → 创建叶节点累积到 pending_extras，active_tops 不变
+///   4. 普通 token → run_reduce_worklist → run_shift → 替换 active_tops → compact Arena
 fn GlrEngine::run(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -201,6 +201,9 @@ fn GlrEngine::run(
         for r in next_tops {
           self.active_tops.push(r)
         }
+        // compact：回收当前 active_tops 不可达的旧 GssNode，防止 Arena 线性增长。
+        // 必须在 active_tops 已切换为 next_tops 之后调用，确保旧前缀结点都已成为垃圾。
+        self.compact(self.active_tops)
         cur_point = bytes_to_point(
           input,
           tok.start_byte,
@@ -554,6 +557,93 @@ fn GlrEngine::run_reduce_worklist(
 }
 
 // walk_base 已由 enum_paths 携带的 base_ref 替代，不再需要。
+
+///|
+/// 压缩 GSS 结点 Arena，回收从 roots 不可达的结点。
+///
+/// 每次 run_shift 之后，旧 active_tops 被替换为 next_tops，旧的前缀结点（可能有
+/// 数十个）不再被任何活跃栈顶引用，但仍留在 gss_nodes 数组中。对长输入文件，
+/// 这会导致 Arena 线性增长（每 token 增加 O(states) 个死亡结点）。
+///
+/// 算法：
+///   1. 从 roots 出发 DFS，标记所有可达的 GssRef（包括哨兵结点 0）
+///   2. 建立 old_ref → new_compact_ref 的重映射表
+///   3. 用新索引重建 gss_nodes（所有 GssLink.predecessor 用新索引）
+///   4. 原地更新 roots 数组为新索引
+///
+/// 调用时机：每次 run_shift 完成、active_tops 切换为下一轮栈顶之后。
+fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
+  let n = self.gss_nodes.length()
+
+  // ── 1. 标记可达结点（DFS）───────────────────────────────────────────────────
+  let live : Array[Bool] = Array::make(n, false)
+  let stack : Array[GssRef] = roots.copy()
+  while not(stack.is_empty()) {
+    match stack.pop() {
+      None => break
+      Some(r) => {
+        if r < 0 || r >= n || live[r] {
+          continue
+        }
+        live[r] = true
+        for link in self.gss_nodes[r].links {
+          stack.push(link.predecessor)
+        }
+      }
+    }
+  }
+
+  // ── 2. 建立重映射表（旧索引 → 新紧凑索引）──────────────────────────────────
+  let remap : Array[Int] = Array::make(n, -1)
+  let mut new_idx = 0
+  let mut old_i = 0
+  while old_i < n {
+    if live[old_i] {
+      remap[old_i] = new_idx
+      new_idx = new_idx + 1
+    }
+    old_i = old_i + 1
+  }
+
+  // 无死亡结点 → 不需要重建
+  if new_idx == n {
+    return
+  }
+
+  // ── 3. 重建 gss_nodes（仅保留可达结点，predecessor refs 用新索引）─────────
+  let new_nodes : Array[GssNode] = []
+  let mut oi = 0
+  while oi < n {
+    if live[oi] {
+      let old_node = self.gss_nodes[oi]
+      let new_links : Array[GssLink] = []
+      for lnk in old_node.links {
+        new_links.push({
+          predecessor: remap[lnk.predecessor],
+          node: lnk.node,
+          leading_extras: lnk.leading_extras,
+        })
+      }
+      new_nodes.push({ state: old_node.state, links: new_links })
+    }
+    oi = oi + 1
+  }
+
+  // 原地替换 Arena ─────────────────────────────────────────────────────────────
+  while not(self.gss_nodes.is_empty()) {
+    let _ = self.gss_nodes.pop()
+  }
+  for nd in new_nodes {
+    self.gss_nodes.push(nd)
+  }
+
+  // ── 4. 更新 roots 的索引为新紧凑索引 ─────────────────────────────────────
+  let mut ri = 0
+  while ri < roots.length() {
+    roots[ri] = remap[roots[ri]]
+    ri = ri + 1
+  }
+}
 
 ///|
 /// 从 GSS 结点反向收集状态路径（调试用）
