@@ -1,0 +1,140 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/runtime"
+
+import {
+  "caiklonghuan/MoonParse/tablegen",
+}
+
+// Values
+pub fn apply_edit(OldTree, InputEdit) -> OldTree
+
+pub fn bytes_to_point(String, Int, Point, Int) -> Point
+
+pub fn find_reusable_node(OldTree, Int, Int, Int) -> CstNode?
+
+pub fn glr_parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
+
+pub fn insert_missing_token(RecoveryContext, @tablegen.ParseTable, Int) -> RecoveryResult
+
+pub fn is_reusable(CstNode, Int, Int, Int) -> Bool
+
+pub fn parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
+
+pub fn parse_incremental(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
+
+pub fn parse_linear(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
+
+pub fn parse_with_old_tree(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
+
+pub fn recover_to_state(RecoveryContext, @tablegen.ParseTable, String) -> RecoveryResult
+
+pub fn skip_lookahead(RecoveryContext, @tablegen.ParseTable) -> RecoveryResult
+
+pub let sym_end : Int
+
+pub let sym_error : Int
+
+pub let sym_error_repeat : Int
+
+// Errors
+
+// Types and methods
+pub(all) struct CstNode {
+  symbol : Int
+  is_named : Bool
+  start_byte : Int
+  end_byte : Int
+  start_point : Point
+  end_point : Point
+  parse_state : Int
+  lookahead_bytes : Int
+  is_keyword : Bool
+  children : Array[CstNode]
+  field_names : Array[String?]
+  production_id : Int
+  dynamic_precedence : Int
+  extra : Bool
+  is_missing : Bool
+  is_error : Bool
+  has_changes : Bool
+  fragile_left : Bool
+  fragile_right : Bool
+}
+pub fn CstNode::error_node(Array[Self], Int, Int, Point, Point) -> Self
+pub fn CstNode::inner(Int, Bool, Array[Self], Array[String?], Int, Int, Bool) -> Self
+pub fn CstNode::leaf(Int, Bool, Int, Int, Point, Point, Int, Int, Bool, Bool) -> Self
+pub impl Show for CstNode
+
+type ErrorStatus
+pub impl Show for ErrorStatus
+
+type GlrEngine
+
+type GssNode
+pub impl Show for GssNode
+
+pub(all) struct InputEdit {
+  start_byte : Int
+  old_end_byte : Int
+  new_end_byte : Int
+  start_point : Point
+  old_end_point : Point
+  new_end_point : Point
+}
+pub impl Show for InputEdit
+
+pub struct LexerEngine {
+  dfa : @tablegen.LexerDfa
+}
+pub fn LexerEngine::new(@tablegen.LexerDfa) -> Self
+pub fn LexerEngine::next_token(Self, String, Int, @tablegen.ParseTable, Int) -> (Token?, Int)
+
+type LrParser
+
+pub(all) struct OldTree {
+  root : CstNode
+  old_input : String
+}
+pub impl Show for OldTree
+
+pub(all) struct ParseError {
+  position : Int
+  point : Point
+  message : String
+}
+pub impl Show for ParseError
+
+pub(all) struct Point {
+  row : Int
+  column : Int
+}
+pub impl Eq for Point
+pub impl Show for Point
+
+type RecoveryContext
+pub impl Show for RecoveryContext
+
+pub(all) enum RecoveryResult {
+  Recovered(Array[CstNode])
+  Failed
+}
+pub impl Show for RecoveryResult
+
+type StackFrame
+pub impl Show for StackFrame
+
+type StackSummary
+
+type StackSummaryEntry
+pub impl Show for StackSummaryEntry
+
+type StackVersion
+pub impl Show for StackVersion
+
+type Token
+pub impl Show for Token
+
+// Type aliases
+
+// Traits
+

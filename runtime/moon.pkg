@@ -1,3 +1,3 @@
-// import {
-//   "caiklonghuan/MoonParse/grammar" @lib,
-// }
+import {
+  "caiklonghuan/MoonParse/tablegen" @tablegen,
+}
