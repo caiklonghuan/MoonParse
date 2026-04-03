@@ -273,3 +273,42 @@ test "GLR fragile — S/R 冲突文法内部节点 fragile=true" {
     }
   }
 }
+
+// 表 8：skip_token 错误恢复
+//
+// GLR 遇到无法 Shift 的 token 时，skip_token 把它包进 ERROR 节点并保持
+// 当前 LR 状态，解析继续推进，最终仍返回 Ok（而非 Err）。
+
+///|
+test "skip_token — 单个垃圾字符后正常解析" {
+  // 文法：s → "a" "b"，输入 "!ab"
+  // "!" 无法被任何状态 Shift，应被 skip，然后 "ab" 正常完成
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  match parse_from_dsl(dsl, "!ab") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) =>
+      // 根节点覆盖到 "ab" 结束位置（byte 3），不包括被 skip 的位置 0
+      assert_eq(root.end_byte, 3)
+  }
+}
+
+///|
+test "skip_token — 多个垃圾字符后正常解析" {
+  // 输入 "!!ab"，两个 "!" 都被 skip
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  match parse_from_dsl(dsl, "!!ab") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => assert_eq(root.end_byte, 4)
+  }
+}
+
+///|
+test "skip_token — 只有垃圾字符（无法恢复到完整树）" {
+  // 输入 "!!"，无法拼出完整 s，解析最终接受不了，预期返回 Err
+  // （skip 后 active_tops 仍在等 "a"，EOF 时无 accept 状态）
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  match parse_from_dsl(dsl, "!!") {
+    Err(_) => () // 期望失败
+    Ok(_) => fail("expected Err but got Ok")
+  }
+}

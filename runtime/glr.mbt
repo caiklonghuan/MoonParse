@@ -61,6 +61,10 @@ struct GlrEngine {
   gss_nodes : Array[GssNode]
   active_tops : Array[GssRef]
   lexer : LexerEngine
+  /// 各活跃版本的代价记录（GssRef → ErrorStatus）
+  /// skip_token / insert_missing 等恢复策略在此累积代价；
+  /// condense（Phase 2b 后期）据此剪枝超限版本。
+  error_status : Map[GssRef, ErrorStatus]
 }
 
 ///|
@@ -69,7 +73,7 @@ struct GlrEngine {
 /// 创建唯一底部哨兵结点（state=0, links=[]），并将其设为唯一活跃栈顶。
 fn GlrEngine::new(lexer : LexerEngine) -> GlrEngine {
   let sentinel : GssNode = { state: 0, links: [] }
-  { gss_nodes: [sentinel], active_tops: [0], lexer }
+  { gss_nodes: [sentinel], active_tops: [0], lexer, error_status: Map::new() }
 }
 
 ///|
@@ -139,13 +143,17 @@ fn GlrEngine::run(
         return self.collect_root_glr(table, pos, cur_point)
       }
       Some(tok) => {
-        // 词法错误
+        // 词法错误：无法识别的字节 → skip，保留 pending_extras 供后续 token 使用
         if tok.terminal_id == sym_error {
-          return Err({
-            position: tok.start_byte,
-            point: cur_point,
-            message: "lexer error: unrecognized character at byte \{tok.start_byte}",
-          })
+          self.skip_token(tok, cur_point, input)
+          cur_point = bytes_to_point(
+            input,
+            tok.start_byte,
+            cur_point,
+            tok.end_byte,
+          )
+          pos = new_pos
+          continue
         }
 
         // Extras token：创建叶节点，积累到 pending_extras
@@ -187,11 +195,16 @@ fn GlrEngine::run(
           let _ = pending_extras.pop()
         }
         if next_tops.is_empty() {
-          return Err({
-            position: tok.start_byte,
-            point: cur_point,
-            message: "syntax error: unexpected token (id=\{tok.terminal_id}) at byte \{tok.start_byte}",
-          })
+          // 无法 Shift：skip 当前 token，为所有活跃路径创建 ERROR 停留路径
+          self.skip_token(tok, cur_point, input)
+          cur_point = bytes_to_point(
+            input,
+            tok.start_byte,
+            cur_point,
+            tok.end_byte,
+          )
+          pos = new_pos
+          continue
         }
 
         // 替换 active_tops（原地清空 + 填入 next_tops）
@@ -430,6 +443,89 @@ fn GlrEngine::run_shift(
 }
 
 ///|
+/// Skip 恢复策略：把无法 Shift 的当前 token 包进 ERROR 节点，
+/// 为每个活跃栈顶创建「停留路径」（目标 state = 来源 state），令解析继续推进。
+///
+/// · 首次进入恢复时追加固定惩罚 error_cost_per_recovery（防频繁触发恢复）
+/// · 本次跳过的 token 代价由 error_cost_for_skipped_node 计算
+/// · 多条路径合并到同一 GssRef 时，保留代价更低的 ErrorStatus
+fn GlrEngine::skip_token(
+  self : GlrEngine,
+  tok : Token,
+  cur_point : Point,
+  input : String,
+) -> Unit {
+  // 构造被跳过 token 的叶节点，包进单子 ERROR 节点
+  let ep = bytes_to_point(input, tok.start_byte, cur_point, tok.end_byte)
+  let raw_leaf = CstNode::leaf(
+    tok.terminal_id,
+    false,
+    tok.start_byte,
+    tok.end_byte,
+    cur_point,
+    ep,
+    0,
+    tok.lookahead_bytes,
+    tok.is_keyword,
+    false,
+  )
+  let error_node = CstNode::error_node(
+    [raw_leaf],
+    tok.start_byte,
+    tok.end_byte,
+    cur_point,
+    ep,
+  )
+  let new_tops : Array[GssRef] = []
+  for top_ref in self.active_tops {
+    let state = self.gss_nodes[top_ref].state
+    let link : GssLink = {
+      predecessor: top_ref,
+      node: Some(error_node),
+      leading_extras: [],
+    }
+    let (merged_ref, _) = self.find_or_merge(state, link, new_tops)
+    // 以 top_ref 的 ErrorStatus 为基础，累加本次跳过的代价
+    let old_status = self.error_status.get(top_ref)
+    let base_cost = match old_status {
+      Some(s) => s.cost
+      None => 0
+    }
+    let is_first_error = match old_status {
+      Some(s) => not(s.is_in_error)
+      None => true
+    }
+    let skip_cost = error_cost_for_skipped_node(error_node)
+    let recovery_penalty = if is_first_error {
+      error_cost_per_recovery
+    } else {
+      0
+    }
+    let new_cost = base_cost + recovery_penalty + skip_cost
+    // 多路径合并：保留代价更低的 ErrorStatus
+    let existing_cost = match self.error_status.get(merged_ref) {
+      Some(s) => s.cost
+      None => 1_000_000
+    }
+    if new_cost < existing_cost {
+      self.error_status[merged_ref] = {
+        cost: new_cost,
+        node_count: 0,
+        dynamic_precedence: 0,
+        is_in_error: true,
+      }
+    }
+  }
+  // 以停留路径替换 active_tops
+  while not(self.active_tops.is_empty()) {
+    let _ = self.active_tops.pop()
+  }
+  for r in new_tops {
+    self.active_tops.push(r)
+  }
+}
+
+///|
 /// Reduce worklist 阶段：对活跃栈顶集合执行所有可能的 Reduce 动作至不动点。
 ///
 /// 算法（Tomita 风格 worklist）：
@@ -649,6 +745,19 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
   while ri < roots.length() {
     roots[ri] = remap[roots[ri]]
     ri = ri + 1
+  }
+
+  // 重映射 error_status（GssRef 键随压缩而变化）
+  let remapped_es : Array[(GssRef, ErrorStatus)] = []
+  self.error_status.each(fn(old_ref, status) {
+    if old_ref >= 0 && old_ref < n && live[old_ref] {
+      remapped_es.push((remap[old_ref], status))
+    }
+  })
+  self.error_status.clear()
+  for item in remapped_es {
+    let (new_ref, status) = item
+    self.error_status[new_ref] = status
   }
 }
 
