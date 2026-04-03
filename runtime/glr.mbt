@@ -193,13 +193,14 @@ fn GlrEngine::run(
 ///
 /// 算法：
 ///   遍历 active_tops，对每个结点检查 action[(state, eoi_id)]：
-///     · Accept 直接命中      → 根节点在该结点的入边（links）上
 ///     · Shift(s_acc) 且 s_acc 有 Accept（即 $accept → start • $ 状态）
-///                            → 根节点同样在该结点的入边上
+///                            → 根节点在该结点的入边（links）上
 ///
-///   为什么根节点在入边上：
-///     在 $accept → start $ 的增广文法里，active_top 对应状态
-///     [$accept → start • $]，其唯一入边携带的正是 start 的 CstNode。
+///   为什么只处理 Shift(s_acc) 而不直接检查 Accept：
+///     LALR 增广文法结构为 $accept → start $。run_reduce_worklist(eoi_id)
+///     产生 [$accept → start • $] 状态的 active_top，该状态对 eoi 的动作是
+///     Shift(s_acc)，只有 s_acc 才有 Accept。当前 active_top 自身永远不持有
+///     Accept，Case 1（直接 Accept）是死代码，故已删除。
 ///
 ///   多路径（歧义）：Phase 2b 返回第一条；Phase 2c 改为 AmbiguityNode。
 fn GlrEngine::collect_root_glr(
@@ -215,16 +216,8 @@ fn GlrEngine::collect_root_glr(
       Some(acts) =>
         for act in acts {
           match act {
-            // Case 1: 当前状态直接有 Accept（理论上需先 Shift eoi，但作为保险保留）
-            Accept =>
-              for link in self.gss_nodes[top_ref].links {
-                match link.node {
-                  Some(n) => return Ok(n)
-                  None => ()
-                }
-              }
-            // Case 2: Shift(s_acc) 且 s_acc 状态有 Accept
-            //         对应 [$accept → start • $] 状态，入边携带 start CstNode
+            // Shift(s_acc) 且 s_acc 有 Accept：
+            //   对应 [$accept → start • $] 状态，入边携带 start 的 CstNode
             Shift(s_acc) =>
               match table.action.get((s_acc, @tablegen.eoi_id)) {
                 None => ()
@@ -249,7 +242,7 @@ fn GlrEngine::collect_root_glr(
                   }
                 }
               }
-            Reduce(_) => () // 已在 run_reduce_worklist 处理完毕
+            Accept | Reduce(_) => () // Accept 不在此处触发；Reduce 已由 worklist 处理
           }
         }
     }
