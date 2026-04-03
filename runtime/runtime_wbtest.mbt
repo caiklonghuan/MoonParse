@@ -312,3 +312,45 @@ test "skip_token — 只有垃圾字符（无法恢复到完整树）" {
     Ok(_) => fail("expected Err but got Ok")
   }
 }
+
+// 表 9：insert_missing 恢复
+//
+// insert_missing 在无法 Shift 当前 token 时，先检查是否可以插入一个 MISSING
+// 虚拟节点，使解析继续推进并消费当前 token。
+// 与 skip_token 区别：skip 是"扔掉当前 token"，insert_missing 是"在当前 token
+// 前插入一个缺失 token"——后者更能保留语义结构。
+
+///|
+test "insert_missing — 缺少分号后仍可完成解析" {
+  // 文法：s → "a" ";" "b"，输入 "ab"（缺 ";"）
+  // insert_missing 插入虚拟 ";"，然后正常 Shift "b"，解析成功
+  let dsl = "start s\nrule s: \"a\" \";\" \"b\""
+  match parse_from_dsl(dsl, "ab") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => {
+      // 根节点覆盖整个输入 [0, 2)
+      assert_eq(root.end_byte, 2)
+      // s → "a" ";" "b"：三个子节点（";" 是 MISSING 节点，zero-width）
+      assert_eq(root.children.length(), 3)
+      // 中间子节点是 MISSING 节点
+      assert_eq(root.children[1].is_missing, true)
+      // MISSING 节点是零宽的
+      assert_eq(root.children[1].start_byte, root.children[1].end_byte)
+    }
+  }
+}
+
+///|
+test "insert_missing — 缺少中间 token 的代价标记" {
+  // 含 MISSING 节点的路径，其 error_status 应有代价（> 0）
+  // 通过多次恢复后解析成功 → 根节点存在 MISSING 子孙
+  let dsl = "start s\nrule s: \"a\" \";\" \"b\""
+  match parse_from_dsl(dsl, "ab") {
+    Err(e) => fail("expected Ok: \{e.message}")
+    Ok(root) => {
+      // 存在 MISSING 子节点
+      let has_missing = root.children.iter().any(fn(c) { c.is_missing })
+      assert_true(has_missing)
+    }
+  }
+}

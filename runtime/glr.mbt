@@ -143,8 +143,18 @@ fn GlrEngine::run(
         return self.collect_root_glr(table, pos, cur_point)
       }
       Some(tok) => {
-        // 词法错误：无法识别的字节 → skip，保留 pending_extras 供后续 token 使用
+        // 词法错误：先尝试 insert_missing_and_relex（插入缺失 token 后重词法）；
+        // 失败再降级到 skip
         if tok.terminal_id == sym_error {
+          let (ok, new_pos2, new_point2) = self.insert_missing_and_relex(
+            table, pos, cur_point, input,
+          )
+          if ok {
+            self.compact(self.active_tops)
+            cur_point = new_point2
+            pos = new_pos2
+            continue
+          }
           self.skip_token(tok, cur_point, input)
           cur_point = bytes_to_point(
             input,
@@ -195,7 +205,20 @@ fn GlrEngine::run(
           let _ = pending_extras.pop()
         }
         if next_tops.is_empty() {
-          // 无法 Shift：skip 当前 token，为所有活跃路径创建 ERROR 停留路径
+          // 先尝试 insert_missing（插入虚拟 token，代价 610）；
+          // 失败再降级到 skip_token（跳过当前 token，代价 601+）
+          if self.insert_missing(table, tok, cur_point, input) {
+            self.compact(self.active_tops)
+            cur_point = bytes_to_point(
+              input,
+              tok.start_byte,
+              cur_point,
+              tok.end_byte,
+            )
+            pos = new_pos
+            continue
+          }
+          // 降级：skip 当前 token，为所有活跃路径创建 ERROR 停留路径
           self.skip_token(tok, cur_point, input)
           cur_point = bytes_to_point(
             input,
@@ -523,6 +546,339 @@ fn GlrEngine::skip_token(
   for r in new_tops {
     self.active_tops.push(r)
   }
+}
+
+///|
+/// Insert-Missing 恢复策略：为无法 Shift 的当前 token，
+/// 在各活跃路径的合法 terminal 位置插入虚拟 MISSING 节点，
+/// 使解析能够继续推进并消费当前 token。
+///
+/// 算法：
+///   对 active_tops 中每个 top_ref：
+///     · 枚举 valid_tokens[state] 中所有可 Shift 的 terminal tid（跳过 extras/eoi/error）
+///     · 对每个 Shift(next_state) 动作：
+///         1. 构造 missing_leaf(tid, byte_pos, cur_point)（零宽，is_missing=true）
+///         2. 以 missing_leaf 为边节点新建 GssNode(next_state)
+///         3. 以该节点为临时 active_top，对 actual_tok 做 Reduce→Shift 模拟
+///         4. 若 Shift 成功 → 收集 result_tops，记录代价
+///   result_tops 非空 → 更新 active_tops → 返回 true
+///   全部失败   → 还原 active_tops → 返回 false
+///
+/// 代价 = base_cost
+///        + error_cost_per_recovery(500)（首次进入恢复）
+///        + error_cost_per_missing_tree(110)
+fn GlrEngine::insert_missing(
+  self : GlrEngine,
+  table : @tablegen.ParseTable,
+  actual_tok : Token,
+  cur_point : Point,
+  input : String,
+) -> Bool {
+  let byte_pos = actual_tok.start_byte
+  let saved_tops = self.active_tops.copy()
+  let result_tops : Array[GssRef] = []
+  let result_costs : Array[(GssRef, Int)] = []
+  for top_ref in saved_tops {
+    let state = self.gss_nodes[top_ref].state
+    match table.lexer_dfa.valid_tokens.get(state) {
+      None => ()
+      Some(valid_tids) => {
+        let (base_cost, is_first_error) = match self.error_status.get(top_ref) {
+          Some(s) => (s.cost, not(s.is_in_error))
+          None => (0, true)
+        }
+        for tid in valid_tids {
+          // 跳过 eoi、词法 error 符号、extras（这些不能作为 missing 插入）
+          if tid == @tablegen.eoi_id || tid == sym_error {
+            continue
+          }
+          let mut is_extra = false
+          for et in table.extras {
+            if et == tid {
+              is_extra = true
+              break
+            }
+          }
+          if is_extra {
+            continue
+          }
+          // 枚举该 terminal 的所有 Shift 动作
+          match table.action.get((state, tid)) {
+            None => ()
+            Some(acts) =>
+              for act in acts {
+                match act {
+                  Shift(next_state) => {
+                    // 构造零宽 MISSING 叶节点
+                    let is_named = if tid < table.symbol_metadata.length() {
+                      table.symbol_metadata[tid].is_named
+                    } else {
+                      false
+                    }
+                    let missing = CstNode::missing_leaf(
+                      tid, is_named, byte_pos, cur_point,
+                    )
+                    let link : GssLink = {
+                      predecessor: top_ref,
+                      node: Some(missing),
+                      leading_extras: [],
+                    }
+                    // 新建「missing 后」状态的 GssNode，临时压入 active_tops
+                    let new_ref = self.gss_nodes.length()
+                    self.gss_nodes.push({ state: next_state, links: [link] })
+                    while not(self.active_tops.is_empty()) {
+                      let _ = self.active_tops.pop()
+                    }
+                    self.active_tops.push(new_ref)
+                    // 模拟：以真实 token 为前瞻做 Reduce 到不动点，再尝试 Shift
+                    self.run_reduce_worklist(table, actual_tok.terminal_id)
+                    let shifted = self.run_shift(
+                      table,
+                      actual_tok,
+                      cur_point,
+                      input,
+                      [],
+                    )
+                    if not(shifted.is_empty()) {
+                      let new_cost = base_cost +
+                        (if is_first_error {
+                          error_cost_per_recovery
+                        } else {
+                          0
+                        }) +
+                        error_cost_per_missing_tree
+                      for r in shifted {
+                        result_tops.push(r)
+                        result_costs.push((r, new_cost))
+                      }
+                    }
+                  }
+                  _ => ()
+                }
+              }
+          }
+        }
+      }
+    }
+  }
+  // 无论成败都先清空 active_tops，再按结果填入
+  while not(self.active_tops.is_empty()) {
+    let _ = self.active_tops.pop()
+  }
+  if result_tops.is_empty() {
+    // 全部失败：还原
+    for r in saved_tops {
+      self.active_tops.push(r)
+    }
+    return false
+  }
+  // 成功：对 result_tops 按 GssRef 去重后填入 active_tops
+  let seen : Array[GssRef] = []
+  for r in result_tops {
+    let mut dup = false
+    for s in seen {
+      if s == r {
+        dup = true
+        break
+      }
+    }
+    if not(dup) {
+      seen.push(r)
+      self.active_tops.push(r)
+    }
+  }
+  // 写入 error_status（多路径合并时取代价更低者）
+  for item in result_costs {
+    let (r, new_cost) = item
+    let existing = match self.error_status.get(r) {
+      Some(s) => s.cost
+      None => 1_000_000
+    }
+    if new_cost < existing {
+      self.error_status[r] = {
+        cost: new_cost,
+        node_count: 0,
+        dynamic_precedence: 0,
+        is_in_error: false, // 成功插入并推进，退出错误模式
+      }
+    }
+  }
+  true
+}
+
+///|
+/// Insert-Missing + 重词法策略：用于 sym_error 情形（词法层失败）。
+///
+/// 与 insert_missing 的区别：
+///   insert_missing 使用**已知 actual_tok** 做内部 Reduce→Shift 模拟；
+///   本函数在插入 MISSING 后重新计算 valid 集合并重新 lex，
+///   用于当前字符无法匹配当前 valid set（但可能匹配 missing_after 状态的 valid set）。
+///
+/// 返回 (succeeded, new_pos, new_cur_point)。
+/// succeeded=true 时 active_tops 已更新为 post-shift 状态。
+fn GlrEngine::insert_missing_and_relex(
+  self : GlrEngine,
+  table : @tablegen.ParseTable,
+  pos : Int,
+  cur_point : Point,
+  input : String,
+) -> (Bool, Int, Point) {
+  let saved_tops = self.active_tops.copy()
+  let result_tops : Array[GssRef] = []
+  let result_costs : Array[(GssRef, Int)] = []
+  let mut result_new_pos = pos
+  let mut result_new_point = cur_point
+  for top_ref in saved_tops {
+    let state = self.gss_nodes[top_ref].state
+    match table.lexer_dfa.valid_tokens.get(state) {
+      None => ()
+      Some(valid_tids) => {
+        let (base_cost, is_first_error) = match self.error_status.get(top_ref) {
+          Some(s) => (s.cost, not(s.is_in_error))
+          None => (0, true)
+        }
+        for tid in valid_tids {
+          if tid == @tablegen.eoi_id || tid == sym_error {
+            continue
+          }
+          let mut is_extra = false
+          for et in table.extras {
+            if et == tid {
+              is_extra = true
+              break
+            }
+          }
+          if is_extra {
+            continue
+          }
+          match table.action.get((state, tid)) {
+            None => ()
+            Some(acts) =>
+              for act in acts {
+                match act {
+                  Shift(next_state) => {
+                    let is_named = if tid < table.symbol_metadata.length() {
+                      table.symbol_metadata[tid].is_named
+                    } else {
+                      false
+                    }
+                    let missing = CstNode::missing_leaf(
+                      tid, is_named, pos, cur_point,
+                    )
+                    let link : GssLink = {
+                      predecessor: top_ref,
+                      node: Some(missing),
+                      leading_extras: [],
+                    }
+                    let new_ref = self.gss_nodes.length()
+                    self.gss_nodes.push({ state: next_state, links: [link] })
+                    while not(self.active_tops.is_empty()) {
+                      let _ = self.active_tops.pop()
+                    }
+                    self.active_tops.push(new_ref)
+                    // 重新计算 valid 集合（missing 后的状态）并重新词法
+                    let new_valid : Set[Int] = Set::new()
+                    for t2 in self.active_tops {
+                      let st2 = self.gss_nodes[t2].state
+                      match table.lexer_dfa.valid_tokens.get(st2) {
+                        Some(ts) =>
+                          for t in ts {
+                            new_valid.add(t)
+                          }
+                        None => ()
+                      }
+                    }
+                    for t in table.extras {
+                      new_valid.add(t)
+                    }
+                    let (maybe_retok, new_pos2) = self.lexer.run_dfa(
+                      input, pos, new_valid, table,
+                    )
+                    match maybe_retok {
+                      None => ()
+                      Some(retok) =>
+                        if retok.terminal_id != sym_error && not(retok.is_extra) {
+                          self.run_reduce_worklist(table, retok.terminal_id)
+                          let shifted = self.run_shift(
+                            table,
+                            retok,
+                            cur_point,
+                            input,
+                            [],
+                          )
+                          if not(shifted.is_empty()) {
+                            let new_cost = base_cost +
+                              (if is_first_error {
+                                error_cost_per_recovery
+                              } else {
+                                0
+                              }) +
+                              error_cost_per_missing_tree
+                            for r in shifted {
+                              result_tops.push(r)
+                              result_costs.push((r, new_cost))
+                            }
+                            result_new_pos = new_pos2
+                            result_new_point = bytes_to_point(
+                              input,
+                              retok.start_byte,
+                              cur_point,
+                              retok.end_byte,
+                            )
+                          }
+                        }
+                    }
+                  }
+                  _ => ()
+                }
+              }
+          }
+        }
+      }
+    }
+  }
+  // 无论成败先清空 active_tops
+  while not(self.active_tops.is_empty()) {
+    let _ = self.active_tops.pop()
+  }
+  if result_tops.is_empty() {
+    for r in saved_tops {
+      self.active_tops.push(r)
+    }
+    return (false, pos, cur_point)
+  }
+  // 去重填入 active_tops
+  let seen : Array[GssRef] = []
+  for r in result_tops {
+    let mut dup = false
+    for s in seen {
+      if s == r {
+        dup = true
+        break
+      }
+    }
+    if not(dup) {
+      seen.push(r)
+      self.active_tops.push(r)
+    }
+  }
+  // 写入 error_status
+  for item in result_costs {
+    let (r, new_cost) = item
+    let existing = match self.error_status.get(r) {
+      Some(s) => s.cost
+      None => 1_000_000
+    }
+    if new_cost < existing {
+      self.error_status[r] = {
+        cost: new_cost,
+        node_count: 0,
+        dynamic_precedence: 0,
+        is_in_error: false,
+      }
+    }
+  }
+  (true, result_new_pos, result_new_point)
 }
 
 ///|
