@@ -6,7 +6,7 @@
 //   parse(table, input)
 //     · Phase 2a：→ parse_linear（单栈 LR，无错误恢复）
 //     · Phase 2b：→ parse_linear + 错误恢复
-//     · Phase 2c：→ glr_parse（GSS，歧义语法）
+//     · Phase 2c：→ glr_parse（GSS，歧义语法）✓ 当前阶段
 //
 //   parse_with_old_tree(table, input, old_tree, edit)
 //     · Phase 3a：→ parse_incremental（复用旧子树）
@@ -26,7 +26,7 @@ pub fn parse(
   table : @tablegen.ParseTable,
   input : String,
 ) -> Result[CstNode, ParseError] {
-  parse_linear(table, input)
+  glr_parse(table, input)
 }
 
 ///|
