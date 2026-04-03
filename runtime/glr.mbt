@@ -70,16 +70,125 @@ fn GlrEngine::new(lexer : LexerEngine) -> GlrEngine {
 }
 
 ///|
-/// GLR 解析入口（Phase 2b — TODO: 主循环待实现，暂 fallback 至 parse_linear）
+/// GLR 解析入口
 ///
+/// 构造 GlrEngine，调用主循环 run，返回解析结果。
 /// 当解析表不含冲突时，等价于 parse_linear；
 /// 含冲突时并行展开所有 Shift / Reduce 路径。
 pub fn glr_parse(
   table : @tablegen.ParseTable,
   input : String,
 ) -> Result[CstNode, ParseError] {
-  // TODO Phase 2c: 实现 GSS 主循环（enum_paths + reduce worklist + shift）
-  parse_linear(table, input)
+  let lexer = LexerEngine::new(table.lexer_dfa)
+  let engine = GlrEngine::new(lexer)
+  engine.run(table, input)
+}
+
+///|
+/// GLR 主循环
+///
+/// 每轮：
+///   1. EOF → run_reduce(eoi_id) → collect_root_glr
+///   2. 合并所有活跃栈顶的 valid_tokens，调用 DFA 词法
+///   3. extras token → 前进 pos，active_tops 不变（Phase 2b: 暂不追踪入 GSS）
+///   4. 普通 token → run_reduce_worklist → run_shift → 替换 active_tops
+fn GlrEngine::run(
+  self : GlrEngine,
+  table : @tablegen.ParseTable,
+  input : String,
+) -> Result[CstNode, ParseError] {
+  let mut pos : Int = 0
+  let mut cur_point : Point = { row: 0, column: 0 }
+  while true {
+    // ── EOF 检查 ──────────────────────────────────────────────────────────────
+    if pos >= input.length() {
+      self.run_reduce_worklist(table, @tablegen.eoi_id)
+      return self.collect_root_glr(pos, cur_point)
+    }
+
+    // ── 计算所有活跃状态的合法 token 并集 ────────────────────────────────────
+    // GLR 中多条路径处于同一位置，词法器需对所有路径的合法符号取并集，
+    // 确保任意路径在当前位置认为合法的 token 都能被识别。
+    let valid : Set[Int] = Set::new()
+    for top_ref in self.active_tops {
+      let state = self.gss_nodes[top_ref].state
+      match table.lexer_dfa.valid_tokens.get(state) {
+        Some(ts) => for t in ts { valid.add(t) }
+        None => ()
+      }
+    }
+    for t in table.extras {
+      valid.add(t)
+    }
+
+    // ── 词法（直接调用 run_dfa，使用并集 valid 集合）─────────────────────────
+    let (maybe_tok, new_pos) = self.lexer.run_dfa(input, pos, valid, table)
+    match maybe_tok {
+      None => {
+        // pos < input.length() 但 DFA 无匹配：当做 EOF 处理
+        self.run_reduce_worklist(table, @tablegen.eoi_id)
+        return self.collect_root_glr(pos, cur_point)
+      }
+      Some(tok) => {
+        // ── 词法错误 ──────────────────────────────────────────────────────────
+        if tok.terminal_id == sym_error {
+          return Err({
+            position: tok.start_byte,
+            point: cur_point,
+            message: "lexer error: unrecognized character at byte \{tok.start_byte}",
+          })
+        }
+
+        // ── Extras token：前进 pos，active_tops 不变 ─────────────────────────
+        // Phase 2b 限制：extras 节点暂不追踪进 GSS，不出现在 GLR 路径中。
+        // GLR CST 中 extras 的完整支持留待 Phase 3 补充。
+        if tok.is_extra {
+          cur_point = bytes_to_point(
+            input, tok.start_byte, cur_point, tok.end_byte,
+          )
+          pos = new_pos
+          continue
+        }
+
+        // ── 普通 token：Reduce 到不动点，再 Shift ────────────────────────────
+        self.run_reduce_worklist(table, tok.terminal_id)
+        let next_tops = self.run_shift(table, tok, cur_point, input)
+        if next_tops.is_empty() {
+          return Err({
+            position: tok.start_byte,
+            point: cur_point,
+            message: "syntax error: unexpected token (id=\{tok.terminal_id}) at byte \{tok.start_byte}",
+          })
+        }
+
+        // ── 替换 active_tops（原地清空 + 填入 next_tops）────────────────────
+        while not(self.active_tops.is_empty()) {
+          let _ = self.active_tops.pop()
+        }
+        for r in next_tops {
+          self.active_tops.push(r)
+        }
+        cur_point = bytes_to_point(
+          input, tok.start_byte, cur_point, tok.end_byte,
+        )
+        pos = new_pos
+      }
+    }
+  }
+  // 理论上不可达（while true 内所有路径均 return 或 continue）
+  Err({ position: 0, point: { row: 0, column: 0 }, message: "unreachable" })
+}
+
+///|
+/// Accept 时从活跃集中寻找根节点（Phase 2b 存根，Step 7 实现）
+fn GlrEngine::collect_root_glr(
+  self : GlrEngine,
+  pos : Int,
+  cur_pt : Point,
+) -> Result[CstNode, ParseError] {
+  // TODO Step 7: 找 action[(s, eoi)] = Accept 的活跃栈顶，沿路径取根 CstNode
+  ignore(self)
+  Err({ position: pos, point: cur_pt, message: "collect_root_glr: not yet implemented" })
 }
 
 ///|
