@@ -500,8 +500,9 @@ fn GlrEngine::run_reduce_worklist(
     // fragile 判据（仅当真正存在并行路径时才标 true）：
     //   · active_tops.length() > 1 — 本轮有多个活跃并行前缀（S/R 或 R/R 冲突）
     //   · paths.length() > 1       — 此产生式经由多条 GSS 路径归约（局部歧义）
-    // 两者均 false → 无歧义 → 节点可增量复用（Phase 3a）
-    let fragile = self.active_tops.length() > 1 || paths.length() > 1
+    // 两者均影响左边界（产生式起始位置因路径不同而异），右边界始终同步于当前词法单元位置。
+    // fragile_left: 有并行路径时为 true；fragile_right: 从最后一个子节点传播。
+    let fragile_left = self.active_tops.length() > 1 || paths.length() > 1
     for path_item in paths {
       let (base_ref, path) = path_item
       let base_state = self.gss_nodes[base_ref].state
@@ -526,6 +527,11 @@ fn GlrEngine::run_reduce_worklist(
             { name: "?", is_named: false }
           }
           let fnames : Array[String?] = prod.body.map(fn(bs) { bs.field_name })
+          let fragile_right = if children.is_empty() {
+            false
+          } else {
+            children[children.length() - 1].fragile_right
+          }
           let inner = CstNode::inner(
             nt,
             meta.is_named,
@@ -533,7 +539,8 @@ fn GlrEngine::run_reduce_worklist(
             fnames,
             prod.id,
             0,
-            fragile,
+            fragile_left,
+            fragile_right,
           )
           let new_link : GssLink = {
             predecessor: base_ref,

@@ -266,9 +266,10 @@ test "GLR fragile — S/R 冲突文法内部节点 fragile=true" {
   match parse_from_dsl(dsl, "iixex") {
     Err(e) => fail("parse failed: \{e.message}")
     Ok(root) => {
-      // 根节点由 S/R 冲突路径归约而来，必须 fragile
+      // 根节点由 S/R 冲突路径归约而来，fragile_left=true；
+      // 右边界始终同步于当前词法单元，不受并行路径影响，fragile_right=false
       assert_eq(root.fragile_left, true)
-      assert_eq(root.fragile_right, true)
+      assert_eq(root.fragile_right, false)
     }
   }
 }

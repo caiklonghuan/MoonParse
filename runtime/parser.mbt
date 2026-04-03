@@ -270,6 +270,7 @@ fn LrParser::do_reduce(
         prod.id,
         0,
         false,
+        false,
       )
 
       // 推入新状态与内部节点

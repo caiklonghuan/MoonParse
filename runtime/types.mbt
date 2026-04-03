@@ -129,7 +129,8 @@ pub fn CstNode::inner(
   field_names : Array[String?],
   production_id : Int,
   dynamic_precedence : Int,
-  fragile : Bool,
+  fragile_left : Bool,
+  fragile_right : Bool,
 ) -> CstNode {
   let start_byte = if children.is_empty() { 0 } else { children[0].start_byte }
   let end_byte = if children.is_empty() {
@@ -165,8 +166,8 @@ pub fn CstNode::inner(
     is_missing: false,
     is_error: false,
     has_changes: false,
-    fragile_left: fragile,
-    fragile_right: fragile,
+    fragile_left,
+    fragile_right,
   }
 }
 
