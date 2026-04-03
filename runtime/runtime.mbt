@@ -40,11 +40,35 @@ pub fn parse(
 /// - input    : 新的完整输入字符串（编辑后）
 /// - old_tree : 上一次解析结果（None = 首次解析）
 /// - edit     : 描述本次编辑的 InputEdit（None = 全量重解析）
-pub fn parse_with_old_tree(
-  table : @tablegen.ParseTable,
+
+///|
+/// DSL → ParseTable → CST 的一键便捷入口（主要用于测试和简单用例）。
+///
+/// 等价于：parse_grammar(dsl) >> generate_parse_table >> parse
+///
+/// # 参数
+/// - dsl   : Grammar DSL 字符串（与 @grammar.parse_grammar 格式一致）
+/// - input : 待解析的 UTF-8 字符串
+///
+/// # 返回
+/// - Ok(CstNode) — 解析成功
+/// - Err(ParseError) — 语法错误或 DSL/表生成失败
+pub fn parse_from_dsl(
+  dsl : String,
   input : String,
-  old_tree : OldTree?,
-  edit : InputEdit?,
 ) -> Result[CstNode, ParseError] {
-  parse_incremental(table, input, old_tree, edit)
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) =>
+      return Err({
+        position: 0,
+        point: { row: 0, column: 0 },
+        message: e.message,
+      })
+  }
+  match @tablegen.generate_parse_table(g) {
+    Err(e) =>
+      return Err({ position: 0, point: { row: 0, column: 0 }, message: e })
+    Ok((table, _)) => parse(table, input)
+  }
 }

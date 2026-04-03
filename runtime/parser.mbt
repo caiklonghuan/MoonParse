@@ -22,7 +22,7 @@ struct LrParser {
 
 ///|
 fn LrParser::new(lexer : LexerEngine) -> LrParser {
-  { state_stack: [1], node_stack: [], lexer }
+  { state_stack: [0], node_stack: [], lexer }
 }
 
 ///|
@@ -86,12 +86,9 @@ fn LrParser::run(
                   Err(e) => return Err(e)
                   Ok(_) => ()
                 }
-              Shift(_) =>
-                return Err({
-                  position: pos,
-                  point: cur_point,
-                  message: "internal: LALR table has Shift on EOF",
-                })
+              // Shift on EOF：增广文法 $accept → start • $ 过渡到 accept 状态
+              // 不消耗输入，不推 CST 节点，只推 state
+              Shift(next_state) => self.state_stack.push(next_state)
             }
           }
         }
