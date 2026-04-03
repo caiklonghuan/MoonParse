@@ -147,6 +147,144 @@ fn GlrEngine::enum_paths(
 }
 
 ///|
+/// Reduce worklist 阶段：对活跃栈顶集合执行所有可能的 Reduce 动作至不动点。
+///
+/// 算法（Tomita 风格 worklist）：
+///   1. 将 active_tops 中每个结点对 (top, prod_id) 放入 worklist
+///   2. 每次取出一个 (top, prod_id)：
+///      a. enum_paths(top, |body|) 得到所有子节点列表
+///      b. 对每条路径，取路径起点（base）的前驱结点作为 base_state 来源
+///      c. 查 goto[base_state, head] 得目标状态
+///      d. 构造 CstNode::inner，find_or_merge 合入 active_tops
+///      e. 若是新结点或新加了边 → 该新 top 的 Reduce 也须入队
+///   3. worklist 空 → Reduce 到不动点
+///
+/// tok_id  : 当前前瞻 token 的 TerminalId（用于查 action 表，EOF 传 eoi_id）
+/// active_tops 原地扩展（新 Reduce 结果追加到同一集合中）
+fn GlrEngine::run_reduce_worklist(
+  self : GlrEngine,
+  table : @tablegen.ParseTable,
+  tok_id : Int,
+) -> Unit {
+  // worklist 中每项 = (栈顶 GssRef, 产生式 ProductionId)
+  let worklist : Array[(GssRef, Int)] = []
+
+  // ── 初始化：把 active_tops 上所有 Reduce 动作入队 ─────────────────────────
+  fn enqueue_reduces(top : GssRef) -> Unit {
+    let state = self.gss_nodes[top].state
+    match table.action.get((state, tok_id)) {
+      None => ()
+      Some(acts) =>
+        for act in acts {
+          match act {
+            Reduce(pid) => worklist.push((top, pid))
+            _ => ()
+          }
+        }
+    }
+  }
+
+  // 注意：active_tops 在处理过程中可能扩展，用下标遍历以涵盖新加入的顶点
+  let mut i = 0
+  while i < self.active_tops.length() {
+    enqueue_reduces(self.active_tops[i])
+    i = i + 1
+  }
+
+  // ── 主循环：处理 worklist 直到空 ─────────────────────────────────────────
+  let mut wi = 0
+  while wi < worklist.length() {
+    let (top, prod_id) = worklist[wi]
+    wi = wi + 1
+
+    let prod = table.productions[prod_id]
+    let body_len = prod.body.length()
+
+    // 枚举所有长度为 body_len 的路径
+    let paths = self.enum_paths(top, body_len)
+    for path in paths {
+      // path[0..body_len-1] 是子节点列表（CstNode?）
+      // path 起点之前的那个结点是"归约之后的栈顶"候选的前驱
+      // 找到路径起点的前驱：沿 links 走 body_len 步到达的那个结点
+      // enum_paths 返回路径末端是 top，头部是 body_len 步之前的边，
+      // 头部结点的 predecessor 就是 base（归约后 goto 的来源）。
+      //
+      // 更直接做法：沿 top 的 links 深度优先走 body_len 步取到 base_ref
+      // enum_paths 中 len=0 时对应 base，base_ref = 走完所有边后剩余结点。
+      // 我们单独再走一次链来取 base_ref。
+      let base_ref = self.walk_base(top, body_len)
+      let base_state = self.gss_nodes[base_ref].state
+
+      // 查 goto 表
+      let nt = prod.head
+      match table.goto_table.get((base_state, nt)) {
+        None => () // goto 缺失 → 跳过（不应发生于合法语法）
+        Some(goto_st) => {
+          // 构造内部节点
+          let children : Array[CstNode] = []
+          for maybe_node in path {
+            match maybe_node {
+              Some(n) => children.push(n)
+              None => () // 底部哨兵边，不产生子节点
+            }
+          }
+          let meta : @tablegen.SymbolMeta = if nt <
+            table.symbol_metadata.length() {
+            table.symbol_metadata[nt]
+          } else {
+            { name: "?", is_named: false }
+          }
+          let fnames : Array[String?] = prod.body.map(fn(bs) { bs.field_name })
+          let inner = CstNode::inner(
+            nt,
+            meta.is_named,
+            children,
+            fnames,
+            prod.id,
+            0,
+            true, // fragile = true（GLR 合并结果，不可增量复用）
+          )
+          let new_link : GssLink = { predecessor: base_ref, node: Some(inner) }
+          let prev_len = self.active_tops.length()
+          let merged_ref = self.find_or_merge(
+            goto_st,
+            new_link,
+            self.active_tops,
+          )
+          // 若是新结点（active_tops 扩展了）或新加了边
+          // → 该结点上的 Reduce 也需入队（不动点条件）
+          let is_new_node = self.active_tops.length() > prev_len
+          let is_new_link = not(is_new_node) &&
+            self.gss_nodes[merged_ref].links.length() > 1
+          if is_new_node || is_new_link {
+            enqueue_reduces(merged_ref)
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 从 top 沿第一条入边向前走 steps 步，返回到达的 GssRef（base 结点）。
+///
+/// 注意：GLR 中同一结点可能有多条入边，此函数只沿第一条边走（用于非歧义路径）。
+/// 歧义情形由 enum_paths 全量枚举，walk_base 仅用于单路径情形。
+fn GlrEngine::walk_base(self : GlrEngine, from : GssRef, steps : Int) -> GssRef {
+  let mut cur = from
+  let mut s = steps
+  while s > 0 {
+    let node = self.gss_nodes[cur]
+    if node.links.is_empty() {
+      break
+    }
+    cur = node.links[0].predecessor
+    s = s - 1
+  }
+  cur
+}
+
+///|
 /// 从 GSS 结点反向收集状态路径（调试用）
 ///
 /// 沿第一条入边回溯，返回从底部到 top 的状态序列。
