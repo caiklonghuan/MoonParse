@@ -441,6 +441,13 @@ fn GlrEngine::run_shift(
 ///
 /// tok_id  : 当前前瞻 token 的 TerminalId（用于查 action 表，EOF 传 eoi_id）
 /// active_tops 原地扩展（新 Reduce 结果追加到同一集合中）
+///
+/// fragile 标记策略：
+///   · 仅当存在真正的并行路径时才标 fragile，避免过度标记阻塞 Phase 3a 增量复用
+///   · 判据（任意一条为 true → fragile = true）：
+///       1. active_tops.length() > 1：本轮存在多个并行活跃前缀（S/R 或 R/R 冲突）
+///       2. enum_paths 返回 > 1 条路径：同一 top 通过多条 GSS 前缀归约（局部歧义）
+///   · 两者均为 false 时（单路径无歧义），inner 节点标 fragile=false，可增量复用
 fn GlrEngine::run_reduce_worklist(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -486,6 +493,12 @@ fn GlrEngine::run_reduce_worklist(
     // 枚举所有长度为 body_len 的路径，同时得到每条路径的 base 结点
     // （base = 沿路径走完 body_len 步后所在的 GSS 结点，即 goto 查找的来源）
     let paths = self.enum_paths(top, body_len)
+
+    // fragile 判据（仅当真正存在并行路径时才标 true）：
+    //   · active_tops.length() > 1 — 本轮有多个活跃并行前缀（S/R 或 R/R 冲突）
+    //   · paths.length() > 1       — 此产生式经由多条 GSS 路径归约（局部歧义）
+    // 两者均 false → 无歧义 → 节点可增量复用（Phase 3a）
+    let fragile = self.active_tops.length() > 1 || paths.length() > 1
     for path_item in paths {
       let (base_ref, path) = path_item
       let base_state = self.gss_nodes[base_ref].state
@@ -517,7 +530,7 @@ fn GlrEngine::run_reduce_worklist(
             fnames,
             prod.id,
             0,
-            true, // fragile = true（GLR 合并结果，不可增量复用）
+            fragile,
           )
           let new_link : GssLink = {
             predecessor: base_ref,

@@ -239,3 +239,36 @@ test "GLR S/R 冲突 — 悬挂 else 文法可成功解析" {
     }
   }
 }
+
+// ─── 表 7：fragile 标记精度 ───────────────────────────────────────────────────
+//
+// 无歧义文法（确定性 LR）：内部节点不应被标 fragile，以便 Phase 3a 增量复用。
+// 有歧义文法（GLR 并行路径）：内部节点必须标 fragile。
+
+///|
+test "GLR fragile — 无歧义文法内部节点 fragile=false" {
+  // 确定性文法：s → "a" "b"，无任何 S/R 或 R/R 冲突
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  match parse_from_dsl(dsl, "ab") {
+    Err(e) => fail("parse failed: \{e.message}")
+    Ok(root) => {
+      // 根节点 s 是内部节点，不应被标 fragile
+      assert_eq(root.fragile_left, false)
+      assert_eq(root.fragile_right, false)
+    }
+  }
+}
+
+///|
+test "GLR fragile — S/R 冲突文法内部节点 fragile=true" {
+  // 悬挂 else：存在 S/R 冲突，GLR 并行探索 ⟹ 内部节点必须 fragile
+  let dsl = "start s\nrule s: \"i\" s \"e\" s | \"i\" s | \"x\""
+  match parse_from_dsl(dsl, "iixex") {
+    Err(e) => fail("parse failed: \{e.message}")
+    Ok(root) => {
+      // 根节点由 S/R 冲突路径归约而来，必须 fragile
+      assert_eq(root.fragile_left, true)
+      assert_eq(root.fragile_right, true)
+    }
+  }
+}
