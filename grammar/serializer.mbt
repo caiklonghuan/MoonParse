@@ -1,10 +1,10 @@
 // Grammar 序列化层
-// 对应 DESIGN.md §1.6
+// 对应 DESIGN.md .6
 // 提供两种序列化目标：
-//   1. grammar_to_string()  → DSL 文本（可被 parse_grammar 重新解析）
-//   2. grammar_to_json()    → JSON 字符串
+// grammar_to_string()  → DSL 文本（可被 parse_grammar 重新解析）
+// grammar_to_json()    → JSON 字符串
 
-// ─── DSL 文本序列化 ───────────────────────────────────────────────────────────
+// DSL 文本序列化
 
 ///|
 /// 将 Grammar 序列化为 DSL 字符串，输出结果可被 parse_grammar 重新解析
@@ -39,7 +39,7 @@ pub fn grammar_to_string(grammar : Grammar) -> String {
   parts.join("\n")
 }
 
-// ─── JSON 序列化 ──────────────────────────────────────────────────────────────
+// JSON 序列化
 
 ///|
 /// 将 Grammar 序列化为 JSON 字符串
@@ -159,7 +159,7 @@ fn pattern_to_json(p : Pattern) -> String {
   }
 }
 
-// ─── JSON 字符串转义 ──────────────────────────────────────────────────────────
+// JSON 字符串转义
 
 ///|
 /// 将字符串包裹为合法 JSON 字符串字面量（含转义处理）

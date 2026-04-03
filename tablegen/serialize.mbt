@@ -1,5 +1,5 @@
 ///|
-// ─── §7 JSON 序列化 ──────────────────────────────────────────────────────────
+// JSON 序列化
 //
 // Phase 1 只需 JSON，便于调试和与外部工具交互。
 // 二进制格式（serialize_table / deserialize_table）留待 Phase 2。
@@ -13,7 +13,7 @@
 //   "symbol_metadata": [...]
 // }
 
-// ─── 辅助：基础 JSON 构造 ────────────────────────────────────────────────────
+// 辅助：基础 JSON 构造
 
 ///|
 /// 转义 JSON 字符串中的特殊字符
@@ -77,7 +77,7 @@ fn jobj(fields : Array[(String, String)]) -> String {
   out + "}"
 }
 
-// ─── 子类型序列化 ────────────────────────────────────────────────────────────
+// 子类型序列化
 
 ///|
 /// Symbol → JSON（"terminal" / "nonterminal" / "eoi"）
@@ -156,7 +156,7 @@ fn terminal_def_to_json(td : TerminalDef) -> String {
     AnyChar => jobj([("type", jstr("anychar"))])
   }
 }
-// ─── 公开 API ─────────────────────────────────────────────────────────────────
+// 公开 API
 
 ///|
 /// 将 ParseTable 序列化为紧凑 JSON 字符串（Phase 1 调试 / 工具链互操作用）。
@@ -245,7 +245,7 @@ pub fn table_to_json(table : ParseTable) -> String {
 }
 
 ///|
-// ─── §7b 二进制序列化基础设施 ────────────────────────────────────────────────
+// b 二进制序列化基础设施
 //
 // 格式版本 1（小端字节序）：
 //   magic   : [0x4D, 0x50, 0x54, 0x01]   // "MPT\x01"
@@ -264,7 +264,7 @@ pub fn table_to_json(table : ParseTable) -> String {
 //   u16 字节数（小端）+ 各字符低 8 位字节序列。
 //   被序列化的字符串（规则名、终结符字面量、正则模式）均为 ASCII，无信息损失。
 
-// ─── BinWriter ────────────────────────────────────────────────────────────────
+// BinWriter
 
 ///|
 /// 可增长二进制写入缓冲区（小端字节序）
@@ -327,7 +327,7 @@ fn BinWriter::to_bytes(self : BinWriter) -> Bytes {
   Bytes::makei(self.buf.length(), fn(i) { self.buf[i] })
 }
 
-// ─── BinError ─────────────────────────────────────────────────────────────────
+// BinError
 
 ///|
 /// 反序列化期间的读取错误
@@ -338,7 +338,7 @@ priv suberror BinError {
   InvalidData(String)
 }
 
-// ─── BinReader ────────────────────────────────────────────────────────────────
+// BinReader
 
 ///|
 /// 固定字节缓冲读取器（小端字节序，带游标）
@@ -396,7 +396,7 @@ fn BinReader::read_str(self : BinReader) -> String raise BinError {
   buf.to_string()
 }
 
-// ─── 领域类型序列化辅助 ────────────────────────────────────────────────────────
+// 领域类型序列化辅助
 //
 // tag 编码（全局固定）：
 //   Symbol:      0=Terminal  1=NonTerminal  2=EndOfInput
@@ -757,7 +757,7 @@ fn read_terminal_patterns(
   patterns
 }
 
-// ─── 公开 API ─────────────────────────────────────────────────────────────────
+// 公开 API
 //
 // 格式版本 1 —— 节区顺序（全部小端）：
 //

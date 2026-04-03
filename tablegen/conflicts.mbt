@@ -1,13 +1,13 @@
 ///|
-// ─── §5 冲突处理 ─────────────────────────────────────────────────────────────
+// 冲突处理
 //
-// 实现 design.md §5 的公开函数：
+// 实现公开函数：
 //   resolve_conflicts(table, grammar) -> (ParseTable, Array[ConflictReport])
 //
 // 算法概览：
 //   对每个 action[(state, t)] 含多个动作的格：
-//   1. 若为 Reduce-Reduce → 无法消解，报 Ambiguous（GLR 保留全部）
-//   2. 若为 Shift-Reduce  → 对比 shift_prec 与 reduce_prec：
+// 若为 Reduce-Reduce → 无法消解，报 Ambiguous（GLR 保留全部）
+// 若为 Shift-Reduce  → 对比 shift_prec 与 reduce_prec：
 //        shift_prec  = grammar 中 body 含 Terminal(t) 的产生式 .prec 最大值
 //        reduce_prec = 被规约产生式的 .prec
 //      - shift_prec > reduce_prec : 删除 Reduce（Shift 胜）
@@ -19,7 +19,7 @@
 //          Dynamic  → 编译期无法消解，报 DynamicConflict
 //      - 无 prec 信息 → 报 Ambiguous（GLR 保留全部）
 
-// ─── 辅助：终结符 t 对应的 Shift 优先级 ────────────────────────────────────
+// 辅助：终结符 t 对应的 Shift 优先级
 
 ///|
 /// 预构建 Map[TerminalId, Int]：扫描全部产生式（O(P×B)）各做一次，
@@ -63,7 +63,7 @@ fn shift_prec_lookup(shift_map : Map[TerminalId, Int], t : TerminalId) -> Int? {
   shift_map.get(t)
 }
 
-// ─── 辅助：单格冲突消解 ──────────────────────────────────────────────────────
+// 辅助：单格冲突消解
 
 ///|
 /// 对单个含多个动作的 action 格进行优先级/结合性消解。
@@ -88,7 +88,7 @@ fn resolve_cell(
     }
   }
 
-  // ── Reduce-Reduce：无法消解，报 Ambiguous ─────────────────────────────────
+  // Reduce-Reduce：无法消解，报 Ambiguous
   if shifts.length() == 0 {
     let msg = "Reduce-Reduce conflict in state \{state} on terminal \{terminal}"
     return (
@@ -97,7 +97,7 @@ fn resolve_cell(
     )
   }
 
-  // ── Shift-Reduce ──────────────────────────────────────────────────────────
+  // Shift-Reduce
   let sp = shift_prec_lookup(shift_map, terminal)
 
   // 先扫描 Dynamic assoc（编译期无法消解，直接返回 DynamicConflict）
@@ -205,7 +205,7 @@ fn resolve_cell(
   (kept, report)
 }
 
-// ─── 公开 API ─────────────────────────────────────────────────────────────────
+// 公开 API
 
 ///|
 /// 用优先级/结合性过滤 ParseTable 中的冲突；无法消解的冲突保留并生成报告。

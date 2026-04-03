@@ -1,27 +1,27 @@
 ///|
-// ─── §8 一键入口 ──────────────────────────────────────────────────────────────
+// 一键入口
 //
-// 将 §1~§6 的流水线封装为单一公开函数：
+// 将各阶段流水线封装为单一公开函数：
 //   generate_parse_table(grammar) -> Result[(ParseTable, Array[ConflictReport]), String]
 //
 // 流水线：
 //   Grammar
-//     │ augment_grammar()          §1
+//     │ augment_grammar()
 //     ▼
 //   AugmentedGrammar
-//     │ build_item_sets()          §3
+//     │ build_item_sets()
 //     ▼
 //   Array[Set[LRItem]]
-//     │ build_goto_map()           §3
+//     │ build_goto_map()
 //     ▼
 //   Map[(StateId, Symbol), StateId]
-//     │ build_lalr_table()         §4
+//     │ build_lalr_table()
 //     ▼
 //   ParseTable (含冲突)
-//     │ resolve_conflicts()        §5
+//     │ resolve_conflicts()
 //     ▼
 //   (ParseTable, Array[ConflictReport])
-//     │ build_lexer_dfa()          §6
+//     │ build_lexer_dfa()
 //     ▼
 //   ParseTable (含词法 DFA)
 
@@ -36,7 +36,7 @@
 pub fn generate_parse_table(
   grammar : @grammar.Grammar,
 ) -> Result[(ParseTable, Array[ConflictReport]), String] {
-  // ── 输入校验 ──────────────────────────────────────────────────────────────
+  // 输入校验
   if grammar.rules.size() == 0 {
     return Err("generate_parse_table: empty grammar (no rules)")
   }

@@ -3,7 +3,7 @@
 // 测试文法通过 @grammar.parse_grammar + augment_grammar 构建，
 // 保证测试自洽，无需手工构造 AugmentedGrammar。
 
-// ─── 辅助函数 ─────────────────────────────────────────────────────────────────
+// 辅助函数
 
 ///|
 /// 从 AugmentedGrammar 的 nonterminals map 中逆向查找名称
@@ -32,7 +32,7 @@ fn build_ag(dsl : String) -> AugmentedGrammar {
   }
 }
 
-// ─── nullable 测试 ────────────────────────────────────────────────────────────
+// nullable 测试
 
 ///|
 test "nullable / 空序列恒为 true" {
@@ -100,7 +100,7 @@ test "nullable / 含可 nullable NT 的混合序列" {
   assert_eq(nullable(ag, found_body), true)
 }
 
-// ─── first_set 测试 ───────────────────────────────────────────────────────────
+// first_set 测试
 
 ///|
 test "first_set / Terminal 返回自身" {
@@ -161,7 +161,7 @@ test "first_set / 链式 NT 传递" {
   assert_eq(fs.contains(t), true)
 }
 
-// ─── first_seq 测试 ───────────────────────────────────────────────────────────
+// first_seq 测试
 
 ///|
 test "first_seq / 空序列返回空集" {
@@ -206,7 +206,7 @@ test "first_seq / EndOfInput 符号处理" {
   assert_eq(fs.contains(eoi_id), true)
 }
 
-// ─── follow_set 测试 ──────────────────────────────────────────────────────────
+// follow_set 测试
 
 ///|
 test "follow_set / $accept.start 的 FOLLOW 含 eoi_id" {

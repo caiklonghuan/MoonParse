@@ -8,7 +8,7 @@ fn parse_ok_s(dsl : String) -> Grammar {
   }
 }
 
-// ─── grammar_to_string 测试 ───────────────────────────────────────────────────
+// grammar_to_string 测试
 
 ///|
 test "serialize_roundtrip_simple" {
@@ -52,7 +52,7 @@ test "serialize_precedence_decl" {
   assert_true(out.contains("precedence right"))
 }
 
-// ─── grammar_to_json 测试 ─────────────────────────────────────────────────────
+// grammar_to_json 测试
 
 ///|
 test "json_has_start_key" {

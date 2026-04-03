@@ -19,7 +19,7 @@
 //   build_valid_tokens     — 解析状态 → 合法 token 集合
 //   build_lexer_dfa        — 端到端集成
 
-// ─── 辅助函数 ─────────────────────────────────────────────────────────────────
+// 辅助函数
 
 ///|
 /// 完整流水线 + build_lexer_dfa，直接从 DSL 返回 LexerDfa
@@ -42,7 +42,7 @@ fn dfa_run(dfa : LexerDfa, input : String) -> TerminalId? {
   dfa.states[state].accept
 }
 
-// ─── 基本属性 ─────────────────────────────────────────────────────────────────
+// 基本属性
 
 ///|
 test "DFA 基本属性：states 非空，start = 0" {
@@ -58,7 +58,7 @@ test "Literal DFA 状态数 ≥ len+1" {
   assert_true(dfa.states.length() >= 6)
 }
 
-// ─── nfa_from_literal ────────────────────────────────────────────────────────
+// nfa_from_literal
 
 ///|
 test "Literal 精确接受且拒绝前缀/超长/无关词" {
@@ -85,7 +85,7 @@ test "多 Literal 终结符各自独立接受" {
   assert_eq(dfa_run(dfa, ""), None)
 }
 
-// ─── nfa_from_any ─────────────────────────────────────────────────────────────
+// nfa_from_any
 
 ///|
 test "AnyChar 接受任意单字符，拒绝空串和多字符" {
@@ -100,7 +100,7 @@ test "AnyChar 接受任意单字符，拒绝空串和多字符" {
   assert_eq(dfa_run(dfa, "ab"), None) // 接受一字符后无 transition
 }
 
-// ─── parse_char_class_trans ──────────────────────────────────────────────────
+// parse_char_class_trans
 
 ///|
 test "Regex 字符类 [0-9]+ 接受数字序列" {
@@ -125,7 +125,7 @@ test "Regex 字符类 [a-z]+ 接受小写字母序列" {
   assert_eq(dfa_run(dfa, "0"), None)
 }
 
-// ─── parse_escape_trans ───────────────────────────────────────────────────────
+// parse_escape_trans
 
 ///|
 test "Regex 转义 \\d+ 等同 [0-9]+" {
@@ -139,7 +139,7 @@ test "Regex 转义 \\d+ 等同 [0-9]+" {
   assert_eq(dfa_run(dfa, ""), None)
 }
 
-// ─── 量词 * + ? ───────────────────────────────────────────────────────────────
+// 量词 * + ?
 
 ///|
 test "Regex 量词 * — 起始态即接受，接受零或多个" {
@@ -169,7 +169,7 @@ test "Regex 量词 ? — 接受零或恰好一个字符" {
   assert_eq(dfa_run(dfa, "aa"), None) // 接受一个 'a' 后无 transition
 }
 
-// ─── 交替 ─────────────────────────────────────────────────────────────────────
+// 交替
 
 ///|
 test "Regex 交替 a|b — 接受各分支，拒绝拼接和其他字符" {
@@ -181,7 +181,7 @@ test "Regex 交替 a|b — 接受各分支，拒绝拼接和其他字符" {
   assert_eq(dfa_run(dfa, ""), None) // 空串不接受
 }
 
-// ─── terminal_priority ───────────────────────────────────────────────────────
+// terminal_priority
 
 ///|
 test "接受优先级 Literal(tid) < Regex(10000+tid)，Literal 胜出" {
@@ -209,7 +209,7 @@ test "接受优先级 AnyChar(20000+tid) < Literal(tid)，Literal 胜出" {
   assert_eq(dfa_run(dfa, "0"), Some(any_id))
 }
 
-// ─── Unicode charset range ───────────────────────────────────────────────────
+// Unicode charset range
 
 ///|
 test "Regex Unicode range [α-ω] accepts Greek letters" {
@@ -230,7 +230,7 @@ test "Regex Unicode range [中-龥] accepts CJK characters" {
   assert_eq(dfa_run(dfa, "α"), None)
 }
 
-// ─── build_valid_tokens ───────────────────────────────────────────────────────
+// build_valid_tokens
 
 ///|
 test "valid_tokens 至少一个解析状态含非空 token 列表" {

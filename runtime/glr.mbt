@@ -1,5 +1,5 @@
 ///|
-// ─── §8 GLR 解析引擎（Phase 2b）─────────────────────────────────────────────
+// GLR 解析引擎（Phase 2b）
 //
 // GLR（广义 LR）允许在 LALR 冲突点并行维护多个解析路径，
 // 通过 Graph-Structured Stack（GSS）共享公共前缀，避免指数爆炸。
@@ -91,10 +91,10 @@ pub fn glr_parse(
 /// GLR 主循环
 ///
 /// 每轮：
-///   1. EOF → run_reduce(eoi_id) → collect_root_glr
-///   2. 合并所有活跃栈顶的 valid_tokens，调用 DFA 词法
-///   3. extras token → 创建叶节点累积到 pending_extras，active_tops 不变
-///   4. 普通 token → run_reduce_worklist → run_shift → 替换 active_tops → compact Arena
+/// EOF → run_reduce(eoi_id) → collect_root_glr
+/// 合并所有活跃栈顶的 valid_tokens，调用 DFA 词法
+/// extras token → 创建叶节点累积到 pending_extras，active_tops 不变
+/// 普通 token → run_reduce_worklist → run_shift → 替换 active_tops → compact Arena
 fn GlrEngine::run(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -106,13 +106,13 @@ fn GlrEngine::run(
   // extras 不改变 LR 状态，故不影响 active_tops，但需出现在最终 CST 中。
   let pending_extras : Array[CstNode] = []
   while true {
-    // ── EOF 检查 ──────────────────────────────────────────────────────────────
+    // EOF 检查
     if pos >= input.length() {
       self.run_reduce_worklist(table, @tablegen.eoi_id)
       return self.collect_root_glr(table, pos, cur_point)
     }
 
-    // ── 计算所有活跃状态的合法 token 并集 ────────────────────────────────────
+    // 计算所有活跃状态的合法 token 并集
     // GLR 中多条路径处于同一位置，词法器需对所有路径的合法符号取并集，
     // 确保任意路径在当前位置认为合法的 token 都能被识别。
     let valid : Set[Int] = Set::new()
@@ -130,7 +130,7 @@ fn GlrEngine::run(
       valid.add(t)
     }
 
-    // ── 词法（直接调用 run_dfa，使用并集 valid 集合）─────────────────────────
+    // 词法（直接调用 run_dfa，使用并集 valid 集合）
     let (maybe_tok, new_pos) = self.lexer.run_dfa(input, pos, valid, table)
     match maybe_tok {
       None => {
@@ -139,7 +139,7 @@ fn GlrEngine::run(
         return self.collect_root_glr(table, pos, cur_point)
       }
       Some(tok) => {
-        // ── 词法错误 ──────────────────────────────────────────────────────────
+        // 词法错误
         if tok.terminal_id == sym_error {
           return Err({
             position: tok.start_byte,
@@ -148,7 +148,7 @@ fn GlrEngine::run(
           })
         }
 
-        // ── Extras token：创建叶节点，积累到 pending_extras ──────────────────
+        // Extras token：创建叶节点，积累到 pending_extras
         // extras 不改变 LR 状态，但需出现在 CST 中。
         // 此处创建叶节点并推入 pending_extras；下次普通 Shift 时通过
         // GssLink.leading_extras 携带，enum_paths 将其插入产生式子节点序列。
@@ -177,7 +177,7 @@ fn GlrEngine::run(
           continue
         }
 
-        // ── 普通 token：Reduce 到不动点，再 Shift ────────────────────────────
+        // 普通 token：Reduce 到不动点，再 Shift
         self.run_reduce_worklist(table, tok.terminal_id)
         let next_tops = self.run_shift(
           table, tok, cur_point, input, pending_extras,
@@ -194,7 +194,7 @@ fn GlrEngine::run(
           })
         }
 
-        // ── 替换 active_tops（原地清空 + 填入 next_tops）────────────────────
+        // 替换 active_tops（原地清空 + 填入 next_tops）
         while not(self.active_tops.is_empty()) {
           let _ = self.active_tops.pop()
         }
@@ -297,7 +297,7 @@ fn GlrEngine::find_or_merge(
   new_link : GssLink,
   candidate_tops : Array[GssRef],
 ) -> (GssRef, Bool) {
-  // ── 在 candidate_tops 中线性扫描同 state 的结点 ─────────────────────────
+  // 在 candidate_tops 中线性扫描同 state 的结点
   for r in candidate_tops {
     if self.gss_nodes[r].state == state {
       // 检查是否已存在相同前驱（避免重复添加）
@@ -316,7 +316,7 @@ fn GlrEngine::find_or_merge(
       return (r, true)
     }
   }
-  // ── 找不到：新建结点，加入 candidate_tops ───────────────────────────────
+  // 找不到：新建结点，加入 candidate_tops
   let new_ref = self.gss_nodes.length()
   self.gss_nodes.push({ state, links: [new_link] })
   candidate_tops.push(new_ref)
@@ -369,10 +369,10 @@ fn GlrEngine::enum_paths(
 /// Shift 阶段：Reduce 到不动点后，对当前活跃栈顶执行所有 Shift 动作。
 ///
 /// 算法：
-///   1. 对 active_tops 中每个结点，查 action[(state, tok.terminal_id)] 中的 Shift(s)
-///   2. 用同一个叶节点 leaf（所有路径共享同一 token，不必复制）
-///   3. find_or_merge(s, {predecessor: top, node: leaf}) 写入 next_tops
-///   4. 返回 next_tops（主循环替换 active_tops）和新的 pos / cur_point
+/// 对 active_tops 中每个结点，查 action[(state, tok.terminal_id)] 中的 Shift(s)
+/// 用同一个叶节点 leaf（所有路径共享同一 token，不必复制）
+/// find_or_merge(s, {predecessor: top, node: leaf}) 写入 next_tops
+/// 返回 next_tops（主循环替换 active_tops）和新的 pos / cur_point
 ///
 /// extras token 不走本函数，由主循环在 Shift 前单独处理：
 ///   extras 创建叶节点后存入 pending_extras，随本次 Shift 的 GssLink 一起传入。
@@ -433,14 +433,14 @@ fn GlrEngine::run_shift(
 /// Reduce worklist 阶段：对活跃栈顶集合执行所有可能的 Reduce 动作至不动点。
 ///
 /// 算法（Tomita 风格 worklist）：
-///   1. 将 active_tops 中每个结点对 (top, prod_id) 放入 worklist
-///   2. 每次取出一个 (top, prod_id)：
+/// 将 active_tops 中每个结点对 (top, prod_id) 放入 worklist
+/// 每次取出一个 (top, prod_id)：
 ///      a. enum_paths(top, |body|) 得到所有子节点列表
 ///      b. 对每条路径，取路径起点（base）的前驱结点作为 base_state 来源
 ///      c. 查 goto[base_state, head] 得目标状态
 ///      d. 构造 CstNode::inner，find_or_merge 合入 active_tops
 ///      e. 若是新结点或新加了边 → 该新 top 的 Reduce 也须入队
-///   3. worklist 空 → Reduce 到不动点
+/// worklist 空 → Reduce 到不动点
 ///
 /// tok_id  : 当前前瞻 token 的 TerminalId（用于查 action 表，EOF 传 eoi_id）
 /// active_tops 原地扩展（新 Reduce 结果追加到同一集合中）
@@ -448,8 +448,8 @@ fn GlrEngine::run_shift(
 /// fragile 标记策略：
 ///   · 仅当存在真正的并行路径时才标 fragile，避免过度标记阻塞 Phase 3a 增量复用
 ///   · 判据（任意一条为 true → fragile = true）：
-///       1. active_tops.length() > 1：本轮存在多个并行活跃前缀（S/R 或 R/R 冲突）
-///       2. enum_paths 返回 > 1 条路径：同一 top 通过多条 GSS 前缀归约（局部歧义）
+/// active_tops.length() > 1：本轮存在多个并行活跃前缀（S/R 或 R/R 冲突）
+/// enum_paths 返回 > 1 条路径：同一 top 通过多条 GSS 前缀归约（局部歧义）
 ///   · 两者均为 false 时（单路径无歧义），inner 节点标 fragile=false，可增量复用
 fn GlrEngine::run_reduce_worklist(
   self : GlrEngine,
@@ -459,7 +459,7 @@ fn GlrEngine::run_reduce_worklist(
   // worklist 中每项 = (栈顶 GssRef, 产生式 ProductionId)
   let worklist : Array[(GssRef, Int)] = []
 
-  // ── 初始化：把 active_tops 上所有 Reduce 动作入队 ─────────────────────────
+  // 初始化：把 active_tops 上所有 Reduce 动作入队
   fn enqueue_reduces(top : GssRef) -> Unit {
     let state = self.gss_nodes[top].state
     match table.action.get((state, tok_id)) {
@@ -484,7 +484,7 @@ fn GlrEngine::run_reduce_worklist(
     i = i + 1
   }
 
-  // ── 主循环：处理 worklist 直到空 ─────────────────────────────────────────
+  // 主循环：处理 worklist 直到空
   let mut wi = 0
   while wi < worklist.length() {
     let (top, prod_id) = worklist[wi]
@@ -566,16 +566,16 @@ fn GlrEngine::run_reduce_worklist(
 /// 这会导致 Arena 线性增长（每 token 增加 O(states) 个死亡结点）。
 ///
 /// 算法：
-///   1. 从 roots 出发 DFS，标记所有可达的 GssRef（包括哨兵结点 0）
-///   2. 建立 old_ref → new_compact_ref 的重映射表
-///   3. 用新索引重建 gss_nodes（所有 GssLink.predecessor 用新索引）
-///   4. 原地更新 roots 数组为新索引
+/// 从 roots 出发 DFS，标记所有可达的 GssRef（包括哨兵结点 0）
+/// 建立 old_ref → new_compact_ref 的重映射表
+/// 用新索引重建 gss_nodes（所有 GssLink.predecessor 用新索引）
+/// 原地更新 roots 数组为新索引
 ///
 /// 调用时机：每次 run_shift 完成、active_tops 切换为下一轮栈顶之后。
 fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
   let n = self.gss_nodes.length()
 
-  // ── 1. 标记可达结点（DFS）───────────────────────────────────────────────────
+  // 标记可达结点（DFS）
   let live : Array[Bool] = Array::make(n, false)
   let stack : Array[GssRef] = roots.copy()
   while not(stack.is_empty()) {
@@ -593,7 +593,7 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
     }
   }
 
-  // ── 2. 建立重映射表（旧索引 → 新紧凑索引）──────────────────────────────────
+  // 建立重映射表（旧索引 → 新紧凑索引）
   let remap : Array[Int] = Array::make(n, -1)
   let mut new_idx = 0
   let mut old_i = 0
@@ -610,7 +610,7 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
     return
   }
 
-  // ── 3. 重建 gss_nodes（仅保留可达结点，predecessor refs 用新索引）─────────
+  // 重建 gss_nodes（仅保留可达结点，predecessor refs 用新索引）
   let new_nodes : Array[GssNode] = []
   let mut oi = 0
   while oi < n {
@@ -637,7 +637,7 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
     self.gss_nodes.push(nd)
   }
 
-  // ── 4. 更新 roots 的索引为新紧凑索引 ─────────────────────────────────────
+  // 更新 roots 的索引为新紧凑索引
   let mut ri = 0
   while ri < roots.length() {
     roots[ri] = remap[roots[ri]]

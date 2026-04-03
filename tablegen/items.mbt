@@ -1,7 +1,7 @@
 ///|
-// ─── §3 LR(0) 项目集构建 ─────────────────────────────────────────────────────
+// LR(0) 项目集构建
 //
-// 实现 design.md §3 的四个公开函数：
+// 实现公开函数：
 //   closure(grammar, items)              -> Set[LRItem]
 //   goto_set(grammar, items, sym)        -> Set[LRItem]
 //   build_item_sets(grammar)             -> Array[Set[LRItem]]
@@ -10,7 +10,7 @@
 // 项目集去重键：将 Set[LRItem] 中的元素排序后转为 Array，作为 Map key 的字符串。
 // LRItem 已 derive(Compare)，因此可以排序。
 
-// ─── 辅助：项目集规范化键 ─────────────────────────────────────────────────────
+// 辅助：项目集规范化键
 
 ///|
 /// 将项目集转为确定性字符串 key，用于 Map 去重。
@@ -33,7 +33,7 @@ fn item_set_key(items : Set[LRItem]) -> String {
   buf.to_string()
 }
 
-// ─── 内部加速辅助 ─────────────────────────────────────────────────────────────
+// 内部加速辅助
 
 ///|
 /// 预构建 NonTerminalId → [ProductionId] 索引。
@@ -110,7 +110,7 @@ fn goto_set_fast(
   }
 }
 
-// ─── 公开 API ─────────────────────────────────────────────────────────────────
+// 公开 API
 
 ///|
 /// 项目集闭包：closure(I)。
@@ -180,9 +180,9 @@ pub fn goto_set(
 /// 构建规范 LR(0) 项目集族（所有 DFA 状态）。
 ///
 /// 算法（BFS）：
-///   1. 从增广起始产生式 [$accept → • start $] 的闭包作为初始状态
-///   2. 对每个状态中所有 dot 处出现的符号，计算 GOTO，得到新状态
-///   3. 用规范化 key 去重，新状态入队，直至不动点
+/// 从增广起始产生式 [$accept → • start $] 的闭包作为初始状态
+/// 对每个状态中所有 dot 处出现的符号，计算 GOTO，得到新状态
+/// 用规范化 key 去重，新状态入队，直至不动点
 ///
 /// 返回值下标即 StateId（state 0 = 初始状态）。
 pub fn build_item_sets(grammar : AugmentedGrammar) -> Array[Set[LRItem]] {

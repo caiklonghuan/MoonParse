@@ -4,3 +4,5 @@ _build/
 .moonagent/
 **/design.md
 DESIGN.md
+**/design.md.bak
+**/designnew.md

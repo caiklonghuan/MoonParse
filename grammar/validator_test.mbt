@@ -1,6 +1,6 @@
 // 测试 validator.mbt 中的 validate_grammar 函数
 
-// ─── 辅助 ──────────────────────────────────────────────────────────────────────
+// 辅助
 
 ///|
 fn parse_ok(dsl : String) -> Grammar {
@@ -23,7 +23,7 @@ fn kinds(errors : Array[ValidationError]) -> Array[String] {
   })
 }
 
-// ─── 正常语法：无错 ────────────────────────────────────────────────────────────
+// 正常语法：无错
 
 ///|
 test "validate_valid_grammar" {
@@ -33,7 +33,7 @@ test "validate_valid_grammar" {
   assert_eq(errs.length(), 0)
 }
 
-// ─── start 规则不存在 ──────────────────────────────────────────────────────────
+// start 规则不存在
 
 ///|
 test "validate_undefined_start" {
@@ -44,7 +44,7 @@ test "validate_undefined_start" {
   assert_true(k.contains("UndefinedStartRule:missing"))
 }
 
-// ─── 引用未定义规则 ─────────────────────────────────────────────────────────────
+// 引用未定义规则
 
 ///|
 test "validate_undefined_rule_ref" {
@@ -65,7 +65,7 @@ test "validate_multiple_undefined_refs" {
   assert_true(arr_string_contains(k, "UndefinedRule:c"))
 }
 
-// ─── 直接左递归 ─────────────────────────────────────────────────────────────────
+// 直接左递归
 
 ///|
 test "validate_direct_left_recursion" {
@@ -85,7 +85,7 @@ test "validate_direct_left_recursion_in_choice" {
   assert_true(arr_string_contains(k, "DirectLeft:expr"))
 }
 
-// ─── 间接左递归 ─────────────────────────────────────────────────────────────────
+// 间接左递归
 
 ///|
 test "validate_indirect_left_recursion" {
@@ -103,7 +103,7 @@ test "validate_indirect_left_recursion" {
   assert_true(has_indirect)
 }
 
-// ─── 可达性分析 ─────────────────────────────────────────────────────────────────
+// 可达性分析
 
 ///|
 test "validate_unreachable_rule" {
@@ -150,7 +150,7 @@ test "validate_transitive_reachability" {
   assert_true(not(arr_string_contains(k, "Unreachable:c")))
 }
 
-// ─── to_string ─────────────────────────────────────────────────────────────────
+// to_string
 
 ///|
 test "validate_error_to_string" {
@@ -173,7 +173,7 @@ test "validate_error_to_string" {
   assert_true(e3.to_string().length() > 0)
 }
 
-// ─── 辅助（测试内部用） ───────────────────────────────────────────────────────
+// 辅助（测试内部用）
 
 ///|
 fn arr_string_contains(arr : Array[String], s : String) -> Bool {

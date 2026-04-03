@@ -2,7 +2,7 @@
 //
 // 辅助函数 build_ag / nt_id / term_id 复用自同一测试包中的 sets_test.mbt。
 
-// ─── 辅助函数 ─────────────────────────────────────────────────────────────────
+// 辅助函数
 
 ///|
 /// 流水线：parse → augment → item_sets → goto_map → lalr_table
@@ -75,7 +75,7 @@ fn prod_id_by_head(ag : AugmentedGrammar, head_name : String) -> ProductionId {
   }
 }
 
-// ─── states 数量 ──────────────────────────────────────────────────────────────
+// states 数量
 
 ///|
 test "build_lalr_table / s→'a' 文法有 4 个状态" {
@@ -91,7 +91,7 @@ test "build_lalr_table / s→'a''b' 文法有 5 个状态" {
   assert_eq(table.states, 5)
 }
 
-// ─── Shift 动作 ───────────────────────────────────────────────────────────────
+// Shift 动作
 
 ///|
 test "build_lalr_table / 存在 Shift 动作" {
@@ -122,7 +122,7 @@ test "build_lalr_table / Shift 目标状态均在合法范围内" {
   assert_eq(valid, true)
 }
 
-// ─── Accept 动作 ──────────────────────────────────────────────────────────────
+// Accept 动作
 
 ///|
 test "build_lalr_table / 恰好存在一个 Accept 动作" {
@@ -158,7 +158,7 @@ test "build_lalr_table / $accept 产生式不生成 Reduce（只用 Accept）" {
   assert_eq(any_table_action(table, fn(a) { a == Reduce(accept_prod) }), false)
 }
 
-// ─── Reduce 动作 ──────────────────────────────────────────────────────────────
+// Reduce 动作
 
 ///|
 test "build_lalr_table / 存在 Reduce 动作" {
@@ -224,7 +224,7 @@ test "build_lalr_table / expr 多规则文法含正确 Reduce 产生式" {
   assert_eq(any_table_action(table, fn(a) { a == Reduce(num_prod) }), true)
 }
 
-// ─── goto_table ───────────────────────────────────────────────────────────────
+// goto_table
 
 ///|
 test "build_lalr_table / goto_table 含 s 的非终结符跳转条目" {
@@ -273,7 +273,7 @@ test "build_lalr_table / goto_table 不含终结符键（终结符走 action）"
   assert_eq(gt_count, 1)
 }
 
-// ─── productions ──────────────────────────────────────────────────────────────
+// productions
 
 ///|
 test "build_lalr_table / productions 与 AugmentedGrammar 长度一致" {
@@ -281,7 +281,7 @@ test "build_lalr_table / productions 与 AugmentedGrammar 长度一致" {
   assert_eq(table.productions.length(), ag.productions.length())
 }
 
-// ─── symbol_metadata ──────────────────────────────────────────────────────────
+// symbol_metadata
 
 ///|
 test "build_lalr_table / symbol_metadata 覆盖全部非终结符 ID" {
@@ -316,7 +316,7 @@ test "build_lalr_table / symbol_metadata 中 name 字段正确" {
   assert_eq(table.symbol_metadata[s_nt].name, "s")
 }
 
-// ─── lexer_dfa 桩 ─────────────────────────────────────────────────────────────
+// lexer_dfa 桩
 
 ///|
 test "build_lalr_table / Phase 1 lexer_dfa 为桩（无 DFA 状态）" {
@@ -324,7 +324,7 @@ test "build_lalr_table / Phase 1 lexer_dfa 为桩（无 DFA 状态）" {
   assert_eq(table.lexer_dfa.states.length(), 0)
 }
 
-// ─── GLR 冲突 ─────────────────────────────────────────────────────────────────
+// GLR 冲突
 
 ///|
 test "build_lalr_table / 无歧义文法无冲突格" {

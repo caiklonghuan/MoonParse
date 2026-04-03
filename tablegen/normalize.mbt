@@ -1,5 +1,5 @@
 ///|
-// ─── 规范化内部状态 ────────────────────────────────────────────────────────────
+// 规范化内部状态
 
 priv struct NormCtx {
   mut term_next : Int
@@ -32,7 +32,7 @@ fn NormCtx::new() -> NormCtx {
   }
 }
 
-// ─── 分配辅助函数 ─────────────────────────────────────────────────────────────
+// 分配辅助函数
 
 ///|
 /// 注册终结符；key 已存在则返回现有 ID（幂等）
@@ -138,7 +138,7 @@ fn pattern_suffix(p : @grammar.Pattern) -> String {
   }
 }
 
-// ─── 核心展开函数（三函数互递归） ───────────────────────────────────────────────
+// 核心展开函数（三函数互递归）
 
 ///|
 /// 将 Pattern 转为单个 BodySymbol。
@@ -423,7 +423,7 @@ fn expand_into(
   }
 }
 
-// ─── 公开入口 ─────────────────────────────────────────────────────────────────
+// 公开入口
 
 ///|
 /// 将用户 Grammar 规范化为 LALR/GLR 算法所需的增广 CFG。
@@ -436,12 +436,12 @@ fn expand_into(
 pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
   let ctx = NormCtx::new()
 
-  // 1. 预注册所有非终结符
+  // 预注册所有非终结符
   for name, rule in grammar.rules {
     let _ = alloc_nt(ctx, name, rule.is_named)
   }
 
-  // 2. 确定起始符名称
+  // 确定起始符名称
   let start_name : String = match grammar.start {
     Some(n) => n
     None => {
@@ -461,7 +461,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     None => 0 // 空文法兜底；实际使用前应先经过 validate_grammar
   }
 
-  // 3. 创建增广起始符及产生式 $accept → start $
+  // 创建增广起始符及产生式 $accept → start $
   let accept_id = alloc_nt(ctx, "$accept", false)
   add_production(
     ctx,
@@ -475,7 +475,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     "$accept",
   )
 
-  // 4. 展开每条用户规则
+  // 展开每条用户规则
   for name, rule in grammar.rules {
     let nt_id = match ctx.nonterminals.get(name) {
       Some(id) => id
@@ -484,7 +484,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     expand_into(ctx, nt_id, rule.pattern, name, None, None)
   }
 
-  // 5. 从 grammar.precedences 构建 prec_table，并补标产生式的 prec/assoc
+  // 从 grammar.precedences 构建 prec_table，并补标产生式的 prec/assoc
   let prec_table : Map[TerminalId, (Int, @grammar.PrecKind)] = Map::new()
   let nt_prec_map : Map[NonTerminalId, (Int, @grammar.PrecKind)] = Map::new()
   for pd in grammar.precedences {
@@ -552,7 +552,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     }
   }
 
-  // 6. 处理 extras：将每个 extras Pattern 注册为 terminal，收集 TerminalId
+  // 处理 extras：将每个 extras Pattern 注册为 terminal，收集 TerminalId
   let extras : Array[TerminalId] = []
   for pat in grammar.extras {
     let tid = match pat {
@@ -564,7 +564,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     extras.push(tid)
   }
 
-  // 7. 返回增广文法
+  // 返回增广文法
   {
     start: accept_id,
     terminals: ctx.terminals,

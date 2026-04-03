@@ -277,7 +277,7 @@ fn run_parse_tests(cases : Array[TestCase]) -> Unit raise {
   }
 }
 
-// ─── 测试入口 ─────────────────────────────────────────────────────────────────
+// 测试入口
 
 ///|
 test "parse_correctness" {

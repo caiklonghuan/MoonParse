@@ -4,7 +4,7 @@
 // build_table / any_table_action / count_table_actions / has_conflict_cell
 // 复用自 lalr_test.mbt。
 
-// ─── 辅助函数 ─────────────────────────────────────────────────────────────────
+// 辅助函数
 
 ///|
 /// 完整流水线：parse → augment → item_sets → goto_map → lalr_table → resolve
@@ -44,7 +44,7 @@ fn count_conflict_cells(table : ParseTable) -> Int {
   n
 }
 
-// ─── 无冲突文法 ───────────────────────────────────────────────────────────────
+// 无冲突文法
 
 ///|
 test "resolve_conflicts / 无歧义文法不产生报告" {
@@ -64,7 +64,7 @@ test "resolve_conflicts / 无歧义文法 Accept 动作保留" {
   assert_eq(count_table_actions(table, fn(a) { a == Accept }), 1)
 }
 
-// ─── Ambiguous（无 prec 信息）────────────────────────────────────────────────
+// Ambiguous（无 prec 信息）
 
 ///|
 test "resolve_conflicts / 歧义文法产生 Ambiguous 报告" {
@@ -88,7 +88,7 @@ test "resolve_conflicts / 歧义文法（无 prec）冲突格动作不丢失（G
   assert_eq(count_conflict_cells(table) >= 1, true)
 }
 
-// ─── Left 结合性（Reduce 胜） ─────────────────────────────────────────────────
+// Left 结合性（Reduce 胜）
 
 ///|
 test "resolve_conflicts / Left-assoc 产生 Warn 报告" {
@@ -143,7 +143,7 @@ test "resolve_conflicts / Left-assoc 消解后动作总数少于消解前" {
   assert_eq(res_total < raw_total, true)
 }
 
-// ─── Right 结合性（Shift 胜）─────────────────────────────────────────────────
+// Right 结合性（Shift 胜）
 
 ///|
 test "resolve_conflicts / Right-assoc 消解后无冲突格（Shift 胜）" {
@@ -190,7 +190,7 @@ test "resolve_conflicts / Right-assoc 产生 Warn 报告" {
   )
 }
 
-// ─── Nonassoc（两者均删除）───────────────────────────────────────────────────
+// Nonassoc（两者均删除）
 
 ///|
 test "resolve_conflicts / Nonassoc 消解后 '+' 列无任何动作" {
@@ -218,7 +218,7 @@ test "resolve_conflicts / Nonassoc 产生 Warn 报告" {
   )
 }
 
-// ─── Reduce-Reduce 冲突 ───────────────────────────────────────────────────────
+// Reduce-Reduce 冲突
 
 ///|
 test "resolve_conflicts / Reduce-Reduce 产生 Ambiguous 报告" {
@@ -248,7 +248,7 @@ test "resolve_conflicts / Reduce-Reduce 冲突动作 GLR 全部保留" {
   assert_eq(count_conflict_cells(table) >= 1, true)
 }
 
-// ─── Dynamic prec ─────────────────────────────────────────────────────────────
+// Dynamic prec
 
 ///|
 test "resolve_conflicts / Dynamic prec 产生 DynamicConflict 报告" {
@@ -290,7 +290,7 @@ test "resolve_conflicts / Dynamic prec 动作 GLR 全部保留" {
   assert_eq(count_conflict_cells(table) >= 1, true)
 }
 
-// ─── 综合：多运算符优先级 ───────────────────────────────────────────────────
+// 综合：多运算符优先级
 
 ///|
 test "resolve_conflicts / 双运算符（* 优先级高于 +）消解后无冲突" {
@@ -324,7 +324,7 @@ test "resolve_conflicts / 双运算符消解产生 Warn 但不产生 Ambiguous" 
   assert_eq(has_ambiguous, false)
 }
 
-// ─── resolve_conflicts 不影响无冲突动作 ─────────────────────────────────────
+// resolve_conflicts 不影响无冲突动作
 
 ///|
 test "resolve_conflicts / 消解不改变 goto_table" {

@@ -1,5 +1,5 @@
 ///|
-// ─── §6 词法引擎（LexerEngine）────────────────────────────────────────────────
+// 词法引擎（LexerEngine）
 //
 // 职责：
 //   · 从 input[pos..] 用 DFA 最长匹配扫描下一个 token
@@ -42,7 +42,7 @@ pub fn LexerEngine::next_token(
     return (None, pos)
   }
 
-  // ── 计算本状态下合法的终结符集合 ─────────────────────────────────
+  // 计算本状态下合法的终结符集合
   // valid_tokens[state] + extras
   let valid : Set[Int] = Set::new()
   match table.lexer_dfa.valid_tokens.get(state) {
@@ -56,7 +56,7 @@ pub fn LexerEngine::next_token(
     valid.add(t)
   }
 
-  // ── DFA 最长匹配 ──────────────────────────────────────────────────
+  // DFA 最长匹配
   // 在 valid 集合内尝试匹配，取最长匹配的候选
   let (tok, new_pos) = self.run_dfa(input, pos, valid, table)
   (tok, new_pos)

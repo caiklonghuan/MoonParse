@@ -1,5 +1,5 @@
 ///|
-// ─── §7 线性 LR 解析器（Phase 2a）────────────────────────────────────────────
+// 线性 LR 解析器（Phase 2a）
 //
 // 实现最基础的单栈确定性 LR 解析循环：
 //   · 初始状态 1（state 0 保留为 ERROR 哨兵，遵照 tree-sitter 惯例）
@@ -55,13 +55,13 @@ fn LrParser::run(
   while true {
     let state = self.top_state()
 
-    // ── 词法：每轮用当前 LR 状态扫描（context-aware）─────────────────────────
+    // 词法：每轮用当前 LR 状态扫描（context-aware）
     let (maybe_tok, after_tok_pos) = self.lexer.next_token(
       input, pos, table, state,
     )
 
     match maybe_tok {
-      // ── EOF ────────────────────────────────────────────────────────────────
+      // EOF
       None =>
         // 用 eoi_id（= -1）查 action 表
         match table.action.get((state, @tablegen.eoi_id)) {
@@ -92,9 +92,9 @@ fn LrParser::run(
             }
           }
         }
-      // ── 非 EOF token ────────────────────────────────────────────────────────
+      // 非 EOF token
       Some(tok) => {
-        // ── 词法错误：terminal_id == sym_error（= -1 = eoi_id 数值上相同）──────
+        // 词法错误：terminal_id == sym_error（= -1 = eoi_id 数值上相同）
         // 必须在 action 表查询前识别，否则会把词法错误当 EOF 处理
         if tok.terminal_id == sym_error {
           return Err({
@@ -104,7 +104,7 @@ fn LrParser::run(
           })
         }
 
-        // ── extras token：推入 node_stack，不改变 LR 状态 ──────────────────────
+        // extras token：推入 node_stack，不改变 LR 状态
         if tok.is_extra {
           let ep = bytes_to_point(
             input,
@@ -128,7 +128,7 @@ fn LrParser::run(
           self.node_stack.push(extra_node)
           pos = after_tok_pos
         } else {
-          // ── 普通 token：查 action 表 ────────────────────────────────────────
+          // 普通 token：查 action 表
           match table.action.get((state, tok.terminal_id)) {
             None =>
               return Err({
@@ -200,7 +200,7 @@ fn LrParser::do_reduce(
   let prod = table.productions[prod_id]
   let body_len = prod.body.length()
 
-  // ── 从 state_stack 弹出 body_len 个状态（保留底部哨兵）─────────────────────
+  // 从 state_stack 弹出 body_len 个状态（保留底部哨兵）
   let max_pop = self.state_stack.length() - 1
   let real_pops = if body_len < max_pop { body_len } else { max_pop }
   let mut i = 0
@@ -209,7 +209,7 @@ fn LrParser::do_reduce(
     i = i + 1
   }
 
-  // ── 从 node_stack 收集对应子节点（含 extras）───────────────────────────────
+  // 从 node_stack 收集对应子节点（含 extras）
   // 依次从栈顶弹出，直到累计 real_pops 个非 extras 节点
   let raw : Array[CstNode] = []
   let mut real_count = 0
@@ -227,7 +227,7 @@ fn LrParser::do_reduce(
   // raw 目前是倒序（最后推入的在 raw[0]）→ 反转得到左→右顺序
   array_rev_inplace(raw)
 
-  // ── 分离 trailing extras ─────────────────────────────────────────────────
+  // 分离 trailing extras
   // 产生式体末端之后的 extras 在 reduce 后需成为新内部节点的后续兄弟节点
   let trailing : Array[CstNode] = []
   while not(raw.is_empty()) {
@@ -242,10 +242,10 @@ fn LrParser::do_reduce(
   // trailing 同样需要反转（使其恢复原顺序：最早的 extra 在前）
   array_rev_inplace(trailing)
 
-  // ── 弹出后的栈顶状态 ────────────────────────────────────────────────────────
+  // 弹出后的栈顶状态
   let base_state = self.state_stack[self.state_stack.length() - 1]
 
-  // ── 查 goto 表 ──────────────────────────────────────────────────────────────
+  // 查 goto 表
   let nt = prod.head
   match table.goto_table.get((base_state, nt)) {
     None =>
@@ -255,7 +255,7 @@ fn LrParser::do_reduce(
         message: "goto missing: nt=\{nt} from state=\{base_state}",
       })
     Some(goto_st) => {
-      // ── 构造内部节点 ────────────────────────────────────────────────────────
+      // 构造内部节点
       let meta : @tablegen.SymbolMeta = if nt < table.symbol_metadata.length() {
         table.symbol_metadata[nt]
       } else {
@@ -272,11 +272,11 @@ fn LrParser::do_reduce(
         false,
       )
 
-      // ── 推入新状态与内部节点 ────────────────────────────────────────────────
+      // 推入新状态与内部节点
       self.state_stack.push(goto_st)
       self.node_stack.push(inner)
 
-      // ── 重新推入 trailing extras（不影响 state_stack）──────────────────────
+      // 重新推入 trailing extras（不影响 state_stack）
       for ex in trailing {
         self.node_stack.push(ex)
       }

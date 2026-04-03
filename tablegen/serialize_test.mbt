@@ -3,12 +3,12 @@
 // gen_ok() 复用自 tablegen_test.mbt（同一测试包，共享辅助函数）。
 //
 // 四个表格驱动测试块：
-//   1. 顶层结构     — 必要键存在、states 值正确、格式合法
-//   2. productions  — 增广产生式与用户规则名出现在 JSON 中
-//   3. action 条目  — shift / reduce / accept 字符串存在
-//   4. symbol_metadata — $accept 条目及 is_named 值
+// 顶层结构     — 必要键存在、states 值正确、格式合法
+// productions  — 增广产生式与用户规则名出现在 JSON 中
+// action 条目  — shift / reduce / accept 字符串存在
+// symbol_metadata — $accept 条目及 is_named 值
 
-// ─── 表 1：顶层结构 ────────────────────────────────────────────────────────────
+// 表 1：顶层结构
 // (_label, dsl, exp_states)
 
 ///|
@@ -40,7 +40,7 @@ test "table_to_json 顶层结构" {
   }
 }
 
-// ─── 表 2：productions 内容 ───────────────────────────────────────────────────
+// 表 2：productions 内容
 // (_label, dsl, rule_names_present)  rule_names_present：JSON 中必须出现的 rule_name 列表
 
 ///|
@@ -69,7 +69,7 @@ test "table_to_json productions 内容" {
   }
 }
 
-// ─── 表 3：action 条目内容 ────────────────────────────────────────────────────
+// 表 3：action 条目内容
 // (_label, dsl, has_shift, has_reduce, has_accept)
 
 ///|
@@ -101,7 +101,7 @@ test "table_to_json action 条目内容" {
   }
 }
 
-// ─── 表 4：symbol_metadata 内容 ───────────────────────────────────────────────
+// 表 4：symbol_metadata 内容
 // 验证每个文法的 JSON 中 $accept 以 is_named:false 出现，用户规则名以 is_named:true 出现
 
 ///|
@@ -123,7 +123,7 @@ test "table_to_json symbol_metadata 内容" {
   }
 }
 
-// ─── 词法 DFA 序列化 ──────────────────────────────────────────────────────────
+// 词法 DFA 序列化
 
 ///|
 /// 验证 lexer_dfa.states / start / valid_tokens 经二进制往返后结构一致
@@ -207,7 +207,7 @@ test "lexer_dfa 往返：Regex 文法的 transitions 字符" {
   }
 }
 
-// ─── 公开 API ─────────────────────────────────────────────────────────────────
+// 公开 API
 
 ///|
 test "serialize_table 返回非空字节" {

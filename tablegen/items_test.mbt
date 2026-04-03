@@ -1,6 +1,6 @@
 // items_test.mbt — closure / goto_set / build_item_sets / build_goto_map 的黑盒单元测试
 
-// ─── 辅助函数 ─────────────────────────────────────────────────────────────────
+// 辅助函数
 
 ///|
 fn build_ag_i(dsl : String) -> AugmentedGrammar {
@@ -28,7 +28,7 @@ fn has_item(items : Set[LRItem], prod_id : ProductionId, dot : Int) -> Bool {
   items.contains({ prod: prod_id, dot })
 }
 
-// ─── closure 测试 ─────────────────────────────────────────────────────────────
+// closure 测试
 
 ///|
 test "closure / 单条产生式、dot 在末尾时不扩展" {
@@ -102,7 +102,7 @@ test "closure / Repeat 左递归：闭包包含递归项目本身" {
   assert_eq(cl.length() >= 3, true)
 }
 
-// ─── goto_set 测试 ────────────────────────────────────────────────────────────
+// goto_set 测试
 
 ///|
 test "goto_set / dot 越过终结符后前进一步" {
@@ -161,7 +161,7 @@ test "goto_set / GOTO(NT) 越过非终结符" {
   assert_eq(has_item(next, accept_prod.id, 1), true)
 }
 
-// ─── build_item_sets 测试 ────────────────────────────────────────────────────
+// build_item_sets 测试
 
 ///|
 test "build_item_sets / 最小文法至少有 2 个状态" {
@@ -225,7 +225,7 @@ test "build_item_sets / 左递归文法可正常构建（无死循环）" {
   assert_eq(sets.length() >= 2, true)
 }
 
-// ─── build_goto_map 测试 ─────────────────────────────────────────────────────
+// build_goto_map 测试
 
 ///|
 test "build_goto_map / 转移表非空" {

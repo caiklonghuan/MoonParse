@@ -1,5 +1,5 @@
 ///|
-// ─── §1 基础坐标类型 ──────────────────────────────────────────────────────────
+// 基础坐标类型
 
 ///|
 /// 行列坐标（0-based）
@@ -21,7 +21,7 @@ pub(all) struct InputEdit {
 } derive(Show)
 
 ///|
-// ─── §2 CST 节点 ──────────────────────────────────────────────────────────────
+// CST 节点
 
 ///|
 /// 特殊 SymbolId 常量
@@ -39,20 +39,20 @@ pub let sym_error_repeat : Int = -2 // 错误恢复中间节点（内部用）
 /// 叶节点：children 为空，symbol 是 TerminalId
 /// 内部节点：children 非空，symbol 是 NonTerminalId
 pub(all) struct CstNode {
-  // ─── 标识 ────────────────────────────────────────────────────────
+  // 标识
   /// TerminalId（叶）或 NonTerminalId（内部节点）
   /// 负值为特殊节点：sym_error / sym_error_repeat
   symbol : Int
   /// true = 命名节点（对应 is_named=true 的规则）；false = 匿名/标点节点
   is_named : Bool
 
-  // ─── 位置 ────────────────────────────────────────────────────────
+  // 位置
   start_byte : Int
   end_byte : Int
   start_point : Point
   end_point : Point
 
-  // ─── 叶节点字段（children 为空时有效） ───────────────────────────
+  // 叶节点字段（children 为空时有效）
   /// 创建该叶节点时的 LR 状态（增量复用判断用，Phase 3a 前置零）
   parse_state : Int
   /// 词法器实际读到的末尾字节偏移（>= end_byte，增量边界检查用，Phase 3a 前置零）
@@ -60,7 +60,7 @@ pub(all) struct CstNode {
   /// 该 token 是关键字（两阶段词法用，Phase 3b 前置 false）
   is_keyword : Bool
 
-  // ─── 内部节点字段（children 非空时有效） ─────────────────────────
+  // 内部节点字段（children 非空时有效）
   children : Array[CstNode]
   /// 与 children 等长，记录每个子节点对应的字段名（来自 BodySymbol.field_name）
   field_names : Array[String?]
@@ -69,7 +69,7 @@ pub(all) struct CstNode {
   /// 各级 Reduce 累积的动态优先级（GLR 歧义消解用，Phase 2c 前置零）
   dynamic_precedence : Int
 
-  // ─── 状态标记 ────────────────────────────────────────────────────
+  // 状态标记
   /// true = extras token（空白/注释），标记后不改变 LR 状态
   extra : Bool
   /// true = 错误恢复插入的虚拟缺失 token（Phase 2b）
@@ -203,7 +203,43 @@ pub fn CstNode::error_node(
 }
 
 ///|
-// ─── §3 词法内部类型 ──────────────────────────────────────────────────────────
+/// 构造缺失叶节点（内部用）
+///
+/// 错误恢复策略 2（insert_missing）使用：在解析器期望某个 token 但未找到时，
+/// 插入一个虚拟的零宽节点，使解析可以继续推进。
+/// · start_byte == end_byte（零宽，不消费任何输入）
+/// · is_missing = true，is_named 与真实 token 保持一致
+pub fn CstNode::missing_leaf(
+  symbol : Int,
+  is_named : Bool,
+  byte_pos : Int,
+  point : Point,
+) -> CstNode {
+  {
+    symbol,
+    is_named,
+    start_byte: byte_pos,
+    end_byte: byte_pos,
+    start_point: point,
+    end_point: point,
+    parse_state: 0,
+    lookahead_bytes: byte_pos,
+    is_keyword: false,
+    children: [],
+    field_names: [],
+    production_id: 0,
+    dynamic_precedence: 0,
+    extra: false,
+    is_missing: true,
+    is_error: false,
+    has_changes: false,
+    fragile_left: false,
+    fragile_right: false,
+  }
+}
+
+///|
+// 词法内部类型
 
 ///|
 /// 词法阶段的临时类型（不进入最终 CST）
@@ -217,7 +253,7 @@ struct Token {
 } derive(Show)
 
 ///|
-// ─── §4 解析错误（公开） ──────────────────────────────────────────────────────
+// 解析错误（公开）
 
 ///|
 /// 公开错误类型：只在 table 损坏等极端情况下返回
@@ -229,7 +265,7 @@ pub(all) struct ParseError {
 } derive(Show)
 
 ///|
-// ─── §5 GLR / 错误恢复内部类型 ────────────────────────────────────────────────
+// GLR / 错误恢复内部类型
 // 这些类型 Phase 2a 不用，但先在此声明，让其他文件可前向引用。
 
 ///|
@@ -260,6 +296,11 @@ let error_cost_per_skipped_line : Int = 30
 
 ///|
 let error_cost_per_missing_tree : Int = 110
+
+///|
+/// 每次进入恢复模式本身的固定惩罚（叠加到 per-token 代价之上）
+/// 防止解析器频繁触发恢复导致不稳定
+let error_cost_per_recovery : Int = 500
 
 ///|
 /// GLR 并行版本的代价描述（condense_stack 用）

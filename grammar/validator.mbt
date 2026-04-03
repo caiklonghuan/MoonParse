@@ -41,7 +41,7 @@ pub fn ValidationError::to_string(self : ValidationError) -> String {
   }
 }
 
-// ─── 公开入口 ─────────────────────────────────────────────────────────────────
+// 公开入口
 
 ///|
 /// 对已解析的 Grammar 进行语义校验，返回所有错误（不提前中止）
@@ -55,7 +55,7 @@ pub fn ValidationError::to_string(self : ValidationError) -> String {
 pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
   let errors : Array[ValidationError] = []
 
-  // 1. start 规则存在性
+  // start 规则存在性
   match grammar.start {
     Some(start_name) =>
       if not(grammar.rules.contains(start_name)) {
@@ -67,7 +67,7 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
     None => ()
   }
 
-  // 2. 规则引用完整性
+  // 规则引用完整性
   for name, rule in grammar.rules {
     for ref_name in collect_rule_refs(rule.pattern) {
       if not(grammar.rules.contains(ref_name)) {
@@ -82,7 +82,7 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
   // 3 & 4. 左递归检测（直接 + 间接）
   detect_left_recursion(grammar, errors)
 
-  // 5. 可达性分析（仅当声明了 start）
+  // 可达性分析（仅当声明了 start）
   match grammar.start {
     Some(start_name) =>
       if grammar.rules.contains(start_name) {
@@ -102,7 +102,7 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
   errors
 }
 
-// ─── 辅助：收集 Pattern 中直接引用的规则名 ────────────────────────────────────
+// 辅助：收集 Pattern 中直接引用的规则名
 
 ///|
 /// 递归收集 Pattern 中所有 RuleRef 名称（去重）
@@ -140,7 +140,7 @@ fn collect_rule_refs_into(pattern : Pattern, out : Array[String]) -> Unit {
   }
 }
 
-// ─── 辅助：收集一个 Pattern「序列首位」能直接展开到的规则名 ────────────────────
+// 辅助：收集一个 Pattern「序列首位」能直接展开到的规则名
 // 用于左递归检测：只关心「在消耗任何 token 之前就必须先展开的规则」
 
 ///|
@@ -184,7 +184,7 @@ fn push_unique(arr : Array[String], s : String) -> Unit {
   arr.push(s)
 }
 
-// ─── 辅助：左递归检测（DFS 环检测）─────────────────────────────────────────────
+// 辅助：左递归检测（DFS 环检测）
 
 ///|
 fn detect_left_recursion(
@@ -331,7 +331,7 @@ fn ref_already_reported(
   false
 }
 
-// ─── 辅助：可达性分析 ─────────────────────────────────────────────────────────
+// 辅助：可达性分析
 
 ///|
 /// 从 start_name 出发，BFS/DFS 收集所有可达规则名

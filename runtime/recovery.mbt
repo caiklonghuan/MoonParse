@@ -1,18 +1,18 @@
 ///|
-// ─── §9 错误恢复（Phase 2b 存根）─────────────────────────────────────────────
+// 错误恢复（Phase 2b 存根）
 //
 // 错误恢复采用 tree-sitter 的三策略混合：
 //
-//   策略 1：recover_to_state
+//   recover_to_state：
 //     · 回退栈，寻找存在错误产生式 [X → • error β] 的状态
 //     · 丢弃 error → β 之间的 token（代价 = skipped_tree×100 + skipped_char×1）
 //     · 产生 ERROR 节点包裹被丢弃内容
 //
-//   策略 2：insert_missing
+//   insert_missing：
 //     · 模拟插入一个缺失 token（代价 = missing_tree×110）
 //     · 仅当插入后可以继续推进解析时有效
 //
-//   策略 3：skip_token
+//   skip_token：
 //     · 丢弃当前前瞻 token，继续尝试
 //     · 代价 = skipped_char×1（字符级）或 skipped_line×30（行级）
 //

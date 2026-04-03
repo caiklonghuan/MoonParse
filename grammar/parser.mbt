@@ -19,7 +19,7 @@ priv struct ParserState {
   mut pos : Int
 }
 
-// ─── 公开入口 ────────────────────────────────────────────────────────────────
+// 公开入口
 
 ///|
 /// 解析 Grammar DSL 字符串，返回完整的 Grammar 对象
@@ -89,7 +89,7 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
   Success(grammar)
 }
 
-// ─── 规则层 ──────────────────────────────────────────────────────────────────
+// 规则层
 
 ///|
 /// 解析顶层 precedence 声明：precedence [left|right|dynamic] name1, name2, ...
@@ -172,7 +172,7 @@ fn parse_rule(state : ParserState) -> ParseResult[Rule] {
   }
 }
 
-// ─── 表达式层（优先级从低到高：选择 > 序列 > 一元 > 原子）────────────────────
+// 表达式层（优先级从低到高：选择 > 序列 > 一元 > 原子）
 
 ///|
 /// 解析选择表达式：`A | B | C`
@@ -607,7 +607,7 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
   }
 }
 
-// ─── extras 解析 ─────────────────────────────────────────────────────────────
+// extras 解析
 
 ///|
 /// 解析 `extras [pattern, pattern, ...]` 声明

@@ -19,7 +19,7 @@ priv struct NormalizeCase {
 ///|
 fn get_normalize_cases() -> Array[NormalizeCase] {
   [
-    // ── 1. 最小线性文法 ────────────────────────────────────────────────────
+    // 最小线性文法
     {
       name: "线性 - 单字面量",
       dsl: "start s\nrule s: \"hello\"",
@@ -29,7 +29,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: false,
       min_prod_count: 2,
     },
-    // ── 2. 序列 ──────────────────────────────────────────────────────────
+    // 序列
     {
       name: "序列 - 两终结符",
       dsl: "start ab\nrule ab: \"a\" \"b\"",
@@ -39,7 +39,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: false,
       min_prod_count: 2,
     },
-    // ── 3. 选择 ──────────────────────────────────────────────────────────
+    // 选择
     {
       name: "选择 - 两分支",
       dsl: "start kw\nrule kw: \"if\" | \"else\"",
@@ -49,7 +49,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: false,
       min_prod_count: 3,
     },
-    // ── 4. Optional（含 ε 产生式）────────────────────────────────────────
+    // Optional（含 ε 产生式）
     {
       name: "Optional - 产生 ε 产生式",
       dsl: "start s\nrule s: \"a\"?",
@@ -59,7 +59,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: true,
       min_prod_count: 3,
     },
-    // ── 5. Repeat（左递归 + ε）────────────────────────────────────────────
+    // Repeat（左递归 + ε）
     {
       name: "Repeat - 左递归",
       dsl: "start items\nrule items: \"x\"*",
@@ -69,7 +69,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: true,
       min_prod_count: 3,
     },
-    // ── 6. Plus ──────────────────────────────────────────────────────────
+    // Plus
     {
       name: "Plus - 一或多次",
       dsl: "start digits\nrule digits: /\\d/+",
@@ -79,7 +79,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: false,
       min_prod_count: 3,
     },
-    // ── 7. Regex 终结符 ──────────────────────────────────────────────────
+    // Regex 终结符
     {
       name: "Regex 终结符",
       dsl: "start id\nrule id: /[a-z]+/",
@@ -89,7 +89,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: false,
       min_prod_count: 2,
     },
-    // ── 8. AnyChar 终结符 ─────────────────────────────────────────────────
+    // AnyChar 终结符
     {
       name: "AnyChar 终结符",
       dsl: "start any\nrule any: .",
@@ -99,7 +99,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: false,
       min_prod_count: 2,
     },
-    // ── 9. 字段名保留 ─────────────────────────────────────────────────────
+    // 字段名保留
     {
       name: "Field 元数据保留",
       dsl: "start assign\nrule assign: lhs: /[a-z]+/ \"=\" rhs: /[a-z]+/",
@@ -109,7 +109,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: false,
       min_prod_count: 2,
     },
-    // ── 10. 多规则 + RuleRef ──────────────────────────────────────────────
+    // 10. 多规则 + RuleRef
     {
       name: "多规则 - 规则引用",
       dsl: "start expr\nrule expr: num \"+\" num\nrule num: /\\d+/",
@@ -119,7 +119,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: false,
       min_prod_count: 3,
     },
-    // ── 11. Prec 标注 ─────────────────────────────────────────────────────
+    // 11. Prec 标注
     {
       name: "Prec 标注",
       dsl: "start e\nrule e: prec.left(1, \"x\" \"+\" \"y\")",
@@ -129,7 +129,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
       has_epsilon_prod: false,
       min_prod_count: 2,
     },
-    // ── 12. RepeatRange ───────────────────────────────────────────────────
+    // 12. RepeatRange
     {
       name: "RepeatRange {2,4}",
       dsl: "start hex\nrule hex: /[0-9a-f]/{2,4}",
@@ -142,7 +142,7 @@ fn get_normalize_cases() -> Array[NormalizeCase] {
   ]
 }
 
-// ─── 辅助函数 ─────────────────────────────────────────────────────────────────
+// 辅助函数
 
 ///|
 /// 通过 nonterminals map 逆向查找 NT id 对应的名称（黑盒可访问）
@@ -191,7 +191,7 @@ fn has_terminal_keys(ag : AugmentedGrammar, keys : Array[String]) -> Bool {
   true
 }
 
-// ─── 测试块 ───────────────────────────────────────────────────────────────────
+// 测试块
 
 ///|
 test "augment_grammar / $accept 产生式首位且体末为 EndOfInput" {

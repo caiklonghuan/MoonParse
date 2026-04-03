@@ -1,5 +1,5 @@
 ///|
-// ─── §6 词法器编译器 ─────────────────────────────────────────────────────────
+// 词法器编译器
 //
 // Literal / Regex / AnyChar  →  Thompson NFA  →  DFA（子集构造）
 // → LexerDfa + valid_tokens 映射。
@@ -14,7 +14,7 @@
 //
 // Phase 3 TODO：Hopcroft DFA 最小化。
 
-// ─── 字符常量 ─────────────────────────────────────────────────────────────────
+// 字符常量
 
 ///|
 /// 仅用于 AnyChar / `.` 展开的字符集（ASCII 可打印字符 + 常用控制字符）。
@@ -22,7 +22,7 @@
 /// 因此 `[α-ω]`、`[中-龥]` 等 Unicode 区间均可正确处理。
 let range_chars : String = "\t\n\r !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
-// ─── NFA 内部类型 ─────────────────────────────────────────────────────────────
+// NFA 内部类型
 
 ///|
 /// NFA 边标签
@@ -62,7 +62,7 @@ fn NfaCtx::edge(ctx : NfaCtx, from : Int, lbl : NfaTrans, to : Int) -> Unit {
   ctx.edges[from].push((lbl, to))
 }
 
-// ─── Thompson 片段构造辅助 ───────────────────────────────────────────────────
+// Thompson 片段构造辅助
 
 ///|
 /// Kleene star(*)
@@ -120,7 +120,7 @@ fn nfa_alt_frag(
   (ns, na)
 }
 
-// ─── 字面量 / AnyChar → NFA ──────────────────────────────────────────────────
+// 字面量 / AnyChar → NFA
 
 ///|
 /// 字符串字面量：链式字符跳转片段
@@ -144,7 +144,7 @@ fn nfa_from_any(ctx : NfaCtx) -> (Int, Int) {
   (s, a)
 }
 
-// ─── 正则字符串递归下降解析器 ────────────────────────────────────────────────
+// 正则字符串递归下降解析器
 
 ///|
 priv struct RexParse {
@@ -393,7 +393,7 @@ fn nfa_from_regex(ctx : NfaCtx, re : String) -> (Int, Int) {
   parse_alt(ctx, p)
 }
 
-// ─── 字母表收集 ──────────────────────────────────────────────────────────────
+// 字母表收集
 
 ///|
 /// 将字符区间 [lo, hi] 中的所有字符加入集合（直接按 Unicode 码点枚举）。
@@ -524,7 +524,7 @@ fn collect_alphabet(grammar : AugmentedGrammar) -> Array[Char] {
   set.to_array()
 }
 
-// ─── ε-closure ───────────────────────────────────────────────────────────────
+// ε-closure
 
 ///|
 /// NFA 状态集合的 ε-closure（BFS）；返回已排序的去重状态数组
@@ -551,7 +551,7 @@ fn eps_closure(ctx : NfaCtx, init : Array[Int]) -> Array[Int] {
   worklist
 }
 
-// ─── 子集构造辅助 ─────────────────────────────────────────────────────────────
+// 子集构造辅助
 
 ///|
 /// NFA 状态集合 → 字符串 key（用于 Map 去重）
@@ -602,7 +602,7 @@ fn nfa_move(ctx : NfaCtx, states : Array[Int], ch : Char) -> Array[Int] {
   result
 }
 
-// ─── 子集构造：NFA → DFA ─────────────────────────────────────────────────────
+// 子集构造：NFA → DFA
 
 ///|
 /// 子集构造，返回 DFA 状态数组（下标即 DfaStateId）和起始状态 0。
@@ -686,7 +686,7 @@ fn subset_construct(
   result
 }
 
-// ─── valid_tokens 计算 ───────────────────────────────────────────────────────
+// valid_tokens 计算
 
 ///|
 /// valid_tokens[s] = { t | action[(s,t)] ≠ ∅ } ∪ extras_set
@@ -717,7 +717,7 @@ fn build_valid_tokens(
   result
 }
 
-// ─── 优先级 ──────────────────────────────────────────────────────────────────
+// 优先级
 
 ///|
 /// 接受优先级（越小越优先）：Literal > Regex > AnyChar；同类内以 TerminalId 为次序
@@ -729,16 +729,16 @@ fn terminal_priority(tid : TerminalId, def : TerminalDef) -> Int {
   }
 }
 
-// ─── 公开 API ────────────────────────────────────────────────────────────────
+// 公开 API
 
 ///|
 /// 将 AugmentedGrammar 的全部终结符 Pattern 编译为上下文敏感词法器 DFA。
 ///
 /// 算法：
-///   1. 为每个终结符建立 Thompson NFA
-///   2. 引入超级起始态 super_start，以 ε 连接各 NFA 入口
-///   3. 子集构造（NFA → DFA），字母表从 terminal_patterns 中收集
-///   4. 计算 valid_tokens：每个解析状态可合法扫描的终结符列表
+/// 为每个终结符建立 Thompson NFA
+/// 引入超级起始态 super_start，以 ε 连接各 NFA 入口
+/// 子集构造（NFA → DFA），字母表从 terminal_patterns 中收集
+/// 计算 valid_tokens：每个解析状态可合法扫描的终结符列表
 ///
 /// Phase 3 TODO：Hopcroft DFA 最小化（当前直接使用子集构造输出）
 pub fn build_lexer_dfa(

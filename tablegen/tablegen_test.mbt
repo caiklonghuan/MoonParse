@@ -4,13 +4,13 @@
 // 复用自同一测试包中的 lalr_test.mbt / conflicts_test.mbt。
 //
 // 5 个表格驱动测试块：
-//   1. 基本数量属性     — states / report_count / accept_count
-//   2. 冲突类型与消解   — has_ambiguous / has_warn / conflict_cells
-//   3. Shift/Reduce 存在性
-//   4. symbol_metadata 与 productions 结构
-//   5. table_to_json 顶层字段覆盖
+// 基本数量属性     — states / report_count / accept_count
+// 冲突类型与消解   — has_ambiguous / has_warn / conflict_cells
+// Shift/Reduce 存在性
+// symbol_metadata 与 productions 结构
+// table_to_json 顶层字段覆盖
 
-// ─── 辅助 ─────────────────────────────────────────────────────────────────────
+// 辅助
 
 ///|
 /// generate_parse_table() 必须返回 Ok，否则 panic
@@ -25,7 +25,7 @@ fn gen_ok(dsl : String) -> (ParseTable, Array[ConflictReport]) {
   }
 }
 
-// ─── 表 1：文法基本数量属性 ───────────────────────────────────────────────────
+// 表 1：文法基本数量属性
 // (_label, dsl, exp_states, exp_report_count, exp_accepts)
 // exp_states / exp_report_count = -1 → 跳过该断言
 
@@ -56,7 +56,7 @@ test "基本数量属性" {
   }
 }
 
-// ─── 表 2：冲突类型与消解 ─────────────────────────────────────────────────────
+// 表 2：冲突类型与消解
 // (_label, dsl, has_ambiguous, has_warn, exp_conflict_cells)
 // exp_conflict_cells = -1 → 跳过
 
@@ -101,7 +101,7 @@ test "冲突类型与消解" {
   }
 }
 
-// ─── 表 3：Shift / Reduce 动作存在性 ─────────────────────────────────────────
+// 表 3：Shift / Reduce 动作存在性
 // (_label, dsl, expect_shift, expect_reduce)
 
 ///|
@@ -140,7 +140,7 @@ test "Shift Reduce 动作存在性" {
   }
 }
 
-// ─── 表 4：symbol_metadata 与 productions 结构 ───────────────────────────────
+// 表 4：symbol_metadata 与 productions 结构
 // (_label, dsl, min_prod_count)
 
 ///|
@@ -179,7 +179,7 @@ test "symbol_metadata 与 productions 结构" {
   }
 }
 
-// ─── 表 5：table_to_json 顶层字段覆盖 ────────────────────────────────────────
+// 表 5：table_to_json 顶层字段覆盖
 // 对多个文法 × 全部必要 JSON 键做笛卡尔检查
 
 ///|

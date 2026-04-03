@@ -1,21 +1,21 @@
 ///|
-// ─── §4 LALR(1) 解析表构建 ───────────────────────────────────────────────────
+// LALR(1) 解析表构建
 //
-// 实现 design.md §4 的公开函数：
+// 实现公开函数：
 //   build_lalr_table(grammar, item_sets, goto_map) -> ParseTable
 //
 // 算法概览：
-//   Step 1  遍历 goto_map →
+// 遍历 goto_map →
 //             Terminal(t)     : action[(state, t)]  += Shift(target)
 //             EndOfInput      : action[(state, -1)] += Shift(target)  (-1 = eoi_id)
 //             NonTerminal(nt) : goto_table[(state, nt)] = target
-//   Step 2  遍历每个状态的 reduce 项 [A → α •] →
+// 遍历每个状态的 reduce 项 [A → α •] →
 //             若 A == grammar.start ($accept) : action[(state, eoi_id)] += Accept
 //             否则 : 对 FOLLOW(A) 中每个 t    : action[(state, t)]     += Reduce(id)
-//   Step 3  整理 symbol_metadata（下标 = NonTerminalId）
-//   Step 4  组装 ParseTable (词法 DFA 在 Phase 1 置为桩实现)
+// 整理 symbol_metadata（下标 = NonTerminalId）
+// 组装 ParseTable (词法 DFA 在 Phase 1 置为桩实现)
 
-// ─── 辅助：向 action 表插入去重动作 ─────────────────────────────────────────
+// 辅助：向 action 表插入去重动作
 
 ///|
 /// 向 action 表的 (state, terminal) 格加入动作；已存在相同动作时跳过。
@@ -43,7 +43,7 @@ fn add_action(
   }
 }
 
-// ─── 公开 API ─────────────────────────────────────────────────────────────────
+// 公开 API
 
 ///|
 /// 构建 LALR(1) 解析表。
@@ -60,7 +60,7 @@ pub fn build_lalr_table(
   let action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
   let goto_table : Map[(StateId, NonTerminalId), StateId] = Map::new()
 
-  // ── Step 1：从 goto_map 填充 Shift 与 goto ─────────────────────────────────
+  // Step 1：从 goto_map 填充 Shift 与 goto
   for key, target in goto_map {
     let (state, sym) = key
     match sym {
@@ -70,7 +70,7 @@ pub fn build_lalr_table(
     }
   }
 
-  // ── Step 2：从 reduce 项目填充 Reduce / Accept ──────────────────────────────
+  // Step 2：从 reduce 项目填充 Reduce / Accept
   // 预计算所有非终结符的 FOLLOW（不动点迭代每轮只计算一次，而非每个 reduce 项一次）
   let follow_cache : Map[NonTerminalId, Set[TerminalId]] = Map::new()
   for _, nt_id in grammar.nonterminals {
@@ -127,7 +127,7 @@ pub fn build_lalr_table(
     i = i + 1
   }
 
-  // ── Step 3：整理 symbol_metadata（下标 = NonTerminalId）───────────────────
+  // Step 3：整理 symbol_metadata（下标 = NonTerminalId）
   let mut max_nt = 0
   for _, id in grammar.nonterminals {
     if id > max_nt {
@@ -149,7 +149,7 @@ pub fn build_lalr_table(
     symbol_metadata[id] = { name, is_named }
   }
 
-  // ── Step 4：桩 LexerDfa（Phase 1 不生成词法 DFA）──────────────────────────
+  // Step 4：桩 LexerDfa（Phase 1 不生成词法 DFA）
   let stub_dfa : LexerDfa = { states: [], start: 0, valid_tokens: Map::new() }
 
   {

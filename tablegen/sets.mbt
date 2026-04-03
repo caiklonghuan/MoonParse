@@ -1,7 +1,7 @@
 ///|
-// ─── 符号属性集合计算 ──────────────────────────────────────────────────────
+// 符号属性集合计算
 //
-// 实现 design.md 的四个公开函数：
+// 实现公开函数：
 //   nullable(grammar, seq)     -> Bool
 //   first_set(grammar, sym)    -> Set[TerminalId]
 //   first_seq(grammar, seq)    -> Set[TerminalId]
@@ -14,7 +14,7 @@
 /// EndOfInput（"$"）在 TerminalId 集合中的哨兵值
 pub let eoi_id : TerminalId = -1
 
-// ─── 内部：不动点计算 ─────────────────────────────────────────────────────────
+// 内部：不动点计算
 
 ///|
 /// 判断产生式体在给定 nullable 表下是否可推导 ε。
@@ -136,8 +136,8 @@ fn compute_first(
 /// 不动点迭代：在已知 nullable / FIRST 表下计算每个非终结符的 FOLLOW 集合。
 ///
 /// 对每条产生式 A → α B β：
-///   1. 将 FIRST(β) 加入 FOLLOW(B)
-///   2. 若 β 全部可 nullable（含 β 为空），将 FOLLOW(A) 加入 FOLLOW(B)
+/// 将 FIRST(β) 加入 FOLLOW(B)
+/// 若 β 全部可 nullable（含 β 为空），将 FOLLOW(A) 加入 FOLLOW(B)
 fn compute_follow(
   grammar : AugmentedGrammar,
   nm : Map[NonTerminalId, Bool],
@@ -224,7 +224,7 @@ fn compute_follow(
   fow
 }
 
-// ─── 公开 API ─────────────────────────────────────────────────────────────────
+// 公开 API
 
 ///|
 /// 判断符号序列是否可推导出 ε。

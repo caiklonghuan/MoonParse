@@ -1,13 +1,13 @@
 ///|
-// ─── §10 增量解析（Phase 3a 存根）────────────────────────────────────────────
+// 增量解析（Phase 3a 存根）
 //
 // 增量解析允许在输入发生局部修改后，重用上一次解析结果中未受影响的子树，
 // 从而避免完整地重新解析整个文件。
 //
 // 核心思路（对标 tree-sitter）：
-//   1. 用户提供 InputEdit（start_byte, old_end_byte, new_end_byte）
-//   2. 遍历旧 CST，对每个节点打上 has_changes = true（如果在编辑区间内）
-//   3. 解析新输入时：
+// 用户提供 InputEdit（start_byte, old_end_byte, new_end_byte）
+// 遍历旧 CST，对每个节点打上 has_changes = true（如果在编辑区间内）
+// 解析新输入时：
 //      · 在 Shift 前，先尝试从旧 CST 中找到一个可复用节点（reuse_node）
 //      · 复用条件：
 //          - node.start_byte == cur_pos（位置对齐）
@@ -16,7 +16,7 @@
 //          - not node.fragile_left / fragile_right（非 GLR 产物）
 //          - node.lookahead_bytes <= new_edit_start（前瞻不越过编辑边界）
 //      · 复用时直接将旧节点推栈，跳过重新词法/语法分析
-//   4. 非复用节点正常走 parse_linear / glr_parse 路径
+// 非复用节点正常走 parse_linear / glr_parse 路径
 //
 // 当前状态：类型骨架 + 函数签名占位；函数体全为 TODO。
 // Phase 2a/2b/2c 阶段直接全量重新解析（CstNode.parse_state 暂置 0）。
@@ -55,7 +55,7 @@ pub fn find_reusable_node(
   edit_start : Int,
 ) -> CstNode? {
   // TODO: 在 old_tree.root 中从 new_pos 开始做深度优先搜索
-  //       找满足复用条件的节点（见 §10 注释中的复用条件）
+  //       找满足复用条件的节点（见  注释中的复用条件）
   let _ = (old_tree, new_pos, lr_state, edit_start)
   None
 }
@@ -74,10 +74,10 @@ pub fn parse_incremental(
   _edit : InputEdit?,
 ) -> Result[CstNode, ParseError] {
   // TODO Phase 3a:
-  //   1. match old_tree, edit → apply_edit
-  //   2. 构造带 reuse_lookup 的解析器
-  //   3. 在 Shift 前先查 find_reusable_node
-  //   4. 复用成功则跳过词法，直接推栈
+  // match old_tree, edit → apply_edit
+  // 构造带 reuse_lookup 的解析器
+  // 在 Shift 前先查 find_reusable_node
+  // 复用成功则跳过词法，直接推栈
   let _ = old_tree
   parse_linear(table, input)
 }

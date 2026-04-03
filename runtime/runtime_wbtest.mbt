@@ -10,7 +10,7 @@
 //   表 3：叶节点位置信息 — start_byte / end_byte 精确值
 //   表 4：extras 处理 — 空白不影响语义节点
 
-// ─── 辅助 ─────────────────────────────────────────────────────────────────────
+// 辅助
 
 ///|
 /// CstNode 的紧凑摘要（调试输出）
@@ -18,7 +18,7 @@ fn node_summary(n : CstNode) -> String {
   "sym=\{n.symbol} [\{n.start_byte},\{n.end_byte}) ch=\{n.children.length()}"
 }
 
-// ─── 表 1：parse 成功 ─────────────────────────────────────────────────────────
+// 表 1：parse 成功
 // (_label, dsl, input, exp_end_byte, exp_children)
 // exp_end_byte / exp_children = -1 → 跳过该断言
 
@@ -54,7 +54,7 @@ test "parse 成功 — 根节点属性" {
   }
 }
 
-// ─── 表 2：parse 失败 ─────────────────────────────────────────────────────────
+// 表 2：parse 失败
 // (_label, dsl, input, want_err)
 
 ///|
@@ -76,7 +76,7 @@ test "parse 失败 — 语法/词法错误返回 Err" {
   }
 }
 
-// ─── 表 3：叶节点位置信息 ────────────────────────────────────────────────────
+// 表 3：叶节点位置信息
 // (_label, dsl, input, leaf_index, exp_start, exp_end)
 
 ///|
@@ -105,7 +105,7 @@ test "parse 叶节点位置" {
   }
 }
 
-// ─── 表 4：extras 处理 ────────────────────────────────────────────────────────
+// 表 4：extras 处理
 // (_label, dsl, input, exp_root_end, exp_non_extra_children)
 // exp_non_extra_children = -1 → 跳过
 
@@ -135,7 +135,7 @@ test "parse extras — 空白跳过不影响结构" {
   }
 }
 
-// ─── 表 4b：extras 节点出现在 CST children 中 ────────────────────────────────
+// 表 4b：extras 节点出现在 CST children 中
 // GLR 路径下 extras 必须体现在 CST，不能静默丢弃。
 // ("label", dsl, input, expected_total_children, expected_extra_children)
 
@@ -172,7 +172,7 @@ test "parse extras — extras 节点出现在 CST children 中" {
   }
 }
 
-// ─── 表 5：GLR — 左递归左结合 CST 结构 ──────────────────────────────────────
+// 表 5：GLR — 左递归左结合 CST 结构
 //
 // 文法：e → e "+" t | t; t → "n"
 // 输入：n+n+n（5 字节）
@@ -212,7 +212,7 @@ test "GLR 左递归 — n+n+n 产生左结合 CST" {
   }
 }
 
-// ─── 表 6：GLR — S/R 冲突文法（悬挂 else）─────────────────────────────────
+// 表 6：GLR — S/R 冲突文法（悬挂 else）
 //
 // 文法：s → "i" s "e" s | "i" s | "x"
 // 输入：iixex（= i i x e x，5 字节）
@@ -240,7 +240,7 @@ test "GLR S/R 冲突 — 悬挂 else 文法可成功解析" {
   }
 }
 
-// ─── 表 7：fragile 标记精度 ───────────────────────────────────────────────────
+// 表 7：fragile 标记精度
 //
 // 无歧义文法（确定性 LR）：内部节点不应被标 fragile，以便 Phase 3a 增量复用。
 // 有歧义文法（GLR 并行路径）：内部节点必须标 fragile。
