@@ -20,11 +20,11 @@ pub fn is_reusable(CstNode, Int, Int, Int) -> Bool
 
 pub fn parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
 
+pub fn parse_from_dsl(String, String) -> Result[CstNode, ParseError]
+
 pub fn parse_incremental(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
 
 pub fn parse_linear(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
-
-pub fn parse_with_old_tree(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
 
 pub fn recover_to_state(RecoveryContext, @tablegen.ParseTable, String) -> RecoveryResult
 
@@ -69,6 +69,9 @@ type ErrorStatus
 pub impl Show for ErrorStatus
 
 type GlrEngine
+
+type GssLink
+pub impl Show for GssLink
 
 type GssNode
 pub impl Show for GssNode
@@ -127,9 +130,6 @@ type StackSummary
 
 type StackSummaryEntry
 pub impl Show for StackSummaryEntry
-
-type StackVersion
-pub impl Show for StackVersion
 
 type Token
 pub impl Show for Token

@@ -134,3 +134,71 @@ test "parse extras — 空白跳过不影响结构" {
     }
   }
 }
+
+// ─── 表 5：GLR — 左递归左结合 CST 结构 ──────────────────────────────────────
+//
+// 文法：e → e "+" t | t; t → "n"
+// 输入：n+n+n（5 字节）
+//
+// 期望 CST（左结合）：
+//   e (root, 3 children)
+//   ├── e (left, 3 children)   ← "n+n"
+//   │   ├── e (1 child)        ← e→t→"n"
+//   │   ├── "+"
+//   │   └── t (1 child)        ← t→"n"
+//   ├── "+"
+//   └── t (1 child)            ← t→"n"
+//
+// 若为右结合则 root.children[2] 才是深层节点，children[0].children.length()=1。
+// 断言 root.children[0].children.length()==3 验证左结合性。
+
+///|
+test "GLR 左递归 — n+n+n 产生左结合 CST" {
+  let dsl = "start e\nrule e: e \"+\" t | t\nrule t: \"n\""
+  let input = "n+n+n"
+  match parse_from_dsl(dsl, input) {
+    Err(e) => fail("parse failed: \{e.message}")
+    Ok(root) => {
+      // 根节点覆盖完整输入
+      assert_eq(root.start_byte, 0)
+      assert_eq(root.end_byte, 5)
+      // 根节点 e → e "+" t：三个子节点
+      assert_eq(root.children.length(), 3)
+      // 左子树 e 对应 "n+n"：也是三个子节点（左结合）
+      assert_eq(root.children[0].children.length(), 3)
+      // 左子树的左子树 e 对应 "n"（e→t）：一个子节点
+      assert_eq(root.children[0].children[0].children.length(), 1)
+      // 最后一个 "+" 的位置
+      assert_eq(root.children[1].start_byte, 3)
+      assert_eq(root.children[1].end_byte, 4)
+    }
+  }
+}
+
+// ─── 表 6：GLR — S/R 冲突文法（悬挂 else）─────────────────────────────────
+//
+// 文法：s → "i" s "e" s | "i" s | "x"
+// 输入：iixex（= i i x e x，5 字节）
+//
+// 该文法在 "after i s, lookahead=e" 时有 Shift/Reduce 冲突：
+//   · Shift  → else 绑定内层 if（deep binding）
+//   · Reduce → else 绑定外层 if（shallow binding）
+// GLR 并行探索两条路径，应能成功返回 Ok 而非报错。
+// Phase 2b 只返回第一条路径；Phase 2c 可返回两棵树。
+
+///|
+test "GLR S/R 冲突 — 悬挂 else 文法可成功解析" {
+  let dsl = "start s\nrule s: \"i\" s \"e\" s | \"i\" s | \"x\""
+  // i i x e x：外层 if，内层 if-else
+  let input = "iixex"
+  match parse_from_dsl(dsl, input) {
+    Err(e) => fail("parse failed (expected Ok): \{e.message}")
+    Ok(root) => {
+      // 根节点覆盖完整输入
+      assert_eq(root.start_byte, 0)
+      assert_eq(root.end_byte, 5)
+      // 根节点体积大于 0
+      assert_true(root.children.length() > 0)
+    }
+  }
+}

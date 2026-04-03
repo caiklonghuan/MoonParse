@@ -113,7 +113,10 @@ fn GlrEngine::run(
     for top_ref in self.active_tops {
       let state = self.gss_nodes[top_ref].state
       match table.lexer_dfa.valid_tokens.get(state) {
-        Some(ts) => for t in ts { valid.add(t) }
+        Some(ts) =>
+          for t in ts {
+            valid.add(t)
+          }
         None => ()
       }
     }
@@ -144,7 +147,10 @@ fn GlrEngine::run(
         // GLR CST 中 extras 的完整支持留待 Phase 3 补充。
         if tok.is_extra {
           cur_point = bytes_to_point(
-            input, tok.start_byte, cur_point, tok.end_byte,
+            input,
+            tok.start_byte,
+            cur_point,
+            tok.end_byte,
           )
           pos = new_pos
           continue
@@ -169,7 +175,10 @@ fn GlrEngine::run(
           self.active_tops.push(r)
         }
         cur_point = bytes_to_point(
-          input, tok.start_byte, cur_point, tok.end_byte,
+          input,
+          tok.start_byte,
+          cur_point,
+          tok.end_byte,
         )
         pos = new_pos
       }
@@ -207,17 +216,16 @@ fn GlrEngine::collect_root_glr(
         for act in acts {
           match act {
             // Case 1: 当前状态直接有 Accept（理论上需先 Shift eoi，但作为保险保留）
-            Accept => {
+            Accept =>
               for link in self.gss_nodes[top_ref].links {
                 match link.node {
                   Some(n) => return Ok(n)
                   None => ()
                 }
               }
-            }
             // Case 2: Shift(s_acc) 且 s_acc 状态有 Accept
             //         对应 [$accept → start • $] 状态，入边携带 start CstNode
-            Shift(s_acc) => {
+            Shift(s_acc) =>
               match table.action.get((s_acc, @tablegen.eoi_id)) {
                 None => ()
                 Some(acc_acts) => {
@@ -241,7 +249,6 @@ fn GlrEngine::collect_root_glr(
                   }
                 }
               }
-            }
             Reduce(_) => () // 已在 run_reduce_worklist 处理完毕
           }
         }
@@ -252,63 +259,81 @@ fn GlrEngine::collect_root_glr(
 
 ///|
 /// 在 candidate_tops 中查找 state 相同的结点；
-/// 找到则追加 new_link（歧义合并），返回已有 GssRef；
-/// 找不到则新建结点，推入 candidate_tops，返回新 GssRef。
+/// 找到则尝试追加 new_link（歧义合并），返回 (已有 GssRef, link_added)；
+/// 找不到则新建结点，推入 candidate_tops，返回 (新 GssRef, true)。
 ///
-/// candidate_tops：本轮 Shift/Reduce 正在构造的"下一步活跃集"
-///（与 self.active_tops 不同——active_tops 是当前 token 的集合，
-///  candidate_tops 是下一 token 的集合，在 shift 阶段逐步填充）
+/// link_added：true = 实际发生了新建结点或新增了入边（调用方据此决定是否重入队）
+///             false = same predecessor 已存在，跳过（防止无限循环）
+///
+/// 重复前驱检测：若 candidate_tops 中已有 state 相同的结点，且该结点已有一条
+/// predecessor == new_link.predecessor 的入边，则不再追加（Phase 2b 保留首条）。
+/// 这防止了同一路径被反复归约、worklist 无限增长的问题。
 fn GlrEngine::find_or_merge(
   self : GlrEngine,
   state : Int,
   new_link : GssLink,
   candidate_tops : Array[GssRef],
-) -> GssRef {
+) -> (GssRef, Bool) {
   // ── 在 candidate_tops 中线性扫描同 state 的结点 ─────────────────────────
   for r in candidate_tops {
     if self.gss_nodes[r].state == state {
-      // 找到：追加入边（局部歧义合并），不新建结点
+      // 检查是否已存在相同前驱（避免重复添加）
+      let mut dup = false
+      for existing in self.gss_nodes[r].links {
+        if existing.predecessor == new_link.predecessor {
+          dup = true
+          break
+        }
+      }
+      if dup {
+        return (r, false) // 重复前驱：不追加，不触发重入队
+      }
+      // 新前驱：追加入边（局部歧义合并）
       self.gss_nodes[r].links.push(new_link)
-      return r
+      return (r, true)
     }
   }
   // ── 找不到：新建结点，加入 candidate_tops ───────────────────────────────
-  let ref = self.gss_nodes.length()
+  let new_ref = self.gss_nodes.length()
   self.gss_nodes.push({ state, links: [new_link] })
-  candidate_tops.push(ref)
-  ref
+  candidate_tops.push(new_ref)
+  (new_ref, true)
 }
 
 ///|
-/// 从 from 结点沿入边向前回溯，枚举所有长度恰好为 len 的 CstNode? 序列。
+/// 从 from 结点沿入边向前回溯，枚举所有长度恰好为 len 的路径。
 ///
-/// 返回值：每个元素是一条完整路径，路径中第 0 项对应最靠近底部的边节点，
-///         最后一项对应最靠近 from 的边节点（即左→右顺序，与产生式 body 对应）。
+/// 返回值：每个元素是 (base_ref, path)：
+///   · base_ref：沿该路径走完 len 步后所在的 GSS 结点（用于查 goto 表）
+///   · path：CstNode? 序列，第 0 项对应最靠近底部的边节点，
+///           最后一项对应最靠近 from 的边节点（左→右顺序，与产生式 body 对应）
 ///
-/// · len = 0 → 返回 [[]]（ε 产生式，空 body）
+/// · len = 0 → 返回 [(from, [])]（ε 产生式，base 就是 from 自身）
 /// · len = k → 对 from 的每条入边 link，递归 enum_paths(link.predecessor, k-1)，
-///             将 link.node 追加到每条子路径末尾
+///             将 link.node 追加到每条子路径末尾，base_ref 继承自子路径
 ///
 /// 注意：结果可能为多条（同一结点有多条入边时），这正是 GLR 并行性的体现。
+/// 每条路径携带各自的 base_ref，替代原来单独调用的 walk_base。
 fn GlrEngine::enum_paths(
   self : GlrEngine,
   from : GssRef,
   len : Int,
-) -> Array[Array[CstNode?]] {
-  // 基础情形：len = 0，返回包含一条空路径的列表
+) -> Array[(GssRef, Array[CstNode?])] {
+  // 基础情形：len = 0，base 就是当前结点 from，路径为空
   if len == 0 {
-    return [[]]
+    return [(from, [])]
   }
-  let results : Array[Array[CstNode?]] = []
+  let results : Array[(GssRef, Array[CstNode?])] = []
   let node = self.gss_nodes[from]
   // 沿每条入边递归
   for link in node.links {
     let sub_paths = self.enum_paths(link.predecessor, len - 1)
-    for path in sub_paths {
+    for item in sub_paths {
+      let (base, path) = item
       // 复制子路径，追加当前边的节点（保持左→右顺序）
       let new_path = path.copy()
       new_path.push(link.node)
-      results.push(new_path)
+      results.push((base, new_path))
     }
   }
   results
@@ -345,7 +370,7 @@ fn GlrEngine::run_shift(
     tok.end_byte,
     cur_point,
     ep,
-    0,              // parse_state：GLR 暂置 0（增量复用 Phase 3a 补充）
+    0, // parse_state：GLR 暂置 0（增量复用 Phase 3a 补充）
     tok.lookahead_bytes,
     tok.is_keyword,
     false,
@@ -425,19 +450,11 @@ fn GlrEngine::run_reduce_worklist(
     let prod = table.productions[prod_id]
     let body_len = prod.body.length()
 
-    // 枚举所有长度为 body_len 的路径
+    // 枚举所有长度为 body_len 的路径，同时得到每条路径的 base 结点
+    // （base = 沿路径走完 body_len 步后所在的 GSS 结点，即 goto 查找的来源）
     let paths = self.enum_paths(top, body_len)
-    for path in paths {
-      // path[0..body_len-1] 是子节点列表（CstNode?）
-      // path 起点之前的那个结点是"归约之后的栈顶"候选的前驱
-      // 找到路径起点的前驱：沿 links 走 body_len 步到达的那个结点
-      // enum_paths 返回路径末端是 top，头部是 body_len 步之前的边，
-      // 头部结点的 predecessor 就是 base（归约后 goto 的来源）。
-      //
-      // 更直接做法：沿 top 的 links 深度优先走 body_len 步取到 base_ref
-      // enum_paths 中 len=0 时对应 base，base_ref = 走完所有边后剩余结点。
-      // 我们单独再走一次链来取 base_ref。
-      let base_ref = self.walk_base(top, body_len)
+    for path_item in paths {
+      let (base_ref, path) = path_item
       let base_state = self.gss_nodes[base_ref].state
 
       // 查 goto 表
@@ -470,18 +487,14 @@ fn GlrEngine::run_reduce_worklist(
             true, // fragile = true（GLR 合并结果，不可增量复用）
           )
           let new_link : GssLink = { predecessor: base_ref, node: Some(inner) }
-          let prev_len = self.active_tops.length()
-          let merged_ref = self.find_or_merge(
+          let (merged_ref, link_added) = self.find_or_merge(
             goto_st,
             new_link,
             self.active_tops,
           )
-          // 若是新结点（active_tops 扩展了）或新加了边
-          // → 该结点上的 Reduce 也需入队（不动点条件）
-          let is_new_node = self.active_tops.length() > prev_len
-          let is_new_link = not(is_new_node) &&
-            self.gss_nodes[merged_ref].links.length() > 1
-          if is_new_node || is_new_link {
+          // 仅当实际新建结点或新增了入边时，才将该结点的 Reduce 入队
+          // find_or_merge 返回 false = 重复前驱（已有相同路径），不触发重入队
+          if link_added {
             enqueue_reduces(merged_ref)
           }
         }
@@ -490,24 +503,7 @@ fn GlrEngine::run_reduce_worklist(
   }
 }
 
-///|
-/// 从 top 沿第一条入边向前走 steps 步，返回到达的 GssRef（base 结点）。
-///
-/// 注意：GLR 中同一结点可能有多条入边，此函数只沿第一条边走（用于非歧义路径）。
-/// 歧义情形由 enum_paths 全量枚举，walk_base 仅用于单路径情形。
-fn GlrEngine::walk_base(self : GlrEngine, from : GssRef, steps : Int) -> GssRef {
-  let mut cur = from
-  let mut s = steps
-  while s > 0 {
-    let node = self.gss_nodes[cur]
-    if node.links.is_empty() {
-      break
-    }
-    cur = node.links[0].predecessor
-    s = s - 1
-  }
-  cur
-}
+// walk_base 已由 enum_paths 携带的 base_ref 替代，不再需要。
 
 ///|
 /// 从 GSS 结点反向收集状态路径（调试用）
