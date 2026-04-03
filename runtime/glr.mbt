@@ -147,6 +147,63 @@ fn GlrEngine::enum_paths(
 }
 
 ///|
+/// Shift 阶段：Reduce 到不动点后，对当前活跃栈顶执行所有 Shift 动作。
+///
+/// 算法：
+///   1. 对 active_tops 中每个结点，查 action[(state, tok.terminal_id)] 中的 Shift(s)
+///   2. 用同一个叶节点 leaf（所有路径共享同一 token，不必复制）
+///   3. find_or_merge(s, {predecessor: top, node: leaf}) 写入 next_tops
+///   4. 返回 next_tops（主循环替换 active_tops）和新的 pos / cur_point
+///
+/// extras token 不走本函数，由主循环在 Shift 前单独处理：
+///   extras 直接追加叶节点到 pending_extras 中，active_tops 不变。
+///
+/// 返回 next_tops：若为空则表示当前 token 无任何 Shift 动作（潜在语法错误）。
+fn GlrEngine::run_shift(
+  self : GlrEngine,
+  table : @tablegen.ParseTable,
+  tok : Token,
+  cur_point : Point,
+  input : String,
+) -> Array[GssRef] {
+  let next_tops : Array[GssRef] = []
+
+  // 构造叶节点（所有 Shift 路径共享同一 token，CstNode 不可变可安全共享）
+  let ep = bytes_to_point(input, tok.start_byte, cur_point, tok.end_byte)
+  let leaf = CstNode::leaf(
+    tok.terminal_id,
+    false,
+    tok.start_byte,
+    tok.end_byte,
+    cur_point,
+    ep,
+    0,              // parse_state：GLR 暂置 0（增量复用 Phase 3a 补充）
+    tok.lookahead_bytes,
+    tok.is_keyword,
+    false,
+  )
+
+  // 对每个活跃栈顶，收集所有 Shift 动作
+  for top_ref in self.active_tops {
+    let state = self.gss_nodes[top_ref].state
+    match table.action.get((state, tok.terminal_id)) {
+      None => ()
+      Some(acts) =>
+        for act in acts {
+          match act {
+            Shift(next_state) => {
+              let link : GssLink = { predecessor: top_ref, node: Some(leaf) }
+              let _ = self.find_or_merge(next_state, link, next_tops)
+            }
+            _ => ()
+          }
+        }
+    }
+  }
+  next_tops
+}
+
+///|
 /// Reduce worklist 阶段：对活跃栈顶集合执行所有可能的 Reduce 动作至不动点。
 ///
 /// 算法（Tomita 风格 worklist）：
