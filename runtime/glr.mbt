@@ -83,6 +83,35 @@ pub fn glr_parse(
 }
 
 ///|
+/// 在 candidate_tops 中查找 state 相同的结点；
+/// 找到则追加 new_link（歧义合并），返回已有 GssRef；
+/// 找不到则新建结点，推入 candidate_tops，返回新 GssRef。
+///
+/// candidate_tops：本轮 Shift/Reduce 正在构造的"下一步活跃集"
+///（与 self.active_tops 不同——active_tops 是当前 token 的集合，
+///  candidate_tops 是下一 token 的集合，在 shift 阶段逐步填充）
+fn GlrEngine::find_or_merge(
+  self : GlrEngine,
+  state : Int,
+  new_link : GssLink,
+  candidate_tops : Array[GssRef],
+) -> GssRef {
+  // ── 在 candidate_tops 中线性扫描同 state 的结点 ─────────────────────────
+  for r in candidate_tops {
+    if self.gss_nodes[r].state == state {
+      // 找到：追加入边（局部歧义合并），不新建结点
+      self.gss_nodes[r].links.push(new_link)
+      return r
+    }
+  }
+  // ── 找不到：新建结点，加入 candidate_tops ───────────────────────────────
+  let ref = self.gss_nodes.length()
+  self.gss_nodes.push({ state, links: [new_link] })
+  candidate_tops.push(ref)
+  ref
+}
+
+///|
 /// 从 GSS 结点反向收集状态路径（调试用）
 ///
 /// 沿第一条入边回溯，返回从底部到 top 的状态序列。
