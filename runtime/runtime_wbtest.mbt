@@ -135,6 +135,43 @@ test "parse extras — 空白跳过不影响结构" {
   }
 }
 
+// ─── 表 4b：extras 节点出现在 CST children 中 ────────────────────────────────
+// GLR 路径下 extras 必须体现在 CST，不能静默丢弃。
+// ("label", dsl, input, expected_total_children, expected_extra_children)
+
+///|
+test "parse extras — extras 节点出现在 CST children 中" {
+  let cases : Array[(String, String, String, Int, Int)] = [
+    // s → "a" "b"，输入 "a b"：期望 children = [a, space, b]（共 3 个，1 个 extra）
+    (
+      "中间空格进 children", "start s\nrule s: \"a\" \"b\"\nextras [/\\s+/]",
+      "a b", 3, 1,
+    ),
+    // s → "a"，输入 " a"：前置空格作为 leading_extras 附到 "a" 的 Shift 边，
+    // 归约时进入 s 的 children → [space, a]（共 2 个，1 个 extra）
+    (
+      "前置空格进 children", "start s\nrule s: \"a\"\nextras [/\\s+/]", " a",
+      2, 1,
+    ),
+    // 无 extras 时 children 数量不变
+    (
+      "无 extras — children 不变", "start s\nrule s: \"a\" \"b\"", "ab", 2,
+      0,
+    ),
+  ]
+  for case in cases {
+    let (_l, dsl, input, exp_total, exp_extra) = case
+    match parse_from_dsl(dsl, input) {
+      Err(e) => fail("parse_from_dsl failed for '\{_l}': \{e.message}")
+      Ok(root) => {
+        let extra_count = root.children.iter().filter(fn(c) { c.extra }).count()
+        assert_eq(root.children.length(), exp_total)
+        assert_eq(extra_count, exp_extra)
+      }
+    }
+  }
+}
+
 // ─── 表 5：GLR — 左递归左结合 CST 结构 ──────────────────────────────────────
 //
 // 文法：e → e "+" t | t; t → "n"

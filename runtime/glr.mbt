@@ -24,14 +24,17 @@ type GssRef = Int
 ///|
 /// GSS 边（Graph-Structured Stack edge）
 ///
-/// predecessor : 前驱结点的 GssRef
-/// node        : 跨越该边时产生的 CST 节点
-///                 · Shift  边：叶节点（token）
-///                 · Reduce 边：内部节点（产生式归约结果）
-///                 · 底部哨兵边：None（初始结点无前驱）
+/// predecessor    : 前驱结点的 GssRef
+/// node           : 跨越该边时产生的 CST 节点
+///                    · Shift  边：叶节点（token）
+///                    · Reduce 边：内部节点（产生式归约结果）
+///                    · 底部哨兵边：None（初始结点无前驱）
+/// leading_extras : Shift 前积累的 extras 节点（空白/注释）；Reduce 边为空。
+///                  extras 不占 LR body slot，由 enum_paths 将其插入产生式子节点序列。
 struct GssLink {
   predecessor : GssRef
   node : CstNode?
+  leading_extras : Array[CstNode]
 } derive(Show)
 
 ///|
@@ -99,6 +102,9 @@ fn GlrEngine::run(
 ) -> Result[CstNode, ParseError] {
   let mut pos : Int = 0
   let mut cur_point : Point = { row: 0, column: 0 }
+  // extras token 在 Shift 前积累，在下一次普通 token Shift 时附加到 GssLink。
+  // extras 不改变 LR 状态，故不影响 active_tops，但需出现在最终 CST 中。
+  let pending_extras : Array[CstNode] = []
   while true {
     // ── EOF 检查 ──────────────────────────────────────────────────────────────
     if pos >= input.length() {
@@ -142,23 +148,44 @@ fn GlrEngine::run(
           })
         }
 
-        // ── Extras token：前进 pos，active_tops 不变 ─────────────────────────
-        // Phase 2b 限制：extras 节点暂不追踪进 GSS，不出现在 GLR 路径中。
-        // GLR CST 中 extras 的完整支持留待 Phase 3 补充。
+        // ── Extras token：创建叶节点，积累到 pending_extras ──────────────────
+        // extras 不改变 LR 状态，但需出现在 CST 中。
+        // 此处创建叶节点并推入 pending_extras；下次普通 Shift 时通过
+        // GssLink.leading_extras 携带，enum_paths 将其插入产生式子节点序列。
         if tok.is_extra {
-          cur_point = bytes_to_point(
+          let ep = bytes_to_point(
             input,
             tok.start_byte,
             cur_point,
             tok.end_byte,
           )
+          let extra_node = CstNode::leaf(
+            tok.terminal_id,
+            false,
+            tok.start_byte,
+            tok.end_byte,
+            cur_point,
+            ep,
+            0,
+            tok.lookahead_bytes,
+            tok.is_keyword,
+            true,
+          )
+          cur_point = ep
+          pending_extras.push(extra_node)
           pos = new_pos
           continue
         }
 
         // ── 普通 token：Reduce 到不动点，再 Shift ────────────────────────────
         self.run_reduce_worklist(table, tok.terminal_id)
-        let next_tops = self.run_shift(table, tok, cur_point, input)
+        let next_tops = self.run_shift(
+          table, tok, cur_point, input, pending_extras,
+        )
+        // pending_extras 已由 run_shift 复制到每条 GssLink，此处清空
+        while not(pending_extras.is_empty()) {
+          let _ = pending_extras.pop()
+        }
         if next_tops.is_empty() {
           return Err({
             position: tok.start_byte,
@@ -323,8 +350,11 @@ fn GlrEngine::enum_paths(
     let sub_paths = self.enum_paths(link.predecessor, len - 1)
     for item in sub_paths {
       let (base, path) = item
-      // 复制子路径，追加当前边的节点（保持左→右顺序）
+      // 复制子路径：先追加 leading_extras（shift 前积累的 extras），再追加主节点
       let new_path = path.copy()
+      for ex in link.leading_extras {
+        new_path.push(Some(ex))
+      }
       new_path.push(link.node)
       results.push((base, new_path))
     }
@@ -342,7 +372,7 @@ fn GlrEngine::enum_paths(
 ///   4. 返回 next_tops（主循环替换 active_tops）和新的 pos / cur_point
 ///
 /// extras token 不走本函数，由主循环在 Shift 前单独处理：
-///   extras 直接追加叶节点到 pending_extras 中，active_tops 不变。
+///   extras 创建叶节点后存入 pending_extras，随本次 Shift 的 GssLink 一起传入。
 ///
 /// 返回 next_tops：若为空则表示当前 token 无任何 Shift 动作（潜在语法错误）。
 fn GlrEngine::run_shift(
@@ -351,6 +381,7 @@ fn GlrEngine::run_shift(
   tok : Token,
   cur_point : Point,
   input : String,
+  pending_extras : Array[CstNode],
 ) -> Array[GssRef] {
   let next_tops : Array[GssRef] = []
 
@@ -378,7 +409,13 @@ fn GlrEngine::run_shift(
         for act in acts {
           match act {
             Shift(next_state) => {
-              let link : GssLink = { predecessor: top_ref, node: Some(leaf) }
+              let link : GssLink = {
+                predecessor: top_ref,
+                node: Some(leaf),
+                // 将 pending_extras 复制到每条 Shift 边；
+                // enum_paths 归约时会把它们插入产生式子节点序列
+                leading_extras: pending_extras.copy(),
+              }
               let _ = self.find_or_merge(next_state, link, next_tops)
             }
             _ => ()
@@ -479,7 +516,11 @@ fn GlrEngine::run_reduce_worklist(
             0,
             true, // fragile = true（GLR 合并结果，不可增量复用）
           )
-          let new_link : GssLink = { predecessor: base_ref, node: Some(inner) }
+          let new_link : GssLink = {
+            predecessor: base_ref,
+            node: Some(inner),
+            leading_extras: [], // Reduce 边不携带 extras（extras 仅在 Shift 边）
+          }
           let (merged_ref, link_added) = self.find_or_merge(
             goto_st,
             new_link,
