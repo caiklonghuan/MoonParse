@@ -103,7 +103,7 @@ fn GlrEngine::run(
     // ── EOF 检查 ──────────────────────────────────────────────────────────────
     if pos >= input.length() {
       self.run_reduce_worklist(table, @tablegen.eoi_id)
-      return self.collect_root_glr(pos, cur_point)
+      return self.collect_root_glr(table, pos, cur_point)
     }
 
     // ── 计算所有活跃状态的合法 token 并集 ────────────────────────────────────
@@ -127,7 +127,7 @@ fn GlrEngine::run(
       None => {
         // pos < input.length() 但 DFA 无匹配：当做 EOF 处理
         self.run_reduce_worklist(table, @tablegen.eoi_id)
-        return self.collect_root_glr(pos, cur_point)
+        return self.collect_root_glr(table, pos, cur_point)
       }
       Some(tok) => {
         // ── 词法错误 ──────────────────────────────────────────────────────────
@@ -180,15 +180,74 @@ fn GlrEngine::run(
 }
 
 ///|
-/// Accept 时从活跃集中寻找根节点（Phase 2b 存根，Step 7 实现）
+/// Accept 时从活跃集中寻找根节点
+///
+/// 算法：
+///   遍历 active_tops，对每个结点检查 action[(state, eoi_id)]：
+///     · Accept 直接命中      → 根节点在该结点的入边（links）上
+///     · Shift(s_acc) 且 s_acc 有 Accept（即 $accept → start • $ 状态）
+///                            → 根节点同样在该结点的入边上
+///
+///   为什么根节点在入边上：
+///     在 $accept → start $ 的增广文法里，active_top 对应状态
+///     [$accept → start • $]，其唯一入边携带的正是 start 的 CstNode。
+///
+///   多路径（歧义）：Phase 2b 返回第一条；Phase 2c 改为 AmbiguityNode。
 fn GlrEngine::collect_root_glr(
   self : GlrEngine,
+  table : @tablegen.ParseTable,
   pos : Int,
   cur_pt : Point,
 ) -> Result[CstNode, ParseError] {
-  // TODO Step 7: 找 action[(s, eoi)] = Accept 的活跃栈顶，沿路径取根 CstNode
-  ignore(self)
-  Err({ position: pos, point: cur_pt, message: "collect_root_glr: not yet implemented" })
+  for top_ref in self.active_tops {
+    let state = self.gss_nodes[top_ref].state
+    match table.action.get((state, @tablegen.eoi_id)) {
+      None => ()
+      Some(acts) =>
+        for act in acts {
+          match act {
+            // Case 1: 当前状态直接有 Accept（理论上需先 Shift eoi，但作为保险保留）
+            Accept => {
+              for link in self.gss_nodes[top_ref].links {
+                match link.node {
+                  Some(n) => return Ok(n)
+                  None => ()
+                }
+              }
+            }
+            // Case 2: Shift(s_acc) 且 s_acc 状态有 Accept
+            //         对应 [$accept → start • $] 状态，入边携带 start CstNode
+            Shift(s_acc) => {
+              match table.action.get((s_acc, @tablegen.eoi_id)) {
+                None => ()
+                Some(acc_acts) => {
+                  let mut is_accept = false
+                  for a2 in acc_acts {
+                    match a2 {
+                      Accept => {
+                        is_accept = true
+                        break
+                      }
+                      _ => ()
+                    }
+                  }
+                  if is_accept {
+                    for link in self.gss_nodes[top_ref].links {
+                      match link.node {
+                        Some(n) => return Ok(n)
+                        None => ()
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            Reduce(_) => () // 已在 run_reduce_worklist 处理完毕
+          }
+        }
+    }
+  }
+  Err({ position: pos, point: cur_pt, message: "accept: no root node" })
 }
 
 ///|
