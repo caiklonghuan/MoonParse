@@ -112,6 +112,41 @@ fn GlrEngine::find_or_merge(
 }
 
 ///|
+/// 从 from 结点沿入边向前回溯，枚举所有长度恰好为 len 的 CstNode? 序列。
+///
+/// 返回值：每个元素是一条完整路径，路径中第 0 项对应最靠近底部的边节点，
+///         最后一项对应最靠近 from 的边节点（即左→右顺序，与产生式 body 对应）。
+///
+/// · len = 0 → 返回 [[]]（ε 产生式，空 body）
+/// · len = k → 对 from 的每条入边 link，递归 enum_paths(link.predecessor, k-1)，
+///             将 link.node 追加到每条子路径末尾
+///
+/// 注意：结果可能为多条（同一结点有多条入边时），这正是 GLR 并行性的体现。
+fn GlrEngine::enum_paths(
+  self : GlrEngine,
+  from : GssRef,
+  len : Int,
+) -> Array[Array[CstNode?]] {
+  // 基础情形：len = 0，返回包含一条空路径的列表
+  if len == 0 {
+    return [[]]
+  }
+  let results : Array[Array[CstNode?]] = []
+  let node = self.gss_nodes[from]
+  // 沿每条入边递归
+  for link in node.links {
+    let sub_paths = self.enum_paths(link.predecessor, len - 1)
+    for path in sub_paths {
+      // 复制子路径，追加当前边的节点（保持左→右顺序）
+      let new_path = path.copy()
+      new_path.push(link.node)
+      results.push(new_path)
+    }
+  }
+  results
+}
+
+///|
 /// 从 GSS 结点反向收集状态路径（调试用）
 ///
 /// 沿第一条入边回溯，返回从底部到 top 的状态序列。
