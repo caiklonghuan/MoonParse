@@ -304,6 +304,13 @@ let error_cost_per_recovery : Int = 500
 
 ///|
 /// GLR 并行版本的代价描述（condense_stack 用）
+///
+/// 代价存在版本级 ErrorStatus 而不是 CstNode 上，原因：
+///   condense_stack 比较的是每条 GssRef（版本）的累积代价，
+///   与子树结构无关，GlrEngine 维护 Map[GssRef, ErrorStatus] 即可。
+///   tree-sitter 把 error_cost 放在 SubtreeHeapData 是为了后解析阶段
+///   O(1) 查询子树代价，MoonParse 目前无此 API 需求，故 CstNode 不加该字段。
+///   增量复用所需的"是否含错误"判断由 is_error / fragile_left / fragile_right 覆盖。
 struct ErrorStatus {
   cost : Int
   node_count : Int // 自上次错误以来推入的节点数
