@@ -464,9 +464,12 @@ fn GlrEngine::run_reduce_worklist(
     }
   }
 
-  // 注意：active_tops 在处理过程中可能扩展，用下标遍历以涵盖新加入的顶点
+  // 初始化：把 worklist 启动前已在 active_tops 里的结点的 Reduce 动作全部入队。
+  // 说明：此处只枚举启动时已有的顶点。运行过程中 find_or_merge 新建或扩展的结点
+  // 由主循环末尾的 enqueue_reduces(merged_ref) 负责入队，两者协作才覆盖所有路径。
   let mut i = 0
-  while i < self.active_tops.length() {
+  let initial_tops_len = self.active_tops.length()
+  while i < initial_tops_len {
     enqueue_reduces(self.active_tops[i])
     i = i + 1
   }
