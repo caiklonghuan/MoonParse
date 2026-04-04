@@ -1,3 +1,18 @@
-// import {
-//   "caiklonghuan/MoonParse/runtime" @lib,
-// }
+
+import {
+  "caiklonghuan/MoonParse/runtime",
+  "caiklonghuan/MoonParse/tablegen",
+}
+
+options(
+  link: {
+    "wasm-gc": {
+      // use-js-builtin-string 使 String 等价于 JS String (ref extern)
+      // 要求: Chrome >= 117 / Node.js >= 22 / Deno >= 1.37
+      "use-js-builtin-string": true,
+      // 显式列出要暴露给 JS 的 pub fn（此处为验证实验函数）
+      "exports": [ "echo_string", "string_len" ],
+      "export-memory-name": "moonbit.memory",
+    },
+  },
+)
