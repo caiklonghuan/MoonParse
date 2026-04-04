@@ -29,3 +29,14 @@ pub fn parse(grammar_dsl : String, source : String) -> String {
     Err(err) => "Error: " + err.to_string()
   }
 }
+
+///|
+/// 用内置 JSON 语法解析 source，返回 CST 的文本表示。
+///
+/// 解析失败时返回以 "Error: " 开头的错误描述字符串。
+pub fn parse_json(source : String) -> String {
+  match @grammars.parse_json(source) {
+    Ok(node) => node.to_string()
+    Err(err) => "Error: " + err.to_string()
+  }
+}

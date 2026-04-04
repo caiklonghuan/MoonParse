@@ -1,0 +1,5 @@
+import {
+  "caiklonghuan/MoonParse/grammar",
+  "caiklonghuan/MoonParse/tablegen",
+  "caiklonghuan/MoonParse/runtime",
+}
