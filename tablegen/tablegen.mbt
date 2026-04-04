@@ -37,7 +37,7 @@ pub fn generate_parse_table(
   grammar : @grammar.Grammar,
 ) -> Result[(ParseTable, Array[ConflictReport]), String] {
   // 输入校验
-  if grammar.rules.size() == 0 {
+  if grammar.rules.length() == 0 {
     return Err("generate_parse_table: empty grammar (no rules)")
   }
   match grammar.start {

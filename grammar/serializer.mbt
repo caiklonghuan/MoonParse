@@ -29,11 +29,17 @@ pub fn grammar_to_string(grammar : Grammar) -> String {
     parts.push("precedence " + kind_str + " " + rules_str)
   }
 
+  // extras 声明
+  if not(grammar.extras.is_empty()) {
+    let extras_str = grammar.extras.map(pattern_to_string).join(", ")
+    parts.push("extras [" + extras_str + "]")
+  }
+
   // rule 声明
   for name, rule in grammar.rules {
     ignore(name)
-    let prefix = if rule.is_named { "rule " } else { "rule _" }
-    parts.push(prefix + rule.name + ": " + pattern_to_string(rule.pattern))
+    // is_named=false 的匿名规则，rule.name 本身已含 "_" 前缀，无需再拼
+    parts.push("rule " + rule.name + ": " + pattern_to_string(rule.pattern))
   }
 
   parts.join("\n")
@@ -86,13 +92,15 @@ fn prec_decl_to_json(pd : PrecDecl) -> String {
     PrecKind::Dynamic => "\"Dynamic\""
   }
   let rules_json = pd.rules.map(json_string).join(", ")
-  "{\"level\": " +
-  pd.level.to_string() +
-  ", \"kind\": " +
-  kind_str +
-  ", \"rules\": [" +
-  rules_json +
-  "]}"
+  let buf = StringBuilder::new()
+  buf.write_string("{\"level\": ")
+  buf.write_string(pd.level.to_string())
+  buf.write_string(", \"kind\": ")
+  buf.write_string(kind_str)
+  buf.write_string(", \"rules\": [")
+  buf.write_string(rules_json)
+  buf.write_string("]}")
+  buf.to_string()
 }
 
 ///|

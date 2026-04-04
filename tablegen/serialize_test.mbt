@@ -157,7 +157,7 @@ test "lexer_dfa 往返：DFA 状态 transitions 与 accept" {
         let os = orig.states[i]
         let gs = got.states[i]
         assert_eq(gs.id, os.id)
-        assert_eq(gs.transitions.size(), os.transitions.size())
+        assert_eq(gs.transitions.length(), os.transitions.length())
         assert_eq(gs.accept is Some(_), os.accept is Some(_))
       }
     }
@@ -174,7 +174,7 @@ test "lexer_dfa 往返：valid_tokens 键集合" {
     Err(msg) => assert_eq(msg, "")
     Ok(t2) => {
       let got = t2.lexer_dfa
-      assert_eq(got.valid_tokens.size(), orig.valid_tokens.size())
+      assert_eq(got.valid_tokens.length(), orig.valid_tokens.length())
       // 每个 LR 状态的合法 token 数量一致
       for state_id, tids in orig.valid_tokens {
         match got.valid_tokens.get(state_id) {
@@ -201,7 +201,7 @@ test "lexer_dfa 往返：Regex 文法的 transitions 字符" {
         let os = orig.states[i]
         let gs = got.states[i]
         // transitions 字符集合相同（按数量验证——Map key 顺序不影响）
-        assert_eq(gs.transitions.size(), os.transitions.size())
+        assert_eq(gs.transitions.length(), os.transitions.length())
       }
     }
   }
@@ -255,12 +255,12 @@ test "serialize_table deterministic: same bytes on repeated calls" {
 test "serialize/deserialize preserves terminal_names" {
   let (table, _) = gen_ok("start e\nrule e: e \"+\" t | t\nrule t: \"n\"")
   // terminal_names 非空（有终结符）
-  assert_eq(table.terminal_names.size() > 0, true)
+  assert_eq(table.terminal_names.length() > 0, true)
   let b = serialize_table(table)
   match deserialize_table(b) {
     Err(msg) => assert_eq(msg, "")
     Ok(t2) => {
-      assert_eq(t2.terminal_names.size(), table.terminal_names.size())
+      assert_eq(t2.terminal_names.length(), table.terminal_names.length())
       // 同一 TerminalId 名称一致
       for tid, name in table.terminal_names {
         assert_eq(t2.terminal_names.get(tid), Some(name))

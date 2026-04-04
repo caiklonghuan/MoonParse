@@ -42,7 +42,7 @@ fn main {
     #|precedence left star, slash
     #|rule expr: expr plus term | expr minus term | term
     #|rule term: term star factor | term slash factor | factor
-    #|rule factor: /\d+/ | "(" expr ")"
+    #|rule factor: /[0-9]+/ | "(" expr ")"
     #|rule plus:  "+"
     #|rule minus: "-"
     #|rule star:  "*"

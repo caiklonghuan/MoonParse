@@ -14,8 +14,6 @@ pub fn find_reusable_node(OldTree, Int, Int, Int) -> CstNode?
 
 pub fn glr_parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
 
-pub fn insert_missing_token(RecoveryContext, @tablegen.ParseTable, Int) -> RecoveryResult
-
 pub fn is_reusable(CstNode, Int, Int, Int) -> Bool
 
 pub fn parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
@@ -24,11 +22,7 @@ pub fn parse_from_dsl(String, String) -> Result[CstNode, ParseError]
 
 pub fn parse_incremental(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
 
-pub fn parse_linear(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
-
-pub fn recover_to_state(RecoveryContext, @tablegen.ParseTable, String) -> RecoveryResult
-
-pub fn skip_lookahead(RecoveryContext, @tablegen.ParseTable) -> RecoveryResult
+pub fn parse_with_old_tree(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
 
 pub let sym_end : Int
 
@@ -89,6 +83,9 @@ pub impl Show for InputEdit
 
 pub struct LexerEngine {
   dfa : @tablegen.LexerDfa
+  mut cached_pos : Int
+  mut cached_valid_hash : Int
+  mut cached_result : (Token?, Int)
 }
 pub fn LexerEngine::new(@tablegen.LexerDfa) -> Self
 pub fn LexerEngine::next_token(Self, String, Int, @tablegen.ParseTable, Int) -> (Token?, Int)
@@ -115,22 +112,8 @@ pub(all) struct Point {
 pub impl Eq for Point
 pub impl Show for Point
 
-type RecoveryContext
-pub impl Show for RecoveryContext
-
-pub(all) enum RecoveryResult {
-  Recovered(Array[CstNode])
-  Failed
-}
-pub impl Show for RecoveryResult
-
 type StackFrame
 pub impl Show for StackFrame
-
-type StackSummary
-
-type StackSummaryEntry
-pub impl Show for StackSummaryEntry
 
 type Token
 pub impl Show for Token

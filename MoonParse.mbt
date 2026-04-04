@@ -1,29 +1,31 @@
-// Main package file for your library code.
-// Put public APIs and shared helpers here.
-// Keep blocks small and focused for easy refactors.
-
-// import "grammar" { parse_grammar }
-// import "generator" { generate_parser }
-// import "runtime" { ParseTree, parse }
-// import "wasm" { WasmParser, create_parser, parse_code }
+// 公共 API：grammar DSL → ParseTable → CST
+// generate : DSL 字符串 → 解析表 JSON（用于持久化 / 调试）
+// parse    : DSL 字符串 + 源码 → CST 文本（快速端到端解析）
 
 ///|
-/// 公共解析器类型
-// pub type Parser = WasmParser
-
-///|
-/// 生成解析器
-pub fn generate(grammar : String) -> String {
-  // let g = parse_grammar(grammar)
-  // let code = generate_parser(g)
-  // TODO: 编译生成的代码为 WASM
-  // create_parser()
-  "TODO: implement parser generation from: " + grammar
+/// 将 Grammar DSL 编译为 LALR(1) 解析表，以 JSON 字符串返回。
+///
+/// 解析或表生成失败时返回以 "Error: " 开头的错误描述字符串。
+pub fn generate(grammar_dsl : String) -> String {
+  let g = match @grammar.parse_grammar(grammar_dsl) {
+    Success(g) => g
+    Error(err) =>
+      return "Error: parse failed at " + err.location.line.to_string() + ":" + err.location.column.to_string() + ": " + err.message
+  }
+  let (table, _reports) = match @tablegen.generate_parse_table(g) {
+    Ok(r) => r
+    Err(msg) => return "Error: table generation failed: " + msg
+  }
+  @tablegen.table_to_json(table)
 }
 
 ///|
-/// 解析源代码
-pub fn parse(parser : String, source : String) -> String {
-  // parse_code(parser, source)
-  "TODO: implement parsing"
+/// 用 Grammar DSL 解析 source，返回 CST 的文本表示。
+///
+/// 解析失败时返回以 "Error: " 开头的错误描述字符串。
+pub fn parse(grammar_dsl : String, source : String) -> String {
+  match @runtime.parse_from_dsl(grammar_dsl, source) {
+    Ok(node) => node.to_string()
+    Err(err) => "Error: " + err.to_string()
+  }
 }

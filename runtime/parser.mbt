@@ -32,9 +32,10 @@ fn LrParser::top_state(self : LrParser) -> Int {
 }
 
 ///|
-/// 从 input 解析完整 CST。
-/// 语法错误时返回 Err；GLR 冲突取第一个动作（非歧义文法专用）。
-pub fn parse_linear(
+/// 从 input 全量解析完整 CST，仅用于非歧义文法和测试基准。
+/// GLR 冲突取第一个动作；语法错误直接返回 Err。
+/// 增量解析请使用 `parse_with_old_tree`（由 GlrEngine 负责）。
+fn parse_linear(
   table : @tablegen.ParseTable,
   input : String,
 ) -> Result[CstNode, ParseError] {

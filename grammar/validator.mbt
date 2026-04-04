@@ -107,27 +107,15 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
 ///|
 /// 递归收集 Pattern 中所有 RuleRef 名称（去重）
 fn collect_rule_refs(pattern : Pattern) -> Array[String] {
-  let result : Array[String] = []
-  collect_rule_refs_into(pattern, result)
-  result
+  let seen : Set[String] = Set::new()
+  collect_rule_refs_into(pattern, seen)
+  seen.to_array()
 }
 
 ///|
-fn collect_rule_refs_into(pattern : Pattern, out : Array[String]) -> Unit {
+fn collect_rule_refs_into(pattern : Pattern, out : Set[String]) -> Unit {
   match pattern {
-    RuleRef(name) => {
-      // 去重
-      let mut found = false
-      for n in out {
-        if n == name {
-          found = true
-          break
-        }
-      }
-      if not(found) {
-        out.push(name)
-      }
-    }
+    RuleRef(name) => out.add(name)
     Choice(ps) | Seq(ps) =>
       for p in ps {
         collect_rule_refs_into(p, out)
@@ -148,15 +136,15 @@ fn collect_rule_refs_into(pattern : Pattern, out : Array[String]) -> Unit {
 /// Optional / Repeat / Not / And 因为可以空匹配，需要继续往后看，
 /// 但对左递归检测来说只需要知道「第一步是否能直接跳到 RuleRef」
 fn first_rule_refs(pattern : Pattern) -> Array[String] {
-  let out : Array[String] = []
+  let out : Set[String] = Set::new()
   first_rule_refs_into(pattern, out)
-  out
+  out.to_array()
 }
 
 ///|
-fn first_rule_refs_into(pattern : Pattern, out : Array[String]) -> Unit {
+fn first_rule_refs_into(pattern : Pattern, out : Set[String]) -> Unit {
   match pattern {
-    RuleRef(name) => push_unique(out, name)
+    RuleRef(name) => out.add(name)
     // 选择：每个分支都是候选首位
     Choice(ps) =>
       for p in ps {
@@ -172,16 +160,6 @@ fn first_rule_refs_into(pattern : Pattern, out : Array[String]) -> Unit {
     Not(p) | And(p) => first_rule_refs_into(p, out)
     Literal(_) | Regex(_) | AnyChar => ()
   }
-}
-
-///|
-fn push_unique(arr : Array[String], s : String) -> Unit {
-  for item in arr {
-    if item == s {
-      return
-    }
-  }
-  arr.push(s)
 }
 
 // 辅助：左递归检测（DFS 环检测）

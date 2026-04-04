@@ -77,9 +77,11 @@ fn LexerEngine::run_dfa(
   table : @tablegen.ParseTable,
 ) -> (Token?, Int) {
   // 单槽缓存：同一起始位置且 valid 集相同时直接复用（GLR 多版本并行加速）
-  let mut valid_hash = 0
+  // 多项式滚动哈希：h = h * 31 + t，避免 XOR 对不同集合碰撞的问题
+  // （XOR 缺陷示例：{1,2} 与 {3} 均得到 3）
+  let mut valid_hash = 17
   for t in valid {
-    valid_hash = valid_hash ^ t
+    valid_hash = valid_hash * 31 + t
   }
   if pos == self.cached_pos && valid_hash == self.cached_valid_hash {
     return self.cached_result

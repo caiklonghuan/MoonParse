@@ -18,18 +18,18 @@
 ///|
 /// 转义 JSON 字符串中的特殊字符
 fn json_escape(s : String) -> String {
-  let mut out = ""
+  let buf = StringBuilder::new()
   for ch in s {
     match ch {
-      '"' => out = out + "\\\""
-      '\\' => out = out + "\\\\"
-      '\n' => out = out + "\\n"
-      '\r' => out = out + "\\r"
-      '\t' => out = out + "\\t"
-      _ => out = out + ch.to_string()
+      '"' => buf.write_string("\\\"")
+      '\\' => buf.write_string("\\\\")
+      '\n' => buf.write_string("\\n")
+      '\r' => buf.write_string("\\r")
+      '\t' => buf.write_string("\\t")
+      _ => buf.write_char(ch)
     }
   }
-  out
+  buf.to_string()
 }
 
 ///|
@@ -44,17 +44,19 @@ fn jarray(items : Array[String]) -> String {
   if items.length() == 0 {
     return "[]"
   }
-  let mut out = "["
+  let buf = StringBuilder::new()
+  buf.write_string("[")
   let mut first = true
   for item in items {
     if first {
       first = false
     } else {
-      out = out + ","
+      buf.write_string(",")
     }
-    out = out + item
+    buf.write_string(item)
   }
-  out + "]"
+  buf.write_string("]")
+  buf.to_string()
 }
 
 ///|
@@ -63,18 +65,22 @@ fn jobj(fields : Array[(String, String)]) -> String {
   if fields.length() == 0 {
     return "{}"
   }
-  let mut out = "{"
+  let buf = StringBuilder::new()
+  buf.write_string("{")
   let mut first = true
   for kv in fields {
     let (k, v) = kv
     if first {
       first = false
     } else {
-      out = out + ","
+      buf.write_string(",")
     }
-    out = out + jstr(k) + ":" + v
+    buf.write_string(jstr(k))
+    buf.write_string(":")
+    buf.write_string(v)
   }
-  out + "}"
+  buf.write_string("}")
+  buf.to_string()
 }
 
 // 子类型序列化
