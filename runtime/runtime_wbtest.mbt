@@ -810,3 +810,232 @@ test "shift_node — delta 全零时原样返回" {
   assert_eq(shifted.start_point.row, 1)
   assert_eq(shifted.start_point.column, 2)
 }
+
+// 表 16：find_reusable_node — fragile 节点阻止复用
+//
+// is_reusable 在 fragile_left 或 fragile_right 为 true 时返回 false。
+// 这些节点是 GLR 并行归约的产物，其边界依赖并行上下文，不能安全复用。
+
+///|
+test "find_reusable_node — fragile_left 阻止复用" {
+  let pt : Point = { row: 0, column: 0 }
+  // fragile_left=true：GLR 多路径归约产物，不可增量复用
+  // CstNode::leaf 不暴露 fragile 字段，用 struct update 注入
+  let leaf = {
+    ..CstNode::leaf(1, true, 2, 3, pt, pt, 5, 3, false, false),
+    fragile_left: true,
+  }
+  let tree : OldTree = { root: leaf, old_input: "abc" }
+  assert_true(find_reusable_node(tree, 2, 5, 10) is None)
+}
+
+///|
+test "find_reusable_node — fragile_right 阻止复用" {
+  let pt : Point = { row: 0, column: 0 }
+  // fragile_right=true：同上，右边界不稳定
+  let leaf = {
+    ..CstNode::leaf(1, true, 2, 3, pt, pt, 5, 3, false, false),
+    fragile_right: true,
+  }
+  let tree : OldTree = { root: leaf, old_input: "abc" }
+  assert_true(find_reusable_node(tree, 2, 5, 10) is None)
+}
+
+// 表 17：parse_incremental — 扩张 edit 与收缩 edit
+//
+// 现有表 14 只覆盖同长替换（byte_delta=0）。
+// 表 17 验证 byte_delta≠0 时增量解析结果与全量解析一致。
+
+///|
+test "parse_incremental — 扩张 edit（替换为较长文本）结果与全量解析一致" {
+  // 文法 s → /[a-z]+/
+  // 旧输入 "abc"，将 'b'（位置 1）替换为 'xy' → 新输入 "axyc"
+  // edit: [1,2) → [1,3)，byte_delta=+1
+  // apply_edit 标记整个旧 token（含 'b'）has_changes=true，无节点可复用
+  // 增量路径退化为全量重解析，验证 byte_delta > 0 时结果正确
+  let dsl = "start s\nrule s: /[a-z]+/"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) =>
+          match parse_linear(table, "abc") {
+            Err(e) => fail("old parse: \{e.message}")
+            Ok(old_root) => {
+              let old_tree : OldTree = { root: old_root, old_input: "abc" }
+              let edit : InputEdit = {
+                start_byte: 1,
+                old_end_byte: 2,
+                new_end_byte: 3,
+                start_point: { row: 0, column: 1 },
+                old_end_point: { row: 0, column: 2 },
+                new_end_point: { row: 0, column: 3 },
+              }
+              let r_inc = parse_incremental(
+                table,
+                "axyc",
+                Some(old_tree),
+                Some(edit),
+              )
+              let r_lin = parse_linear(table, "axyc")
+              match (r_inc, r_lin) {
+                (Ok(inc), Ok(lin)) => {
+                  assert_eq(inc.start_byte, lin.start_byte)
+                  assert_eq(inc.end_byte, lin.end_byte)
+                }
+                _ => fail("parse failed")
+              }
+            }
+          }
+      }
+  }
+}
+
+///|
+test "parse_incremental — 收缩 edit（删除中间字符）结果与全量解析一致" {
+  // 文法 s → /[a-z]+/
+  // 旧输入 "abcd"，删除 'c' → 新输入 "abd"
+  // edit: [2,3) → [2,2)，byte_delta=-1
+  let dsl = "start s\nrule s: /[a-z]+/"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) =>
+          match parse_linear(table, "abcd") {
+            Err(e) => fail("old parse: \{e.message}")
+            Ok(old_root) => {
+              let old_tree : OldTree = { root: old_root, old_input: "abcd" }
+              let edit : InputEdit = {
+                start_byte: 2,
+                old_end_byte: 3,
+                new_end_byte: 2,
+                start_point: { row: 0, column: 2 },
+                old_end_point: { row: 0, column: 3 },
+                new_end_point: { row: 0, column: 2 },
+              }
+              let r_inc = parse_incremental(
+                table,
+                "abd",
+                Some(old_tree),
+                Some(edit),
+              )
+              let r_lin = parse_linear(table, "abd")
+              match (r_inc, r_lin) {
+                (Ok(inc), Ok(lin)) => {
+                  assert_eq(inc.start_byte, lin.start_byte)
+                  assert_eq(inc.end_byte, lin.end_byte)
+                }
+                _ => fail("parse failed")
+              }
+            }
+          }
+      }
+  }
+}
+
+// 表 18：parse_with_old_tree — public API wrapper
+//
+// parse_with_old_tree 是 parse_incremental 的公开包装，
+// 传入相同参数时两者输出应完全一致。
+
+///|
+test "parse_with_old_tree — 与 parse_incremental 输出一致" {
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) =>
+          match parse_linear(table, "ab") {
+            Err(e) => fail("old parse: \{e.message}")
+            Ok(old_root) => {
+              let old_tree : OldTree = { root: old_root, old_input: "ab" }
+              let edit : InputEdit = {
+                start_byte: 1,
+                old_end_byte: 2,
+                new_end_byte: 2,
+                start_point: { row: 0, column: 1 },
+                old_end_point: { row: 0, column: 2 },
+                new_end_point: { row: 0, column: 2 },
+              }
+              let r1 = parse_with_old_tree(
+                table,
+                "ad",
+                Some(old_tree),
+                Some(edit),
+              )
+              let r2 = parse_incremental(
+                table,
+                "ad",
+                Some(old_tree),
+                Some(edit),
+              )
+              match (r1, r2) {
+                (Ok(a), Ok(b)) => {
+                  assert_eq(a.start_byte, b.start_byte)
+                  assert_eq(a.end_byte, b.end_byte)
+                  assert_eq(a.children.length(), b.children.length())
+                }
+                _ => fail("parse failed")
+              }
+            }
+          }
+      }
+  }
+}
+
+// 表 19：parse_incremental — 多行 Point 坐标
+//
+// 旧输入含换行，编辑删除换行后节点行列坐标应与全量解析一致。
+// 验证 shift_node 的 row_delta / col_delta 在增量解析集成路径上正确传播。
+
+///|
+test "parse_incremental — 删除换行后 end_point 与全量解析一致" {
+  // 文法 s → /[a-z]/ /[a-z]/，空白为 extra
+  // 旧输入 "a\nb"（a 在行 0 列 0，b 在行 1 列 0）
+  // 编辑：删除 '\n'，byte[1,2) → byte[1,1)，新输入 "ab"
+  // row_delta=-1，col_delta=+1（old_end_point=(1,0) → new_end_point=(0,1)）
+  // 增量后 b 应移到 (0,1)，与 parse_linear("ab") 一致
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/\nextras [/\\s+/]"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) =>
+          match parse_linear(table, "a\nb") {
+            Err(e) => fail("old parse: \{e.message}")
+            Ok(old_root) => {
+              let old_tree : OldTree = { root: old_root, old_input: "a\nb" }
+              let edit : InputEdit = {
+                start_byte: 1,
+                old_end_byte: 2,
+                new_end_byte: 1,
+                start_point: { row: 0, column: 1 },
+                old_end_point: { row: 1, column: 0 },
+                new_end_point: { row: 0, column: 1 },
+              }
+              let r_inc = parse_incremental(
+                table,
+                "ab",
+                Some(old_tree),
+                Some(edit),
+              )
+              let r_lin = parse_linear(table, "ab")
+              match (r_inc, r_lin) {
+                (Ok(inc), Ok(lin)) => {
+                  assert_eq(inc.end_byte, lin.end_byte)
+                  assert_eq(inc.end_point.row, lin.end_point.row)
+                  assert_eq(inc.end_point.column, lin.end_point.column)
+                }
+                _ => fail("parse failed")
+              }
+            }
+          }
+      }
+  }
+}
