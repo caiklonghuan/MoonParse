@@ -450,3 +450,197 @@ test "augment_grammar / extras 不重复注册同一 terminal" {
   }
   assert_eq(extras_tid, rule_tid)
 }
+
+// 以下 6 个测试专门验证 expand_into 的核心分支结构正确性
+
+///|
+test "augment_grammar / Plus - 无 epsilon、左递归2条产生式" {
+  // Plus(inner) 生成恰好 2 条产生式：head→inner 和 head→head inner（左递归）
+  // 不含 epsilon（区别于 Repeat）
+  let dsl = "start xs\nrule xs: \"x\"+"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let digits_id = match ag.nonterminals.get("xs") {
+    Some(id) => id
+    None => fail("NT xs not found")
+  }
+  let mut count = 0
+  let mut has_eps = false
+  let mut has_left_rec = false
+  for prod in ag.productions {
+    if prod.head == digits_id {
+      count = count + 1
+      if prod.body.length() == 0 {
+        has_eps = true
+      }
+      if prod.body.length() == 2 &&
+        prod.body[0].symbol == Symbol::NonTerminal(digits_id) {
+        has_left_rec = true
+      }
+    }
+  }
+  assert_eq(count, 2)
+  assert_eq(has_eps, false)
+  assert_eq(has_left_rec, true)
+}
+
+///|
+test "augment_grammar / Optional - epsilon + inner 两条产生式" {
+  // Optional(inner) 生成恰好 2 条产生式：head→epsilon 和 head→inner
+  let dsl = "start maybe\nrule maybe: \"a\"?"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let maybe_id = match ag.nonterminals.get("maybe") {
+    Some(id) => id
+    None => fail("NT maybe not found")
+  }
+  let mut count = 0
+  let mut has_eps = false
+  let mut has_nonempty = false
+  for prod in ag.productions {
+    if prod.head == maybe_id {
+      count = count + 1
+      if prod.body.length() == 0 {
+        has_eps = true
+      }
+      if prod.body.length() == 1 {
+        has_nonempty = true
+      }
+    }
+  }
+  assert_eq(count, 2)
+  assert_eq(has_eps, true)
+  assert_eq(has_nonempty, true)
+}
+
+///|
+test "augment_grammar / RepeatRange {2,4} - body contains 2 terminals + 2 helper NT refs" {
+  // RepeatRange(inner, 2, 4): hex has 1 production, body length = 4
+  //   first 2 = Terminal (mandatory), last 2 = NonTerminal (optional helper)
+  let dsl = "start hex\nrule hex: /[0-9a-f]/{2,4}"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let hex_id = match ag.nonterminals.get("hex") {
+    Some(id) => id
+    None => fail("NT hex not found")
+  }
+  let mut hex_prod_count = 0
+  let mut body_len = 0
+  let mut helper_ref_count = 0
+  let mut term_ref_count = 0
+  for prod in ag.productions {
+    if prod.head == hex_id {
+      hex_prod_count = hex_prod_count + 1
+      body_len = prod.body.length()
+      for sym in prod.body {
+        match sym.symbol {
+          NonTerminal(_) => helper_ref_count = helper_ref_count + 1
+          Terminal(_) => term_ref_count = term_ref_count + 1
+          _ => ()
+        }
+      }
+    }
+  }
+  assert_eq(hex_prod_count, 1)
+  assert_eq(body_len, 4)
+  assert_eq(term_ref_count, 2)
+  assert_eq(helper_ref_count, 2)
+}
+
+///|
+test "augment_grammar / Tagged - @label propagated to body field_name" {
+  // Tagged("lhs", inner) as top-level rule pattern triggers expand_into.Tagged
+  // production body[0].field_name should be Some("lhs")
+  let dsl = "start s\nrule s: @lhs \"a\""
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT s not found")
+  }
+  let mut found = false
+  for prod in ag.productions {
+    if prod.head == s_id && prod.body.length() == 1 {
+      match prod.body[0].field_name {
+        Some("lhs") => found = true
+        _ => ()
+      }
+    }
+  }
+  assert_true(found)
+}
+
+///|
+test "augment_grammar / Not in Seq tail - production carries NotFollowedBy constraint" {
+  // rule s: "a" !"b" => Seq([Literal("a"), Not(Literal("b"))])
+  // expand_into.Seq extracts trailing Not as constraint:
+  //   production.lookahead = Some(NotFollowedBy([...]))
+  //   production.body = [sym_a]  (Not contributes no symbol)
+  let dsl = "start s\nrule s: \"a\" !\"b\""
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT s not found")
+  }
+  let mut found_constraint = false
+  for prod in ag.productions {
+    if prod.head == s_id {
+      match prod.lookahead {
+        Some(NotFollowedBy(tids)) => {
+          found_constraint = true
+          assert_true(tids.length() > 0)
+          assert_eq(prod.body.length(), 1)
+        }
+        _ => ()
+      }
+    }
+  }
+  assert_true(found_constraint)
+}
+
+///|
+test "augment_grammar / And in Seq tail - production carries FollowedBy constraint" {
+  // rule s: "a" &"b" => Seq([Literal("a"), And(Literal("b"))])
+  // expand_into.Seq extracts trailing And as constraint:
+  //   production.lookahead = Some(FollowedBy([...]))
+  let dsl = "start s\nrule s: \"a\" &\"b\""
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT s not found")
+  }
+  let mut found_constraint = false
+  for prod in ag.productions {
+    if prod.head == s_id {
+      match prod.lookahead {
+        Some(FollowedBy(tids)) => {
+          found_constraint = true
+          assert_true(tids.length() > 0)
+          assert_eq(prod.body.length(), 1)
+        }
+        _ => ()
+      }
+    }
+  }
+  assert_true(found_constraint)
+}
