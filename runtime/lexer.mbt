@@ -7,19 +7,23 @@
 //   · extras 识别后标记 is_extra=true（parser 决定如何处理）
 //   · 单槽 token 缓存，GLR 多版本同位置复用
 //
-// Phase 2a 暂不实现：
-//   · 两阶段 keyword 检查（Phase 3b）
+// 暂不实现：
+//   · 两阶段 keyword 检查
 //   · 外部词法器（external scanner，不做）
 
 ///|
-/// 词法引擎（Phase 2a：无缓存；GLR 多版本缓存在 Phase 2c 补充）
+/// 词法引擎
 pub struct LexerEngine {
   dfa : @tablegen.LexerDfa
+  /// 单槽 DFA 结果缓存：GLR 多版本同位置时避免重复扫描
+  mut cached_pos : Int
+  mut cached_valid_hash : Int
+  mut cached_result : (Token?, Int)
 }
 
 ///|
 pub fn LexerEngine::new(dfa : @tablegen.LexerDfa) -> LexerEngine {
-  { dfa, }
+  { dfa, cached_pos: -1, cached_valid_hash: 0, cached_result: (None, 0) }
 }
 
 ///|
@@ -72,6 +76,14 @@ fn LexerEngine::run_dfa(
   valid : Set[Int],
   table : @tablegen.ParseTable,
 ) -> (Token?, Int) {
+  // 单槽缓存：同一起始位置且 valid 集相同时直接复用（GLR 多版本并行加速）
+  let mut valid_hash = 0
+  for t in valid {
+    valid_hash = valid_hash ^ t
+  }
+  if pos == self.cached_pos && valid_hash == self.cached_valid_hash {
+    return self.cached_result
+  }
   let dfa = self.dfa
   let n = input.length()
 
@@ -123,7 +135,10 @@ fn LexerEngine::run_dfa(
       is_keyword: false,
       is_extra: false,
     }
-    return (Some(err_tok), pos + 1)
+    self.cached_pos = pos
+    self.cached_valid_hash = valid_hash
+    self.cached_result = (Some(err_tok), pos + 1)
+    return self.cached_result
   }
 
   // 判断是否是 extras token
@@ -139,11 +154,14 @@ fn LexerEngine::run_dfa(
     terminal_id: best_tid,
     start_byte: pos,
     end_byte: best_pos,
-    lookahead_bytes: best_pos, // Phase 3a 前用 end_byte 代替
-    is_keyword: false, // Phase 3b 填充
+    lookahead_bytes: best_pos, // TODO: 应为 DFA 实际读到的最远位置
+    is_keyword: false, // TODO: 两阶段 keyword 检查
     is_extra,
   }
-  (Some(tok), best_pos)
+  self.cached_pos = pos
+  self.cached_valid_hash = valid_hash
+  self.cached_result = (Some(tok), best_pos)
+  self.cached_result
 }
 
 ///|
