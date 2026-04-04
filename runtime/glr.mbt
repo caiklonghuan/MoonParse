@@ -61,6 +61,11 @@ struct GlrEngine {
   /// skip_token / insert_missing 等恢复策略在此累积代价；
   /// condense_stack 据此剪枝超限版本。
   error_status : Map[GssRef, ErrorStatus]
+  // 增量复用上下文（None = 非增量全量解析）
+  old_tree : OldTree?
+  byte_delta : Int // new_end_byte - old_end_byte（常数，整个 parse 期间不变）
+  edit_start : Int // 编辑起始字节（旧输入坐标，is_reusable 的边界检查）
+  new_end_byte : Int // 编辑结束字节（新输入坐标，坐标换算的分界线）
 }
 
 ///|
@@ -69,7 +74,16 @@ struct GlrEngine {
 /// 创建唯一底部哨兵结点（state=0, links=[]），并将其设为唯一活跃栈顶。
 fn GlrEngine::new(lexer : LexerEngine) -> GlrEngine {
   let sentinel : GssNode = { state: 0, links: [] }
-  { gss_nodes: [sentinel], active_tops: [0], lexer, error_status: Map::new() }
+  {
+    gss_nodes: [sentinel],
+    active_tops: [0],
+    lexer,
+    error_status: Map::new(),
+    old_tree: None,
+    byte_delta: 0,
+    edit_start: 0,
+    new_end_byte: 0,
+  }
 }
 
 ///|
@@ -450,18 +464,65 @@ fn GlrEngine::run_shift(
         for act in acts {
           match act {
             Shift(next_state) => {
-              let leaf = CstNode::leaf(
-                tok.terminal_id,
-                false,
-                tok.start_byte,
-                tok.end_byte,
-                cur_point,
-                ep,
-                state, // parse_state：当前栈顶 LR 状态
-                tok.lookahead_bytes,
-                tok.is_keyword,
-                false,
-              )
+              // 增量复用：各路径独立查找旧树中的可复用节点。
+              // 将新坐标转换为旧树坐标，调用 find_reusable_node 。
+              // 仅当旧节点字节偏移后与 tok 跨度一致时才复用（保证 symbol/span 对齐）。
+              let leaf = match self.old_tree {
+                Some(ot) => {
+                  let search_pos = if tok.start_byte < self.new_end_byte {
+                    tok.start_byte
+                  } else {
+                    tok.start_byte - self.byte_delta
+                  }
+                  match
+                    find_reusable_node(ot, search_pos, state, self.edit_start) {
+                    Some(old_node) =>
+                      if old_node.end_byte + self.byte_delta == tok.end_byte {
+                        // 同跨度复用：字节偏移调整后替换新叶节点
+                        shift_bytes(old_node, self.byte_delta)
+                      } else {
+                        CstNode::leaf(
+                          tok.terminal_id,
+                          false,
+                          tok.start_byte,
+                          tok.end_byte,
+                          cur_point,
+                          ep,
+                          state,
+                          tok.lookahead_bytes,
+                          tok.is_keyword,
+                          false,
+                        )
+                      }
+                    None =>
+                      CstNode::leaf(
+                        tok.terminal_id,
+                        false,
+                        tok.start_byte,
+                        tok.end_byte,
+                        cur_point,
+                        ep,
+                        state,
+                        tok.lookahead_bytes,
+                        tok.is_keyword,
+                        false,
+                      )
+                  }
+                }
+                None =>
+                  CstNode::leaf(
+                    tok.terminal_id,
+                    false,
+                    tok.start_byte,
+                    tok.end_byte,
+                    cur_point,
+                    ep,
+                    state, // parse_state：当前栈顶 LR 状态
+                    tok.lookahead_bytes,
+                    tok.is_keyword,
+                    false,
+                  )
+              }
               let link : GssLink = {
                 predecessor: top_ref,
                 node: Some(leaf),

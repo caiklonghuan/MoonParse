@@ -133,12 +133,35 @@ pub fn find_reusable_node(
 }
 
 ///|
+/// 增量版 GLR 解析（内部入口）
+///
+/// apply_edit 标记 has_changes → 构造带增量上下文的 GlrEngine → engine.run
+/// 与 glr_parse 执行路径完全一致，区别仅在于 run_shift 内各路径独立查复用。
+fn glr_parse_incremental(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree,
+  edit : InputEdit,
+) -> Result[CstNode, ParseError] {
+  let marked = apply_edit(old_tree, edit)
+  // byte_delta 是整次编辑的常数偏移量，在解析器层传入，无需每次计算
+  let delta = edit.new_end_byte - edit.old_end_byte
+  let lexer = LexerEngine::new(table.lexer_dfa)
+  let engine = {
+    ..GlrEngine::new(lexer),
+    old_tree: Some(marked),
+    byte_delta: delta,
+    edit_start: edit.start_byte,
+    new_end_byte: edit.new_end_byte,
+  }
+  engine.run(table, input)
+}
+
+///|
 /// 增量版解析入口
 ///
 /// 提供旧树和编辑描述时，先 apply_edit 标记 has_changes，
 /// 再以 old_tree 作为 reuse pool 调用解析器。
-///
-/// TODO: 实现后替换此 stub
 pub fn parse_incremental(
   table : @tablegen.ParseTable,
   input : String,
@@ -146,22 +169,8 @@ pub fn parse_incremental(
   _edit : InputEdit?,
 ) -> Result[CstNode, ParseError] {
   match (old_tree, _edit) {
-    (Some(ot), Some(edit)) => {
-      // 标记受编辑影响的节点
-      let marked = apply_edit(ot, edit)
-      let delta = edit.new_end_byte - edit.old_end_byte
-      let lexer = LexerEngine::new(table.lexer_dfa)
-      // 构造带增量复用上下文的解析器
-      let parser = {
-        ..LrParser::new(lexer),
-        old_tree: Some(marked),
-        byte_delta: delta,
-        edit_start: edit.start_byte,
-        new_end_byte: edit.new_end_byte,
-      }
-      parser.run(table, input)
-    }
-    _ => parse_linear(table, input)
+    (Some(ot), Some(edit)) => glr_parse_incremental(table, input, ot, edit)
+    _ => glr_parse(table, input)
   }
 }
 
