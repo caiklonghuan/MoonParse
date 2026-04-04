@@ -57,21 +57,54 @@ pub fn apply_edit(tree : OldTree, edit : InputEdit) -> OldTree {
 }
 
 ///|
-/// 尝试从旧 CST 中找到可复用的子树
+/// 深度优先搜索旧树，返回第一个满足 is_reusable 的节点。
 ///
-/// 返回 Some(node) 表示找到可直接复用的子树；None 表示不可复用。
+/// 搜索策略：
+///   · node.start_byte > new_pos → 剪枝（后续节点更靠后，不可能对齐）
+///   · node.start_byte == new_pos → 先尝试本节点（叶或内部节点均可），
+///     不满足则进子节点（父子 start_byte 可能相同，可找到更细粒度的叶节点）
+///   · node.start_byte < new_pos → 直接进子节点递归
+/// children 按 start_byte 升序，遇到 child.start_byte > new_pos 时即可 break。
+fn search_reusable(
+  node : CstNode,
+  new_pos : Int,
+  lr_state : Int,
+  edit_start : Int,
+) -> CstNode? {
+  // 剪枝：节点整体在 new_pos 之后
+  if node.start_byte > new_pos {
+    return None
+  }
+  // 尝试本节点（start_byte == new_pos 时才有可能通过 is_reusable）
+  if node.start_byte == new_pos &&
+    is_reusable(node, new_pos, lr_state, edit_start) {
+    return Some(node)
+  }
+  // 递归子节点
+  for child in node.children {
+    if child.start_byte > new_pos {
+      break
+    }
+    match search_reusable(child, new_pos, lr_state, edit_start) {
+      Some(n) => return Some(n)
+      None => ()
+    }
+  }
+  None
+}
+
+///|
+/// 尝试从旧 CST 中找到可复用的子树。
 ///
-/// TODO: 实现后替换此 stub
+/// 返回 Some(node) 表示找到位置对齐、LR 状态一致、未受编辑影响的节点；
+/// 返回 None 表示无可复用节点，需重新解析当前位置。
 pub fn find_reusable_node(
   old_tree : OldTree,
   new_pos : Int,
   lr_state : Int,
   edit_start : Int,
 ) -> CstNode? {
-  // TODO: 在 old_tree.root 中从 new_pos 开始做深度优先搜索
-  //       找满足复用条件的节点（见  注释中的复用条件）
-  let _ = (old_tree, new_pos, lr_state, edit_start)
-  None
+  search_reusable(old_tree.root, new_pos, lr_state, edit_start)
 }
 
 ///|

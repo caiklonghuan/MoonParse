@@ -521,3 +521,122 @@ test "apply_edit — 编辑在所有节点之后不标记任何节点" {
     }
   }
 }
+
+// 表 13：find_reusable_node — 旧树复用查找
+//
+// 直接构造 CstNode 以精确控制 parse_state / has_changes / lookahead_bytes，
+// 验证 search_reusable 的剪枝策略与 is_reusable 过滤。
+
+///|
+/// 构造简单叶节点，仅设置增量相关字段
+fn make_leaf(
+  start : Int,
+  end : Int,
+  state : Int,
+  lookahead : Int,
+  has_changes : Bool,
+) -> CstNode {
+  let pt : Point = { row: 0, column: 0 }
+  {
+    ..CstNode::leaf(1, true, start, end, pt, pt, state, lookahead, false, false),
+    has_changes,
+  }
+}
+
+///|
+test "find_reusable_node — 叶节点满足所有条件时返回 Some" {
+  // 叶节点 [2,3)，state=5，lookahead=3，无 has_changes
+  // 查询 new_pos=2, lr_state=5, edit_start=10 → 全部条件通过
+  let leaf = make_leaf(2, 3, 5, 3, false)
+  let tree : OldTree = { root: leaf, old_input: "abc" }
+  match find_reusable_node(tree, 2, 5, 10) {
+    None => fail("expected Some but got None")
+    Some(n) => {
+      assert_eq(n.start_byte, 2)
+      assert_eq(n.end_byte, 3)
+    }
+  }
+}
+
+///|
+test "find_reusable_node — has_changes 阻止复用" {
+  let leaf = make_leaf(2, 3, 5, 3, true) // has_changes = true
+  let tree : OldTree = { root: leaf, old_input: "abc" }
+  assert_true(find_reusable_node(tree, 2, 5, 10) is None)
+}
+
+///|
+test "find_reusable_node — parse_state 不匹配阻止复用" {
+  let leaf = make_leaf(2, 3, 5, 3, false)
+  let tree : OldTree = { root: leaf, old_input: "abc" }
+  // 传入 lr_state=99，与 leaf.parse_state=5 不符
+  assert_true(find_reusable_node(tree, 2, 99, 10) is None)
+}
+
+///|
+test "find_reusable_node — lookahead 越过 edit_start 阻止复用" {
+  // lookahead_bytes=8 > edit_start=5 → 不可复用
+  let leaf = make_leaf(2, 3, 5, 8, false)
+  let tree : OldTree = { root: leaf, old_input: "abc" }
+  assert_true(find_reusable_node(tree, 2, 5, 5) is None)
+}
+
+///|
+test "find_reusable_node — new_pos 不匹配时剪枝返回 None" {
+  // 树只有 [2,3) 这个叶节点，但查询 new_pos=0
+  let leaf = make_leaf(2, 3, 5, 3, false)
+  let tree : OldTree = { root: leaf, old_input: "abc" }
+  // leaf.start_byte=2 > new_pos=0 → 剪枝
+  assert_true(find_reusable_node(tree, 0, 5, 10) is None)
+}
+
+///|
+test "find_reusable_node — 在 children 中找到匹配叶节点" {
+  // 内部节点 [0,3)，children = [leaf[0,1), leaf[1,2), leaf[2,3)]
+  // 查询 new_pos=1, lr_state=7, edit_start=10 → 返回 children[1]
+  let c0 = make_leaf(0, 1, 3, 1, false)
+  let c1 = make_leaf(1, 2, 7, 2, false) // 目标节点
+  let c2 = make_leaf(2, 3, 9, 3, false)
+  let root = CstNode::inner(
+    2,
+    true,
+    [c0, c1, c2],
+    [None, None, None],
+    0,
+    0,
+    false,
+    false,
+  )
+  let tree : OldTree = { root, old_input: "abc" }
+  match find_reusable_node(tree, 1, 7, 10) {
+    None => fail("expected Some but got None")
+    Some(n) => {
+      assert_eq(n.start_byte, 1)
+      assert_eq(n.end_byte, 2)
+      assert_eq(n.parse_state, 7)
+    }
+  }
+}
+
+///|
+test "find_reusable_node — children 中靠后的节点被正确剪枝" {
+  // children[2].start_byte=5 > new_pos=2，应被剪枝，不影响结果
+  let c0 = make_leaf(0, 1, 1, 1, false)
+  let c1 = make_leaf(2, 3, 4, 3, false) // 目标，state=4
+  let c2 = make_leaf(5, 6, 4, 6, false) // 剪枝
+  let root = CstNode::inner(
+    2,
+    true,
+    [c0, c1, c2],
+    [None, None, None],
+    0,
+    0,
+    false,
+    false,
+  )
+  let tree : OldTree = { root, old_input: "abcdef" }
+  match find_reusable_node(tree, 2, 4, 10) {
+    None => fail("expected Some but got None")
+    Some(n) => assert_eq(n.start_byte, 2)
+  }
+}
