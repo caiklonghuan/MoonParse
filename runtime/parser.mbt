@@ -18,11 +18,24 @@ struct LrParser {
   state_stack : Array[Int]
   node_stack : Array[CstNode]
   lexer : LexerEngine
+  // 增量复用上下文（None = 非增量全量解析）
+  old_tree : OldTree?
+  byte_delta : Int // new_end_byte - old_end_byte
+  edit_start : Int // 编辑起始字节（旧输入坐标）
+  new_end_byte : Int // 编辑结束字节（新输入坐标）
 }
 
 ///|
 fn LrParser::new(lexer : LexerEngine) -> LrParser {
-  { state_stack: [0], node_stack: [], lexer }
+  {
+    state_stack: [0],
+    node_stack: [],
+    lexer,
+    old_tree: None,
+    byte_delta: 0,
+    edit_start: 0,
+    new_end_byte: 0,
+  }
 }
 
 ///|
@@ -53,6 +66,42 @@ fn LrParser::run(
   let mut cur_point : Point = { row: 0, column: 0 }
   while true {
     let state = self.top_state()
+
+    // 增量复用：Shift 前尝试从旧树复用叶节点（跳过词法）
+    match self.old_tree {
+      Some(ot) => {
+        // 将新坐标转换为旧树坐标（编辑后位置需减去字节偏移量）
+        let search_pos = if pos < self.new_end_byte {
+          pos
+        } else {
+          pos - self.byte_delta
+        }
+        match find_reusable_node(ot, search_pos, state, self.edit_start) {
+          Some(old_node) => {
+            // 对复用节点做字节偏移调整（new_end_byte - old_end_byte 的偏移量）
+            let node = shift_bytes(old_node, self.byte_delta)
+            match table.action.get((state, node.symbol)) {
+              Some(acts) =>
+                if not(acts.is_empty()) {
+                  match acts[0] {
+                    Shift(next_state) => {
+                      pos = node.end_byte
+                      cur_point = node.end_point
+                      self.state_stack.push(next_state)
+                      self.node_stack.push(node)
+                      continue
+                    }
+                    _ => ()
+                  }
+                }
+              _ => ()
+            }
+          }
+          _ => ()
+        }
+      }
+      _ => ()
+    }
 
     // 词法：每轮用当前 LR 状态扫描（context-aware）
     let (maybe_tok, after_tok_pos) = self.lexer.next_token(

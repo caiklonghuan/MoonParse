@@ -640,3 +640,90 @@ test "find_reusable_node — children 中靠后的节点被正确剪枝" {
     Some(n) => assert_eq(n.start_byte, 2)
   }
 }
+
+// 表 14：parse_incremental — 增量解析正确性验证
+//
+// 策略：先用 parse_linear 解析旧输入得到旧树，
+// 再对新输入做增量解析，结果应与 parse_linear 全量解析一致。
+
+///|
+test "parse_incremental — old_tree=None 退化为全量解析" {
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) => {
+          let r1 = parse_linear(table, "ab")
+          let r2 = parse_incremental(table, "ab", None, None)
+          match (r1, r2) {
+            (Ok(a), Ok(b)) => {
+              assert_eq(a.start_byte, b.start_byte)
+              assert_eq(a.end_byte, b.end_byte)
+              assert_eq(a.children.length(), b.children.length())
+            }
+            _ => fail("unexpected parse failure")
+          }
+        }
+      }
+  }
+}
+
+///|
+test "parse_incremental — 同长替换编辑后输出与 parse_linear 一致" {
+  // 文法：两个单字母 token，复用第一个、重解析第二个
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) =>
+          // 旧输入 "ab"
+          match parse_linear(table, "ab") {
+            Err(e) => fail("old parse failed: \{e.message}")
+            Ok(old_root) => {
+              let old_tree : OldTree = { root: old_root, old_input: "ab" }
+              // 编辑：将第 2 个字节 'b' 替换为 'd'（同长度）
+              let edit : InputEdit = {
+                start_byte: 1,
+                old_end_byte: 2,
+                new_end_byte: 2,
+                start_point: { row: 0, column: 1 },
+                old_end_point: { row: 0, column: 2 },
+                new_end_point: { row: 0, column: 2 },
+              }
+              // 增量解析 "ad"
+              let r_inc = parse_incremental(
+                table,
+                "ad",
+                Some(old_tree),
+                Some(edit),
+              )
+              // 基准：全量 parse_linear
+              let r_lin = parse_linear(table, "ad")
+              match (r_inc, r_lin) {
+                (Ok(inc), Ok(lin)) => {
+                  assert_eq(inc.start_byte, lin.start_byte)
+                  assert_eq(inc.end_byte, lin.end_byte)
+                  assert_eq(inc.children.length(), lin.children.length())
+                  // 第一个子节点 'a' 应被复用（start_byte 相同）
+                  if inc.children.length() >= 1 {
+                    assert_eq(
+                      inc.children[0].start_byte,
+                      lin.children[0].start_byte,
+                    )
+                    assert_eq(
+                      inc.children[0].end_byte,
+                      lin.children[0].end_byte,
+                    )
+                  }
+                }
+                _ => fail("parse failed")
+              }
+            }
+          }
+      }
+  }
+}

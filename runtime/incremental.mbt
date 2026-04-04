@@ -57,6 +57,31 @@ pub fn apply_edit(tree : OldTree, edit : InputEdit) -> OldTree {
 }
 
 ///|
+/// 将节点（及子树）所有字节位置偏移 delta（用于编辑后的坐标校正）
+///
+/// Point 坐标暂不调整（点坐标调整依赖 InputEdit 的行列信息，留待后续改进）。
+fn shift_bytes(node : CstNode, delta : Int) -> CstNode {
+  if delta == 0 {
+    return node
+  }
+  if node.children.is_empty() {
+    {
+      ..node,
+      start_byte: node.start_byte + delta,
+      end_byte: node.end_byte + delta,
+    }
+  } else {
+    let new_children = node.children.map(fn(c) { shift_bytes(c, delta) })
+    {
+      ..node,
+      start_byte: node.start_byte + delta,
+      end_byte: node.end_byte + delta,
+      children: new_children,
+    }
+  }
+}
+
+///|
 /// 深度优先搜索旧树，返回第一个满足 is_reusable 的节点。
 ///
 /// 搜索策略：
@@ -120,13 +145,24 @@ pub fn parse_incremental(
   old_tree : OldTree?,
   _edit : InputEdit?,
 ) -> Result[CstNode, ParseError] {
-  // TODO:
-  // match old_tree, edit → apply_edit
-  // 构造带 reuse_lookup 的解析器
-  // 在 Shift 前先查 find_reusable_node
-  // 复用成功则跳过词法，直接推栈
-  let _ = old_tree
-  parse_linear(table, input)
+  match (old_tree, _edit) {
+    (Some(ot), Some(edit)) => {
+      // 标记受编辑影响的节点
+      let marked = apply_edit(ot, edit)
+      let delta = edit.new_end_byte - edit.old_end_byte
+      let lexer = LexerEngine::new(table.lexer_dfa)
+      // 构造带增量复用上下文的解析器
+      let parser = {
+        ..LrParser::new(lexer),
+        old_tree: Some(marked),
+        byte_delta: delta,
+        edit_start: edit.start_byte,
+        new_end_byte: edit.new_end_byte,
+      }
+      parser.run(table, input)
+    }
+    _ => parse_linear(table, input)
+  }
 }
 
 ///|
