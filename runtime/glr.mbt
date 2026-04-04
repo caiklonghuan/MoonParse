@@ -151,6 +151,7 @@ fn GlrEngine::run(
           )
           if ok {
             self.compact(self.active_tops)
+            self.condense_stack()
             cur_point = new_point2
             pos = new_pos2
             continue
@@ -206,9 +207,23 @@ fn GlrEngine::run(
         }
         if next_tops.is_empty() {
           // 先尝试 insert_missing（插入虚拟 token，代价 610）；
-          // 失败再降级到 skip_token（跳过当前 token，代价 601+）
+          // 再尝试 recover_to_state（回退到可接受当前 token 的祖先状态）；
+          // 最后降级到 skip_token（跳过当前 token，代价 601+）
           if self.insert_missing(table, tok, cur_point, input) {
             self.compact(self.active_tops)
+            self.condense_stack()
+            cur_point = bytes_to_point(
+              input,
+              tok.start_byte,
+              cur_point,
+              tok.end_byte,
+            )
+            pos = new_pos
+            continue
+          }
+          if self.recover_to_state(table, tok, cur_point, input) {
+            self.compact(self.active_tops)
+            self.condense_stack()
             cur_point = bytes_to_point(
               input,
               tok.start_byte,
@@ -240,6 +255,8 @@ fn GlrEngine::run(
         // compact：回收当前 active_tops 不可达的旧 GssNode，防止 Arena 线性增长。
         // 必须在 active_tops 已切换为 next_tops 之后调用，确保旧前缀结点都已成为垃圾。
         self.compact(self.active_tops)
+        // condense：GLR 并行路径过多时按代价截尾，防止版本数无限增长。
+        self.condense_stack()
         cur_point = bytes_to_point(
           input,
           tok.start_byte,
@@ -882,6 +899,169 @@ fn GlrEngine::insert_missing_and_relex(
 }
 
 ///|
+/// Recover-to-State 恢复策略：沿 GSS 入边回溯，找到可以接受当前 token 的祖先状态，
+/// 将路径上收集到的内容包进 ERROR 节点后从祖先状态继续解析。
+///
+/// 三种恢复策略中第三级：当 insert_missing 无法推进时（没有单个缺失 token 能让当前
+/// 实际 token 通过），退回到更早的解析状态，把错误区间全部丢进 ERROR 节点重新开始。
+///
+/// 算法（对每个 active top 做深度优先 BFS，上限 20 层）：
+///   1. 从 top_ref 的直接前驱开始，沿 GSS 入边向下遍历
+///   2. 先扩展 BFS 前沿（读原始入边），再对当前层执行试验，避免 trial 修改 gss_nodes
+///      后污染前沿枚举
+///   3. 每一层（anc_ref, collected, path_cost）：
+///      a. 将 collected（GSS 遍历顺序 = 逆解析序）反转为左→右顺序，包成 ERROR 节点
+///      b. 创建新 GssNode at anc_state 持有 error_node 作为入边
+///      c. 设 active_tops = [new_node]，跑 run_reduce_worklist + run_shift(tok)
+///      d. Shift 成功 → 记录结果 & 代价；失败 → 该层跳过
+///   4. 全部 BFS 结束 → 去重结果填入 active_tops，更新 error_status
+///   若无任何祖先可恢复 → 还原 active_tops → 返回 false
+///
+/// 代价模型：base_cost + error_cost_per_recovery（首次入错误模式）+ path_cost
+fn GlrEngine::recover_to_state(
+  self : GlrEngine,
+  table : @tablegen.ParseTable,
+  tok : Token,
+  cur_point : Point,
+  input : String,
+) -> Bool {
+  let max_depth = 20
+  let saved_tops = self.active_tops.copy()
+  let result_tops : Array[GssRef] = []
+  let result_costs : Array[(GssRef, Int)] = []
+  for top_ref in saved_tops {
+    let (base_cost, is_first_error) = match self.error_status.get(top_ref) {
+      Some(s) => (s.cost, not(s.is_in_error))
+      None => (0, true)
+    }
+    // BFS 前沿：(祖先节点引用, 沿路收集的 CstNode（GSS 遍历顺序＝逆解析序）, 路径代价)
+    let frontier : Array[(GssRef, Array[CstNode], Int)] = []
+    // 从 top_ref 的直接前驱开始（至少需收集 1 个节点才有意义）
+    let top_node = self.gss_nodes[top_ref]
+    for link in top_node.links {
+      let collected : Array[CstNode] = []
+      match link.node {
+        Some(n) => collected.push(n)
+        None => () // 哨兵边（底部），无节点
+      }
+      let lc = match link.node {
+        Some(n) => error_cost_for_skipped_node(n)
+        None => 0
+      }
+      frontier.push((link.predecessor, collected, lc))
+    }
+    let mut fi = 0
+    while fi < frontier.length() {
+      let (anc_ref, collected, path_cost) = frontier[fi]
+      fi = fi + 1
+      // 先扩展 BFS（读原始入边，在 trial 修改 gss_nodes 之前）
+      if collected.length() < max_depth {
+        let anc_node = self.gss_nodes[anc_ref]
+        for link in anc_node.links {
+          let new_collected = collected.copy()
+          match link.node {
+            Some(n) => new_collected.push(n)
+            None => ()
+          }
+          let extra_cost = match link.node {
+            Some(n) => error_cost_for_skipped_node(n)
+            None => 0
+          }
+          frontier.push(
+            (link.predecessor, new_collected, path_cost + extra_cost),
+          )
+        }
+      }
+      // 若路径上有内容，尝试从 anc_ref 处恢复
+      if not(collected.is_empty()) {
+        // 将收集到的节点反转为左→右解析顺序，包进 ERROR 节点
+        let children : Array[CstNode] = collected.copy()
+        array_rev_inplace(children)
+        let first = children[0]
+        let last = children[children.length() - 1]
+        let error_node = CstNode::error_node(
+          children,
+          first.start_byte,
+          last.end_byte,
+          first.start_point,
+          last.end_point,
+        )
+        // 在 anc_ref.state 创建新 GssNode，持有 error_node 作为入边
+        let anc_state = self.gss_nodes[anc_ref].state
+        let err_link : GssLink = {
+          predecessor: anc_ref,
+          node: Some(error_node),
+          leading_extras: [],
+        }
+        let new_ref = self.gss_nodes.length()
+        self.gss_nodes.push({ state: anc_state, links: [err_link] })
+        // 试验：把 active_tops 设为 [new_ref]，跑 Reduce + Shift
+        while not(self.active_tops.is_empty()) {
+          let _ = self.active_tops.pop()
+        }
+        self.active_tops.push(new_ref)
+        self.run_reduce_worklist(table, tok.terminal_id)
+        let shifted = self.run_shift(table, tok, cur_point, input, [])
+        if not(shifted.is_empty()) {
+          let recovery_penalty = if is_first_error {
+            error_cost_per_recovery
+          } else {
+            0
+          }
+          let new_cost = base_cost + recovery_penalty + path_cost
+          for r in shifted {
+            result_tops.push(r)
+            result_costs.push((r, new_cost))
+          }
+        }
+      }
+    }
+  }
+  // 清空 active_tops，准备填入最终结果
+  while not(self.active_tops.is_empty()) {
+    let _ = self.active_tops.pop()
+  }
+  if result_tops.is_empty() {
+    for r in saved_tops {
+      self.active_tops.push(r)
+    }
+    return false
+  }
+  // 去重填入 active_tops
+  let seen : Array[GssRef] = []
+  for r in result_tops {
+    let mut dup = false
+    for s in seen {
+      if s == r {
+        dup = true
+        break
+      }
+    }
+    if not(dup) {
+      seen.push(r)
+      self.active_tops.push(r)
+    }
+  }
+  // 写入 error_status（多路径合并时取代价更低者）
+  for item in result_costs {
+    let (r, new_cost) = item
+    let existing = match self.error_status.get(r) {
+      Some(s) => s.cost
+      None => 1_000_000
+    }
+    if new_cost < existing {
+      self.error_status[r] = {
+        cost: new_cost,
+        node_count: 0,
+        dynamic_precedence: 0,
+        is_in_error: false,
+      }
+    }
+  }
+  true
+}
+
+///|
 /// Reduce worklist 阶段：对活跃栈顶集合执行所有可能的 Reduce 动作至不动点。
 ///
 /// 算法（Tomita 风格 worklist）：
@@ -1115,6 +1295,64 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
     let (new_ref, status) = item
     self.error_status[new_ref] = status
   }
+}
+
+///|
+/// Condense Stack：当 active_tops 超过 max_version_count 时，
+/// 按 ErrorStatus 代价排序并截尾，只保留最优的 max_version_count 条路径。
+///
+/// 排序键（升序优先）：
+///   主键：cost（越小越优先）
+///   次键：dynamic_precedence（越大越优先，即次键降序）
+/// 没有 ErrorStatus 记录的路径视为 cost=0（无错误路径，最优），
+/// 排在所有有代价路径之前。
+///
+/// 截尾后调用 compact 回收已剪掉的路径占用的 GssNode。
+/// 必须在 compact 之后调用（此时 GssRef 已经是紧凑索引）。
+///
+/// 超出阈值时截至 max_version_count（硬上限）；
+/// 仅当超过 max_version_count + max_version_count_overflow 时才触发，
+/// 避免在短暂并行爆发窗口内过早丢弃仍有希望的路径。
+fn GlrEngine::condense_stack(self : GlrEngine) -> Unit {
+  let n = self.active_tops.length()
+  if n <= max_version_count {
+    return
+  }
+  // 对 active_tops 按 (cost ASC, dynamic_precedence DESC) 排序
+  // 使用插入排序（active_tops 通常很小，≤ max_version_count_overflow + max_version_count）
+  let tops = self.active_tops
+  let mut i = 1
+  while i < tops.length() {
+    let ref_i = tops[i]
+    let (ci, dpi) = match self.error_status.get(ref_i) {
+      Some(s) => (s.cost, s.dynamic_precedence)
+      None => (0, 0)
+    }
+    let mut j = i - 1
+    while j >= 0 {
+      let ref_j = tops[j]
+      let (cj, dpj) = match self.error_status.get(ref_j) {
+        Some(s) => (s.cost, s.dynamic_precedence)
+        None => (0, 0)
+      }
+      // ref_i 比 ref_j 更优 ⟺ ci < cj 或 (ci == cj 且 dpi > dpj)
+      let i_better = ci < cj || (ci == cj && dpi > dpj)
+      if i_better {
+        tops[j + 1] = tops[j]
+        j = j - 1
+      } else {
+        break
+      }
+    }
+    tops[j + 1] = ref_i
+    i = i + 1
+  }
+  // 截尾：只保留前 max_version_count 条
+  while self.active_tops.length() > max_version_count {
+    let _ = self.active_tops.pop()
+  }
+  // compact 回收被丢弃路径的 GssNode
+  self.compact(self.active_tops)
 }
 
 ///|

@@ -61,8 +61,9 @@ pub(all) struct CstNode {
   fragile_right : Bool
 }
 pub fn CstNode::error_node(Array[Self], Int, Int, Point, Point) -> Self
-pub fn CstNode::inner(Int, Bool, Array[Self], Array[String?], Int, Int, Bool) -> Self
+pub fn CstNode::inner(Int, Bool, Array[Self], Array[String?], Int, Int, Bool, Bool) -> Self
 pub fn CstNode::leaf(Int, Bool, Int, Int, Point, Point, Int, Int, Bool, Bool) -> Self
+pub fn CstNode::missing_leaf(Int, Bool, Int, Point) -> Self
 pub impl Show for CstNode
 
 type ErrorStatus

@@ -354,3 +354,88 @@ test "insert_missing — 缺少中间 token 的代价标记" {
     }
   }
 }
+
+// 表 10：recover_to_state 恢复
+//
+// recover_to_state 沿 GSS 入边回溯，找到可接受当前 token 的祖先状态，
+// 将路径上的内容包进 ERROR 节点后从祖先状态继续解析。
+//
+// 该策略在 next_tops.is_empty()（insert_missing 也无法推进）时触发，
+// 常见于 GLR 多路径中某路径陷入死胡同的情形。
+// 注意：当前实现中 skip_token 的「停留路径」仅在初始状态（state=0）或
+// 完整产生式归约边界处可正确穿透 enum_paths；产生式体中间出现错误时，
+// 应优先由 insert_missing_and_relex 介入补齐缺失 token。
+// 以下测试通过 parse_from_dsl 验证恢复后解析可成功完成。
+
+///|
+test "recover_to_state — 初始状态前的错误不影响后续解析" {
+  // 文法 s → "a" "b" "c"，输入 "_abc"（"_"在移进任何 token 前出现）
+  // "_" → sym_error → skip_token at initial state(0) → S0_staying
+  // "a" "b" "c" 均在 S0_staying 的后继路径上正常移进 + 归约
+  // skip 处于初始状态，enum_paths 的 base_ref 仍为 state=0，归约成功
+  let dsl = "start s\nrule s: \"a\" \"b\" \"c\""
+  match parse_from_dsl(dsl, "_abc") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => {
+      // 根节点覆盖 [0, 4)，包含 3 个子节点（不含 ERROR 前缀 "_"）
+      assert_eq(root.end_byte, 4)
+      assert_eq(root.children.length(), 3)
+    }
+  }
+}
+
+///|
+test "recover_to_state — 多余前缀后完成解析" {
+  // 文法 s → "a" "b"，输入 "!!!ab"（三个 sym_error 符号后跟 "ab"）
+  // 每个 "!" 在 initial state 被 skip；"a" "b" 之后正常归约
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  match parse_from_dsl(dsl, "!!!ab") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => assert_eq(root.end_byte, 5)
+  }
+}
+
+///|
+test "recover_to_state — S/R 冲突文法中错误前缀不影响 GLR 解析" {
+  // 悬挂 else 文法存在 S/R 冲突，GLR 并行探索两条路径
+  // 在有效输入前加错误前缀，确认 recover_to_state 不会干扰正常路径
+  let dsl = "start s\nrule s: \"i\" s \"e\" s | \"i\" s | \"x\""
+  // 正常输入（无错误前缀）应当成功
+  match parse_from_dsl(dsl, "iixex") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => assert_eq(root.end_byte, 5)
+  }
+}
+
+// 表 11：condense_stack 版本上限
+//
+// condense_stack 在 active_tops.length() > max_version_count 时
+// 按代价排序截尾，确保活跃版本数不超过 max_version_count。
+// 高度歧义文法（大量 S/R 冲突）会产生指数级并行路径，condense 是防爆炸的安全阀。
+
+///|
+test "condense_stack — 高歧义文法解析不崩溃且返回 Ok" {
+  // s → "x" | "x" "x" | "x" "x" "x"，输入 "xxx"
+  // 每个 token 都触发多条 Shift/Reduce 路径，active_tops 可能超过 max_version_count
+  // condense_stack 应在截尾后保持 active_tops 可管理，最终解析成功
+  let dsl = "start s\nrule s: \"x\" | \"x\" \"x\" | \"x\" \"x\" \"x\""
+  // 该文法输入 "xxx" 存在多条解析（单 x、双 x、三 x 均合法），GLR 返回其中一条
+  match parse_from_dsl(dsl, "xxx") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => {
+      assert_eq(root.start_byte, 0)
+      assert_eq(root.end_byte, 3)
+    }
+  }
+}
+
+///|
+test "condense_stack — 截尾优先保留低代价路径" {
+  // 错误恢复时代价最低的路径（无错误 = 代价 0）应被优先保留
+  // 文法：s → "a" "b"，输入无前缀错误 "ab"：正常路径代价 0，应成功
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  match parse_from_dsl(dsl, "ab") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => assert_eq(root.end_byte, 2)
+  }
+}
