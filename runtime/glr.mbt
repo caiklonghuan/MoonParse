@@ -1,5 +1,5 @@
 ///|
-// GLR 解析引擎（Phase 2b）
+// GLR 解析引擎
 //
 // GLR（广义 LR）允许在 LALR 冲突点并行维护多个解析路径，
 // 通过 Graph-Structured Stack（GSS）共享公共前缀，避免指数爆炸。
@@ -12,10 +12,6 @@
 // 为什么节点不挂 CstNode，而由边来携带：
 //   同一个 LR 状态可以通过不同的前驱（即不同的归约路径）到达，
 //   每条路径产生的子树不同。把 CstNode 放在边上，才能正确区分局部歧义。
-//
-// 实现阶段：
-//   Phase 2b（本次）：基础类型重构，为主循环做准备
-//   Phase 2c（后续）：glr_parse 主循环、enum_paths、find_or_merge
 
 ///|
 /// GSS 结点引用（Arena 下标，避免循环引用）
@@ -63,7 +59,7 @@ struct GlrEngine {
   lexer : LexerEngine
   /// 各活跃版本的代价记录（GssRef → ErrorStatus）
   /// skip_token / insert_missing 等恢复策略在此累积代价；
-  /// condense（Phase 2b 后期）据此剪枝超限版本。
+  /// condense_stack 据此剪枝超限版本。
   error_status : Map[GssRef, ErrorStatus]
 }
 
@@ -285,7 +281,7 @@ fn GlrEngine::run(
 ///     Shift(s_acc)，只有 s_acc 才有 Accept。当前 active_top 自身永远不持有
 ///     Accept，Case 1（直接 Accept）是死代码，故已删除。
 ///
-///   多路径（歧义）：Phase 2b 返回第一条；Phase 2c 改为 AmbiguityNode。
+///   多路径（歧义）：当前返回第一条可接受路径。
 fn GlrEngine::collect_root_glr(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -342,7 +338,7 @@ fn GlrEngine::collect_root_glr(
 ///             false = same predecessor 已存在，跳过（防止无限循环）
 ///
 /// 重复前驱检测：若 candidate_tops 中已有 state 相同的结点，且该结点已有一条
-/// predecessor == new_link.predecessor 的入边，则不再追加（Phase 2b 保留首条）。
+/// predecessor == new_link.predecessor 的入边，则不再追加（保留首条）。
 /// 这防止了同一路径被反复归约、worklist 无限增长的问题。
 fn GlrEngine::find_or_merge(
   self : GlrEngine,
@@ -450,7 +446,7 @@ fn GlrEngine::run_shift(
     tok.end_byte,
     cur_point,
     ep,
-    0, // parse_state：GLR 暂置 0（增量复用 Phase 3a 补充）
+    0, // parse_state：TODO 增量复用时填入实际 LR 状态
     tok.lookahead_bytes,
     tok.is_keyword,
     false,
@@ -1078,7 +1074,7 @@ fn GlrEngine::recover_to_state(
 /// active_tops 原地扩展（新 Reduce 结果追加到同一集合中）
 ///
 /// fragile 标记策略：
-///   · 仅当存在真正的并行路径时才标 fragile，避免过度标记阻塞 Phase 3a 增量复用
+///   · 仅当存在真正的并行路径时才标 fragile，避免过度标记阻塞增量复用
 ///   · 判据（任意一条为 true → fragile = true）：
 /// active_tops.length() > 1：本轮存在多个并行活跃前缀（S/R 或 R/R 冲突）
 /// enum_paths 返回 > 1 条路径：同一 top 通过多条 GSS 前缀归约（局部歧义）

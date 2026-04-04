@@ -1,16 +1,16 @@
 ///|
-// 线性 LR 解析器（Phase 2a）
+// 线性 LR 解析器
 //
 // 实现最基础的单栈确定性 LR 解析循环：
 //   · 初始状态 1（state 0 保留为 ERROR 哨兵，遵照 tree-sitter 惯例）
 //   · extras token：推入 node_stack，不推 state_stack（LR 状态不变）
 //   · trailing extras：reduce 时分离，推回到新内部节点之后
-//   · Phase 2a 限制：GLR 冲突取第一个动作；语法错误直接返回 Err
+//   · 限制：GLR 冲突取第一个动作；语法错误直接返回 Err
 //
 // 注：state_stack[0] = 1（初始状态，永不弹出）
 
 ///|
-/// 线性 LR 解析器（单栈，Phase 2a）
+/// 线性 LR 解析器（单栈）
 ///
 /// state_stack：仅含非 extras 的 LR 状态，最底一项永远是初始状态 1。
 /// node_stack ：含 extras 和非 extras 的全部 CstNode，按推入顺序排列。
@@ -32,8 +32,7 @@ fn LrParser::top_state(self : LrParser) -> Int {
 
 ///|
 /// 从 input 解析完整 CST。
-///
-/// Phase 2a：语法错误直接返回 Err；Phase 2b 起改为返回带 ERROR 节点的 Ok。
+/// 语法错误时返回 Err；GLR 冲突取第一个动作（非歧义文法专用）。
 pub fn parse_linear(
   table : @tablegen.ParseTable,
   input : String,
@@ -144,7 +143,7 @@ fn LrParser::run(
                   message: "empty action list in table",
                 })
               }
-              // Phase 2a：多动作时取第一个（GLR 留待 Phase 2c）
+              // 多动作时取第一个（GLR 冲突在 glr_parse 中并行处理）
               match acts[0] {
                 Shift(next_state) => {
                   let ep = bytes_to_point(

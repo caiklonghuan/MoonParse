@@ -53,32 +53,32 @@ pub(all) struct CstNode {
   end_point : Point
 
   // 叶节点字段（children 为空时有效）
-  /// 创建该叶节点时的 LR 状态（增量复用判断用，Phase 3a 前置零）
+  /// 创建该叶节点时的 LR 状态（增量复用判断用，暂置零）
   parse_state : Int
-  /// 词法器实际读到的末尾字节偏移（>= end_byte，增量边界检查用，Phase 3a 前置零）
+  /// 词法器实际读到的末尾字节偏移（>= end_byte，增量边界检查用，暂置零）
   lookahead_bytes : Int
-  /// 该 token 是关键字（两阶段词法用，Phase 3b 前置 false）
+  /// 该 token 是关键字（两阶段词法用，暂置 false）
   is_keyword : Bool
 
   // 内部节点字段（children 非空时有效）
   children : Array[CstNode]
   /// 与 children 等长，记录每个子节点对应的字段名（来自 BodySymbol.field_name）
   field_names : Array[String?]
-  /// 产生式编号（alias 和字段名查表用，Phase 2a 前置零）
+  /// 产生式编号（alias 和字段名查表用，暂置零）
   production_id : Int
-  /// 各级 Reduce 累积的动态优先级（GLR 歧义消解用，Phase 2c 前置零）
+  /// 各级 Reduce 累积的动态优先级（GLR 歧义消解用，暂置零）
   dynamic_precedence : Int
 
   // 状态标记
   /// true = extras token（空白/注释），标记后不改变 LR 状态
   extra : Bool
-  /// true = 错误恢复插入的虚拟缺失 token（Phase 2b）
+  /// true = 错误恢复插入的虚拟缺失 token
   is_missing : Bool
-  /// true = ERROR 节点（包含无法解析的内容）（Phase 2b）
+  /// true = ERROR 节点（包含无法解析的内容）
   is_error : Bool
-  /// true = 在增量编辑区间内，不可复用（Phase 3a）
+  /// true = 在增量编辑区间内，不可复用
   has_changes : Bool
-  /// true = GLR 多路径合并产物，不可增量复用（Phase 2c）
+  /// true = GLR 多路径合并产物，不可增量复用
   fragile_left : Bool
   fragile_right : Bool
 } derive(Show)
@@ -267,7 +267,6 @@ pub(all) struct ParseError {
 
 ///|
 // GLR / 错误恢复内部类型
-// 这些类型 Phase 2a 不用，但先在此声明，让其他文件可前向引用。
 
 ///|
 /// 栈帧（单 version 线性 LR 用，GLR 时每个 version 独立持有）
