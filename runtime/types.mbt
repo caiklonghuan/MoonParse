@@ -276,15 +276,6 @@ struct StackFrame {
 } derive(Show)
 
 ///|
-/// 错误恢复用的历史状态记录项
-struct StackSummaryEntry {
-  state : Int // StateId
-  position : Int // 字节偏移
-  row : Int // 行号
-  depth : Int // 距当前栈顶的距离
-} derive(Show)
-
-///|
 /// 错误代价常量
 let error_cost_per_skipped_tree : Int = 100
 
