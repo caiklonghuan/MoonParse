@@ -117,7 +117,7 @@ pub fn parse_full(parser_id : Int, source : String) -> Int {
     None => -1
     Some(entry) =>
       match @runtime.parse(entry.table, source) {
-        Ok(root) => tree_registry.register({ root, input: source })
+        Ok(root) => tree_registry.register({ root, input: source, parser_id })
         Err(_) => -1
       }
   }
@@ -188,7 +188,7 @@ pub fn parse_incremental(
     new_end_point: { row: new_end_row, column: new_end_col },
   })
   match @runtime.parse_with_old_tree(entry.table, new_source, old_tree, edit) {
-    Ok(root) => tree_registry.register({ root, input: new_source })
+    Ok(root) => tree_registry.register({ root, input: new_source, parser_id })
     Err(_) => -1
   }
 }
@@ -245,24 +245,14 @@ pub fn moonparse_version() -> String {
 // ── 内部辅助 ─────────────────────────────────────────────────────
 
 ///|
-/// 通过 tree_id 找到对应的 ParseTable（通过遍历 parser_registry）。
-/// 目前实现：保留每棵树的 parser_id 需要额外 Map；
-/// 简化方案：tree_id 对应的 TreeEntry 里追加 table 引用。
-/// 为避免改动 TreeEntry，此处暂时返回 parser_registry 中第一个有效条目的 table。
-/// TODO: 将 parser_id 存入 TreeEntry 以精确反查。
-fn parser_registry_for_tree(
-  _tree_id : Int
-) -> @tablegen.ParseTable? {
-  // 遍历 parser_registry 找第一个有效条目（单 parser 场景够用）
-  let mut result : @tablegen.ParseTable? = None
-  for id in 1..<parser_registry.next_id {
-    match parser_registry.get(id) {
-      Some(e) => {
-        result = Some(e.table)
-        break
+/// 通过 tree_id 找到对应的 ParseTable（直接经由 TreeEntry.parser_id 反查）。
+fn parser_registry_for_tree(tree_id : Int) -> @tablegen.ParseTable? {
+  match tree_registry.get(tree_id) {
+    None => None
+    Some(te) =>
+      match parser_registry.get(te.parser_id) {
+        None => None
+        Some(pe) => Some(pe.table)
       }
-      None => ()
-    }
   }
-  result
 }

@@ -59,10 +59,11 @@ priv struct ParserEntry {
 }
 
 ///|
-/// 语法树条目：CST 根节点 + 对应的原始输入（node_text 查询用）
+/// 语法树条目：CST 根节点 + 对应的原始输入（node_text 查询用）+ 生成该树的解析器 ID
 priv struct TreeEntry {
   root : @runtime.CstNode
   input : String
+  parser_id : Int
 }
 
 ///|
