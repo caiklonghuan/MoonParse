@@ -66,6 +66,9 @@ struct GlrEngine {
   byte_delta : Int // new_end_byte - old_end_byte（常数，整个 parse 期间不变）
   edit_start : Int // 编辑起始字节（旧输入坐标，is_reusable 的边界检查）
   new_end_byte : Int // 编辑结束字节（新输入坐标，坐标换算的分界线）
+  old_end_point : Point // 编辑末点（旧坐标，Point 偏移的行列分界线）
+  row_delta : Int // new_end_point.row    - old_end_point.row
+  col_delta : Int // new_end_point.column - old_end_point.column
 }
 
 ///|
@@ -83,6 +86,9 @@ fn GlrEngine::new(lexer : LexerEngine) -> GlrEngine {
     byte_delta: 0,
     edit_start: 0,
     new_end_byte: 0,
+    old_end_point: { row: 0, column: 0 },
+    row_delta: 0,
+    col_delta: 0,
   }
 }
 
@@ -478,8 +484,14 @@ fn GlrEngine::run_shift(
                     find_reusable_node(ot, search_pos, state, self.edit_start) {
                     Some(old_node) =>
                       if old_node.end_byte + self.byte_delta == tok.end_byte {
-                        // 同跨度复用：字节偏移调整后替换新叶节点
-                        shift_bytes(old_node, self.byte_delta)
+                        // 同跨度复用：字节和行列坐标同时校正
+                        shift_node(
+                          old_node,
+                          self.byte_delta,
+                          self.old_end_point,
+                          self.row_delta,
+                          self.col_delta,
+                        )
                       } else {
                         CstNode::leaf(
                           tok.terminal_id,

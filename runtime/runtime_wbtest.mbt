@@ -727,3 +727,86 @@ test "parse_incremental — 同长替换编辑后输出与 parse_linear 一致" 
       }
   }
 }
+
+// 表 15：shift_node — Point 坐标校正
+
+///|
+test "shift_node — 同行编辑：行/列偏移均校正" {
+  // 模拟在同一行内替换：old_end_point=(0,3) new_end_point=(0,5)，col_delta=+2
+  // 节点在编辑之后：start_point=(0,3) end_point=(0,8)
+  let pt : Point = { row: 0, column: 0 }
+  let node = CstNode::leaf(
+    1,
+    true,
+    10,
+    15,
+    { row: 0, column: 3 },
+    { row: 0, column: 8 },
+    0,
+    0,
+    false,
+    false,
+  )
+  let edit : InputEdit = {
+    start_byte: 5,
+    old_end_byte: 10,
+    new_end_byte: 12,
+    start_point: { row: 0, column: 5 },
+    old_end_point: { row: 0, column: 3 },
+    new_end_point: { row: 0, column: 5 },
+  }
+  let _ = pt
+  let shifted = shift_node(node, 2, edit.old_end_point, 0, 2)
+  // start_point row=0 == old_end_point.row=0 → col 也加 2
+  assert_eq(shifted.start_byte, 12)
+  assert_eq(shifted.end_byte, 17)
+  assert_eq(shifted.start_point.row, 0)
+  assert_eq(shifted.start_point.column, 5) // 3 + 2
+  assert_eq(shifted.end_point.row, 0)
+  assert_eq(shifted.end_point.column, 10) // 8 + 2
+}
+
+///|
+test "shift_node — 跨行编辑：行号偏移，列号不变" {
+  // 编辑在第 0 行结束（old_end_point.row=0），节点在第 2 行
+  // row_delta=+1（增加了一行）：节点从 row=2 移到 row=3
+  let node = CstNode::leaf(
+    1,
+    true,
+    20,
+    25,
+    { row: 2, column: 4 },
+    { row: 2, column: 9 },
+    0,
+    0,
+    false,
+    false,
+  )
+  let shifted = shift_node(node, 3, { row: 0, column: 0 }, 1, 5)
+  // row=2 > old_end_point.row=0 → 仅 row 加 row_delta，col 不变
+  assert_eq(shifted.start_byte, 23)
+  assert_eq(shifted.start_point.row, 3) // 2 + 1
+  assert_eq(shifted.start_point.column, 4) // 不变
+  assert_eq(shifted.end_point.row, 3)
+  assert_eq(shifted.end_point.column, 9) // 不变
+}
+
+///|
+test "shift_node — delta 全零时原样返回" {
+  let node = CstNode::leaf(
+    1,
+    true,
+    5,
+    10,
+    { row: 1, column: 2 },
+    { row: 1, column: 7 },
+    0,
+    0,
+    false,
+    false,
+  )
+  let shifted = shift_node(node, 0, { row: 0, column: 0 }, 0, 0)
+  assert_eq(shifted.start_byte, 5)
+  assert_eq(shifted.start_point.row, 1)
+  assert_eq(shifted.start_point.column, 2)
+}

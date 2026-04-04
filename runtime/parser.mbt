@@ -23,6 +23,9 @@ struct LrParser {
   byte_delta : Int // new_end_byte - old_end_byte
   edit_start : Int // 编辑起始字节（旧输入坐标）
   new_end_byte : Int // 编辑结束字节（新输入坐标）
+  old_end_point : Point // 编辑末点（旧坐标，Point 偏移的行列分界线）
+  row_delta : Int // new_end_point.row    - old_end_point.row
+  col_delta : Int // new_end_point.column - old_end_point.column
 }
 
 ///|
@@ -35,6 +38,9 @@ fn LrParser::new(lexer : LexerEngine) -> LrParser {
     byte_delta: 0,
     edit_start: 0,
     new_end_byte: 0,
+    old_end_point: { row: 0, column: 0 },
+    row_delta: 0,
+    col_delta: 0,
   }
 }
 
@@ -78,8 +84,14 @@ fn LrParser::run(
         }
         match find_reusable_node(ot, search_pos, state, self.edit_start) {
           Some(old_node) => {
-            // 对复用节点做字节偏移调整（new_end_byte - old_end_byte 的偏移量）
-            let node = shift_bytes(old_node, self.byte_delta)
+            // 对复用节点做字节和行列坐标校正
+            let node = shift_node(
+              old_node,
+              self.byte_delta,
+              self.old_end_point,
+              self.row_delta,
+              self.col_delta,
+            )
             match table.action.get((state, node.symbol)) {
               Some(acts) =>
                 if not(acts.is_empty()) {

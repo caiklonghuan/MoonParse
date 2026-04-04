@@ -57,25 +57,73 @@ pub fn apply_edit(tree : OldTree, edit : InputEdit) -> OldTree {
 }
 
 ///|
-/// 将节点（及子树）所有字节位置偏移 delta（用于编辑后的坐标校正）
+/// 将 Point 坐标按编辑偏移校正（仅用于位置在 old_end_point 之后的节点）
 ///
-/// Point 坐标暂不调整（点坐标调整依赖 InputEdit 的行列信息，留待后续改进）。
-fn shift_bytes(node : CstNode, delta : Int) -> CstNode {
-  if delta == 0 {
+/// 规则（对标 tree-sitter）：
+///   · p.row >  old_end_point.row → 行号移 row_delta，列号不变
+///   · p.row == old_end_point.row → 行号移 row_delta，列号移 col_delta
+///   · p.row <  old_end_point.row → 编辑前节点，不应出现，防御性保持原值
+fn shift_point(
+  p : Point,
+  old_end_point : Point,
+  row_delta : Int,
+  col_delta : Int,
+) -> Point {
+  if row_delta == 0 && col_delta == 0 {
+    return p
+  }
+  if p.row > old_end_point.row {
+    { row: p.row + row_delta, column: p.column }
+  } else if p.row == old_end_point.row {
+    { row: p.row + row_delta, column: p.column + col_delta }
+  } else {
+    p
+  }
+}
+
+///|
+/// 将节点（及子树）的字节位置和行列坐标按编辑偏移全量校正。
+///
+/// 参数：
+///   byte_delta    = new_end_byte - old_end_byte
+///   old_end_point = edit.old_end_point（Point 偏移的行列分界线）
+///   row_delta     = new_end_point.row    - old_end_point.row
+///   col_delta     = new_end_point.column - old_end_point.column
+fn shift_node(
+  node : CstNode,
+  byte_delta : Int,
+  old_end_point : Point,
+  row_delta : Int,
+  col_delta : Int,
+) -> CstNode {
+  if byte_delta == 0 && row_delta == 0 && col_delta == 0 {
     return node
   }
+  let new_start = shift_point(
+    node.start_point,
+    old_end_point,
+    row_delta,
+    col_delta,
+  )
+  let new_end = shift_point(node.end_point, old_end_point, row_delta, col_delta)
   if node.children.is_empty() {
     {
       ..node,
-      start_byte: node.start_byte + delta,
-      end_byte: node.end_byte + delta,
+      start_byte: node.start_byte + byte_delta,
+      end_byte: node.end_byte + byte_delta,
+      start_point: new_start,
+      end_point: new_end,
     }
   } else {
-    let new_children = node.children.map(fn(c) { shift_bytes(c, delta) })
+    let new_children = node.children.map(fn(c) {
+      shift_node(c, byte_delta, old_end_point, row_delta, col_delta)
+    })
     {
       ..node,
-      start_byte: node.start_byte + delta,
-      end_byte: node.end_byte + delta,
+      start_byte: node.start_byte + byte_delta,
+      end_byte: node.end_byte + byte_delta,
+      start_point: new_start,
+      end_point: new_end,
       children: new_children,
     }
   }
@@ -144,8 +192,10 @@ fn glr_parse_incremental(
   edit : InputEdit,
 ) -> Result[CstNode, ParseError] {
   let marked = apply_edit(old_tree, edit)
-  // byte_delta 是整次编辑的常数偏移量，在解析器层传入，无需每次计算
+  // byte_delta / row_delta / col_delta 均为整次编辑的常数，解析期间不变
   let delta = edit.new_end_byte - edit.old_end_byte
+  let row_delta = edit.new_end_point.row - edit.old_end_point.row
+  let col_delta = edit.new_end_point.column - edit.old_end_point.column
   let lexer = LexerEngine::new(table.lexer_dfa)
   let engine = {
     ..GlrEngine::new(lexer),
@@ -153,6 +203,9 @@ fn glr_parse_incremental(
     byte_delta: delta,
     edit_start: edit.start_byte,
     new_end_byte: edit.new_end_byte,
+    old_end_point: edit.old_end_point,
+    row_delta,
+    col_delta,
   }
   engine.run(table, input)
 }
