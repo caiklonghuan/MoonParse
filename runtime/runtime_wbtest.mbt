@@ -221,7 +221,7 @@ test "GLR 左递归 — n+n+n 产生左结合 CST" {
 //   · Shift  → else 绑定内层 if（deep binding）
 //   · Reduce → else 绑定外层 if（shallow binding）
 // GLR 并行探索两条路径，应能成功返回 Ok 而非报错。
-// Phase 2b 只返回第一条路径；Phase 2c 可返回两棵树。
+// 当前返回第一条路径；歧义时可扩展为返回两棵树。
 
 ///|
 test "GLR S/R 冲突 — 悬挂 else 文法可成功解析" {
@@ -242,7 +242,7 @@ test "GLR S/R 冲突 — 悬挂 else 文法可成功解析" {
 
 // 表 7：fragile 标记精度
 //
-// 无歧义文法（确定性 LR）：内部节点不应被标 fragile，以便 Phase 3a 增量复用。
+// 无歧义文法（确定性 LR）：内部节点不应被标 fragile，以便增量复用。
 // 有歧义文法（GLR 并行路径）：内部节点必须标 fragile。
 
 ///|
@@ -437,5 +437,87 @@ test "condense_stack — 截尾优先保留低代价路径" {
   match parse_from_dsl(dsl, "ab") {
     Err(e) => fail("expected Ok but got Err: \{e.message}")
     Ok(root) => assert_eq(root.end_byte, 2)
+  }
+}
+
+// 表 12：apply_edit — has_changes 标记
+//
+// apply_edit 对旧 CST 做 copy-on-write 深度优先遍历：
+//   · 与 [start_byte, old_end_byte) 相交的节点打 has_changes = true
+//   · 不相交的节点原样共享（零复制）
+//   · 内部节点相交时递归重建 children，自身也打 has_changes
+
+///|
+test "apply_edit — 编辑区间内节点标 has_changes，区间外不变" {
+  // 文法 s → "a" "b" "c"，输入 "abc"
+  // 树：s[0,3) → ["a"[0,1), "b"[1,2), "c"[2,3)]
+  // 编辑 [1,2)：替换 "b"
+  let dsl = "start s\nrule s: \"a\" \"b\" \"c\""
+  match parse_from_dsl(dsl, "abc") {
+    Err(e) => fail("parse failed: \{e.message}")
+    Ok(root) => {
+      let tree : OldTree = { root, old_input: "abc" }
+      let edit : InputEdit = {
+        start_byte: 1,
+        old_end_byte: 2,
+        new_end_byte: 2,
+        start_point: { row: 0, column: 1 },
+        old_end_point: { row: 0, column: 2 },
+        new_end_point: { row: 0, column: 2 },
+      }
+      let new_tree = apply_edit(tree, edit)
+      // 根节点 s[0,3) 与 [1,2) 相交 → has_changes
+      assert_eq(new_tree.root.has_changes, true)
+      let ch = new_tree.root.children
+      assert_eq(ch[0].has_changes, false) // "a"[0,1) 不相交
+      assert_eq(ch[1].has_changes, true) // "b"[1,2) 相交
+      assert_eq(ch[2].has_changes, false) // "c"[2,3) 不相交
+    }
+  }
+}
+
+///|
+test "apply_edit — 不修改原树（copy-on-write）" {
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  match parse_from_dsl(dsl, "ab") {
+    Err(e) => fail("parse failed: \{e.message}")
+    Ok(root) => {
+      let tree : OldTree = { root, old_input: "ab" }
+      let edit : InputEdit = {
+        start_byte: 0,
+        old_end_byte: 1,
+        new_end_byte: 1,
+        start_point: { row: 0, column: 0 },
+        old_end_point: { row: 0, column: 1 },
+        new_end_point: { row: 0, column: 1 },
+      }
+      let new_tree = apply_edit(tree, edit)
+      assert_eq(new_tree.root.has_changes, true)
+      assert_eq(tree.root.has_changes, false) // 原树未被修改
+    }
+  }
+}
+
+///|
+test "apply_edit — 编辑在所有节点之后不标记任何节点" {
+  // 文法 s → "a" "b"，输入 "ab"，根节点 [0,2)
+  // 编辑 [2,3)：在末尾追加，不与任何现有节点相交
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  match parse_from_dsl(dsl, "ab") {
+    Err(e) => fail("parse failed: \{e.message}")
+    Ok(root) => {
+      let tree : OldTree = { root, old_input: "ab" }
+      let edit : InputEdit = {
+        start_byte: 2,
+        old_end_byte: 3,
+        new_end_byte: 4,
+        start_point: { row: 0, column: 2 },
+        old_end_point: { row: 0, column: 3 },
+        new_end_point: { row: 0, column: 4 },
+      }
+      let new_tree = apply_edit(tree, edit)
+      // 根节点 end_byte=2，不与 start=2 相交（end_byte > start 为 false）
+      assert_eq(new_tree.root.has_changes, false)
+    }
   }
 }

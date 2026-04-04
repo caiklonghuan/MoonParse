@@ -1,5 +1,5 @@
 ///|
-// 增量解析（Phase 3a 存根）
+// 增量解析
 //
 // 增量解析允许在输入发生局部修改后，重用上一次解析结果中未受影响的子树，
 // 从而避免完整地重新解析整个文件。
@@ -16,10 +16,7 @@
 //          - not node.fragile_left / fragile_right（非 GLR 产物）
 //          - node.lookahead_bytes <= new_edit_start（前瞻不越过编辑边界）
 //      · 复用时直接将旧节点推栈，跳过重新词法/语法分析
-// 非复用节点正常走 parse_linear / glr_parse 路径
-//
-// 当前状态：类型骨架 + 函数签名占位；函数体全为 TODO。
-// Phase 2a/2b/2c 阶段直接全量重新解析（CstNode.parse_state 暂置 0）。
+// 非复用节点正常走 glr_parse 路径
 
 ///|
 /// 增量解析的旧树快照（包含一次或多次编辑的累积状态）
@@ -31,15 +28,32 @@ pub(all) struct OldTree {
 } derive(Show)
 
 ///|
+/// 深度优先遍历，对与 [start, old_end) 相交的节点打 has_changes。
+/// 不相交的节点原样返回（共享），相交的节点 copy-on-write。
+fn mark_changes(node : CstNode, start : Int, old_end : Int) -> CstNode {
+  // 不相交：直接返回原节点（零复制）
+  if node.start_byte >= old_end || node.end_byte <= start {
+    return node
+  }
+  // 叶节点：标记 has_changes
+  if node.children.is_empty() {
+    return { ..node, has_changes: true }
+  }
+  // 内部节点：递归处理子节点，重建 children 数组
+  let new_children : Array[CstNode] = Array::new(
+    capacity=node.children.length(),
+  )
+  for child in node.children {
+    new_children.push(mark_changes(child, start, old_end))
+  }
+  { ..node, children: new_children, has_changes: true }
+}
+
+///|
 /// 应用一个 InputEdit，返回标记了 has_changes 的新旧树副本
-///
-/// TODO Phase 3a：实现后替换此 stub
 pub fn apply_edit(tree : OldTree, edit : InputEdit) -> OldTree {
-  // TODO: 遍历 tree.root，对 [start_byte, old_end_byte) 范围内的节点
-  //       以及与该区间相交的节点，打上 has_changes = true
-  //       返回新的 OldTree（copy-on-write 或直接 mutate）
-  let _ = edit
-  tree
+  let new_root = mark_changes(tree.root, edit.start_byte, edit.old_end_byte)
+  { root: new_root, old_input: tree.old_input }
 }
 
 ///|
@@ -47,7 +61,7 @@ pub fn apply_edit(tree : OldTree, edit : InputEdit) -> OldTree {
 ///
 /// 返回 Some(node) 表示找到可直接复用的子树；None 表示不可复用。
 ///
-/// TODO Phase 3a：实现后替换此 stub
+/// TODO: 实现后替换此 stub
 pub fn find_reusable_node(
   old_tree : OldTree,
   new_pos : Int,
@@ -66,14 +80,14 @@ pub fn find_reusable_node(
 /// 提供旧树和编辑描述时，先 apply_edit 标记 has_changes，
 /// 再以 old_tree 作为 reuse pool 调用解析器。
 ///
-/// TODO Phase 3a：实现后替换此 stub
+/// TODO: 实现后替换此 stub
 pub fn parse_incremental(
   table : @tablegen.ParseTable,
   input : String,
   old_tree : OldTree?,
   _edit : InputEdit?,
 ) -> Result[CstNode, ParseError] {
-  // TODO Phase 3a:
+  // TODO:
   // match old_tree, edit → apply_edit
   // 构造带 reuse_lookup 的解析器
   // 在 Shift 前先查 find_reusable_node
@@ -96,7 +110,7 @@ pub fn is_reusable(
   if node.start_byte != cur_pos {
     return false
   }
-  // LR 状态一致（Phase 3a 前 parse_state = 0，条件永远通过，需谨慎）
+  // LR 状态一致（parse_state 当前置 0，条件永远通过，实现时需填入实际状态）
   if node.parse_state != lr_state {
     return false
   }

@@ -1,5 +1,5 @@
 ///|
-// 错误恢复（Phase 2b 存根）
+// 错误恢复存根
 //
 // 错误恢复采用 tree-sitter 的三策略混合：
 //
@@ -19,8 +19,8 @@
 // 多策略并行展开（GLR 框架），选代价最低的版本继续。
 // 代价常量在 types.mbt 中定义（error_cost_per_* 系列）。
 //
-// 当前状态：类型骨架 + 函数签名占位；函数体全为 TODO。
-// Phase 2a 不调用任何恢复函数；语法错误直接返回 Err。
+// 注：三个策略函数（recover_to_state / insert_missing / skip_token）
+// 已在 glr.mbt 中作为 GlrEngine 方法实现，以下为独立存根（暂未接入）。
 
 ///|
 /// 错误恢复结果
@@ -77,7 +77,7 @@ fn StackSummary::push(
 ///|
 /// 策略 1：回退到可接受 error token 的状态，包裹跳过内容为 ERROR 节点
 ///
-/// TODO Phase 2b：实现后替换此 stub
+/// TODO: 实现后替换此 stub
 pub fn recover_to_state(
   _ctx : RecoveryContext,
   _table : @tablegen.ParseTable,
@@ -92,7 +92,7 @@ pub fn recover_to_state(
 ///|
 /// 策略 2：插入缺失 token
 ///
-/// TODO Phase 2b：实现后替换此 stub
+/// TODO: 实现后替换此 stub
 pub fn insert_missing_token(
   _ctx : RecoveryContext,
   _table : @tablegen.ParseTable,
@@ -107,7 +107,7 @@ pub fn insert_missing_token(
 ///|
 /// 策略 3：跳过当前前瞻 token（字符/行级代价）
 ///
-/// TODO Phase 2b：实现后替换此 stub
+/// TODO: 实现后替换此 stub
 pub fn skip_lookahead(
   _ctx : RecoveryContext,
   _table : @tablegen.ParseTable,
@@ -128,10 +128,4 @@ fn error_cost_for_skipped_node(node : CstNode) -> Int {
   // 取字符代价与行代价中较大者，再加上树代价
   let body_cost = if char_cost > line_cost { char_cost } else { line_cost }
   tree_cost + body_cost
-}
-
-///|
-/// 计算插入缺失 token 的错误代价
-fn error_cost_for_missing_token() -> Int {
-  error_cost_per_missing_tree
 }
