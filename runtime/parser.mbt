@@ -14,34 +14,16 @@
 ///
 /// state_stack：仅含非 extras 的 LR 状态，最底一项永远是初始状态 1。
 /// node_stack ：含 extras 和非 extras 的全部 CstNode，按推入顺序排列。
+/// 仅用于全量解析和测试基准；增量解析由 GlrEngine 负责。
 struct LrParser {
   state_stack : Array[Int]
   node_stack : Array[CstNode]
   lexer : LexerEngine
-  // 增量复用上下文（None = 非增量全量解析）
-  old_tree : OldTree?
-  byte_delta : Int // new_end_byte - old_end_byte
-  edit_start : Int // 编辑起始字节（旧输入坐标）
-  new_end_byte : Int // 编辑结束字节（新输入坐标）
-  old_end_point : Point // 编辑末点（旧坐标，Point 偏移的行列分界线）
-  row_delta : Int // new_end_point.row    - old_end_point.row
-  col_delta : Int // new_end_point.column - old_end_point.column
 }
 
 ///|
 fn LrParser::new(lexer : LexerEngine) -> LrParser {
-  {
-    state_stack: [0],
-    node_stack: [],
-    lexer,
-    old_tree: None,
-    byte_delta: 0,
-    edit_start: 0,
-    new_end_byte: 0,
-    old_end_point: { row: 0, column: 0 },
-    row_delta: 0,
-    col_delta: 0,
-  }
+  { state_stack: [0], node_stack: [], lexer }
 }
 
 ///|
@@ -72,48 +54,6 @@ fn LrParser::run(
   let mut cur_point : Point = { row: 0, column: 0 }
   while true {
     let state = self.top_state()
-
-    // 增量复用：Shift 前尝试从旧树复用叶节点（跳过词法）
-    match self.old_tree {
-      Some(ot) => {
-        // 将新坐标转换为旧树坐标（编辑后位置需减去字节偏移量）
-        let search_pos = if pos < self.new_end_byte {
-          pos
-        } else {
-          pos - self.byte_delta
-        }
-        match find_reusable_node(ot, search_pos, state, self.edit_start) {
-          Some(old_node) => {
-            // 对复用节点做字节和行列坐标校正
-            let node = shift_node(
-              old_node,
-              self.byte_delta,
-              self.old_end_point,
-              self.row_delta,
-              self.col_delta,
-            )
-            match table.action.get((state, node.symbol)) {
-              Some(acts) =>
-                if not(acts.is_empty()) {
-                  match acts[0] {
-                    Shift(next_state) => {
-                      pos = node.end_byte
-                      cur_point = node.end_point
-                      self.state_stack.push(next_state)
-                      self.node_stack.push(node)
-                      continue
-                    }
-                    _ => ()
-                  }
-                }
-              _ => ()
-            }
-          }
-          _ => ()
-        }
-      }
-      _ => ()
-    }
 
     // 词法：每轮用当前 LR 状态扫描（context-aware）
     let (maybe_tok, after_tok_pos) = self.lexer.next_token(
