@@ -1,0 +1,104 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/grammar"
+
+// Values
+pub fn grammar_to_json(Grammar) -> String
+
+pub fn grammar_to_string(Grammar) -> String
+
+pub fn parse_grammar(String) -> ParseResult[Grammar]
+
+pub fn pattern_to_string(Pattern) -> String
+
+pub fn validate_grammar(Grammar) -> Array[ValidationError]
+
+// Errors
+
+// Types and methods
+pub(all) struct Grammar {
+  mut start : String?
+  rules : Map[String, Rule]
+  precedences : Array[PrecDecl]
+  extras : Array[Pattern]
+}
+
+pub(all) struct ParseError {
+  message : String
+  location : SourceLocation
+}
+
+pub(all) enum ParseResult[T] {
+  Success(T)
+  Error(ParseError)
+}
+
+pub(all) enum Pattern {
+  RuleRef(String)
+  Literal(String)
+  Regex(String)
+  Choice(Array[Pattern])
+  Seq(Array[Pattern])
+  Repeat(Pattern)
+  Plus(Pattern)
+  Optional(Pattern)
+  Tagged(String, Pattern)
+  Not(Pattern)
+  And(Pattern)
+  AnyChar
+  Field(String, Pattern)
+  RepeatRange(Pattern, Int, Int)
+  Prec(Int, PrecKind, Pattern)
+}
+pub fn Pattern::to_string(Self) -> String
+
+pub(all) struct PrecDecl {
+  level : Int
+  kind : PrecKind
+  rules : Array[String]
+}
+
+pub(all) enum PrecKind {
+  Left
+  Right
+  Nonassoc
+  Dynamic
+}
+pub impl Eq for PrecKind
+pub impl Show for PrecKind
+
+pub(all) struct Rule {
+  name : String
+  pattern : Pattern
+  is_named : Bool
+}
+
+pub(all) struct SourceLocation {
+  line : Int
+  column : Int
+}
+
+type Token
+
+pub(all) struct TokenWithLocation {
+  token : Token
+  location : SourceLocation
+}
+
+pub(all) struct ValidationError {
+  rule : String
+  kind : ValidationErrorKind
+}
+pub fn ValidationError::to_string(Self) -> String
+
+pub(all) enum ValidationErrorKind {
+  UndefinedRule(String)
+  UndefinedStartRule(String)
+  DirectLeftRecursion(String)
+  IndirectLeftRecursion(Array[String])
+  UnreachableRule(String)
+}
+
+// Type aliases
+
+// Traits
+

@@ -89,3 +89,32 @@ test "parse_json/invalid_input_contains_error_node" {
   let result = @MoonParse.parse_json("{invalid}")
   assert_true(result.length() > 0)
 }
+
+///|
+// ── table_from_json round-trip（通过 generate + parse 验证）────────
+
+///|
+test "generate_then_reload/json_round_trip_can_parse" {
+  // 1. 编译 DSL → JSON
+  let dsl =
+    #|start expr
+    #|extras [/[ \t]+/]
+    #|rule expr: /[0-9]+/
+  let json = @MoonParse.generate(dsl)
+  assert_true(not(json.has_prefix("Error:")))
+  // 2. 从 JSON 还原 ParseTable，然后解析输入
+  match @tablegen.table_from_json(json) {
+    Err(msg) => {
+      println("table_from_json failed: \{msg}")
+      assert_true(false)
+    }
+    Ok(table) =>
+      match @runtime.parse(table, "42") {
+        Ok(node) => assert_true(not(node.is_error))
+        Err(e) => {
+          println("parse failed: \{e.message}")
+          assert_true(false)
+        }
+      }
+  }
+}

@@ -107,6 +107,32 @@ pub fn parser_free(parser_id : Int) -> Unit {
 }
 
 ///|
+/// 从预编译 JSON 字符串（由 `parser_table_to_json` 导出）快速还原解析器。
+///
+/// 开发流程：
+///   1. 调用 `parser_create_from_dsl(dsl)` → parser_id（一次性编译，慢）
+///   2. 调用 `parser_table_to_json(parser_id)` → json（保存到 JS 代码中）
+///   3. 之后用 `parser_create_from_json(json)` 直接加载（无需重新编译，快）
+///
+/// 失败时返回 -1。
+pub fn parser_create_from_json(json : String) -> Int {
+  match @tablegen.table_from_json(json) {
+    Ok(table) => parser_registry.register({ table, dsl: "" })
+    Err(_) => -1
+  }
+}
+
+///|
+/// 将解析器的 ParseTable 序列化为 JSON 字符串，供 `parser_create_from_json` 加载。
+/// parser_id 无效时返回空串 ""。
+pub fn parser_table_to_json(parser_id : Int) -> String {
+  match parser_registry.get(parser_id) {
+    None => ""
+    Some(entry) => @tablegen.table_to_json(entry.table)
+  }
+}
+
+///|
 // ── 全量解析 ────────────────────────────────────────────────────
 
 ///|

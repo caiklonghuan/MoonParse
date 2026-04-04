@@ -1,0 +1,37 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/wasm"
+
+import {
+  "caiklonghuan/MoonParse/runtime",
+  "caiklonghuan/MoonParse/tablegen",
+}
+
+// Values
+pub fn cst_to_json(@runtime.CstNode, String, @tablegen.ParseTable) -> String
+
+pub fn moonparse_version() -> String
+
+pub fn parse_full(Int, String) -> Int
+
+pub fn parse_incremental(Int, Int, String, Int, Int, Int, Int, Int, Int, Int, Int, Int) -> Int
+
+pub fn parser_create_from_dsl(String) -> Int
+
+pub fn parser_free(Int) -> Unit
+
+pub fn tree_error_summary(Int) -> String
+
+pub fn tree_free(Int) -> Unit
+
+pub fn tree_root_sexp(Int) -> String
+
+pub fn tree_to_json(Int) -> String
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+

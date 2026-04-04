@@ -309,3 +309,74 @@ test "table_to_json includes extras" {
   let json = table_to_json(table)
   assert_eq(json.contains("extras"), true)
 }
+
+///|
+test "table_to_json includes lexer_dfa" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\"")
+  let json = table_to_json(table)
+  assert_eq(json.contains("lexer_dfa"), true)
+}
+
+///|
+test "table_from_json round-trip: states preserved" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\"")
+  let json = table_to_json(table)
+  match table_from_json(json) {
+    Err(msg) => {
+      println("table_from_json failed: \{msg}")
+      assert_true(false)
+    }
+    Ok(t2) => assert_eq(t2.states, table.states)
+  }
+}
+
+///|
+test "table_from_json round-trip: productions count preserved" {
+  let dsl = "start expr\nrule expr: /[0-9]+/"
+  let (table, _) = gen_ok(dsl)
+  let json = table_to_json(table)
+  match table_from_json(json) {
+    Err(msg) => {
+      println("table_from_json failed: \{msg}")
+      assert_true(false)
+    }
+    Ok(t2) => assert_eq(t2.productions.length(), table.productions.length())
+  }
+}
+
+///|
+test "table_from_json round-trip: action entries preserved" {
+  let dsl = "start s\nrule s: \"a\""
+  let (table, _) = gen_ok(dsl)
+  let json = table_to_json(table)
+  match table_from_json(json) {
+    Err(msg) => {
+      println("table_from_json failed: \{msg}")
+      assert_true(false)
+    }
+    Ok(t2) => assert_eq(t2.action.length(), table.action.length())
+  }
+}
+
+///|
+test "table_from_json round-trip: lexer_dfa states count preserved" {
+  let dsl = "start expr\nrule expr: /[0-9]+/"
+  let (table, _) = gen_ok(dsl)
+  let json = table_to_json(table)
+  match table_from_json(json) {
+    Err(msg) => {
+      println("table_from_json failed: \{msg}")
+      assert_true(false)
+    }
+    Ok(t2) =>
+      assert_eq(t2.lexer_dfa.states.length(), table.lexer_dfa.states.length())
+  }
+}
+
+///|
+test "table_from_json: invalid JSON returns Err" {
+  match table_from_json("not json at all") {
+    Err(_) => () // 期望失败
+    Ok(_) => assert_true(false)
+  }
+}

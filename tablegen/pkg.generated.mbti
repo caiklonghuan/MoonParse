@@ -15,6 +15,8 @@ pub fn build_item_sets(AugmentedGrammar) -> Array[@set.Set[LRItem]]
 
 pub fn build_lalr_table(AugmentedGrammar, Array[@set.Set[LRItem]], Map[(Int, Symbol), Int]) -> ParseTable
 
+pub fn build_lexer_dfa(AugmentedGrammar, ParseTable) -> LexerDfa
+
 pub fn closure(AugmentedGrammar, @set.Set[LRItem]) -> @set.Set[LRItem]
 
 pub fn deserialize_table(Bytes) -> Result[ParseTable, String]
@@ -26,6 +28,8 @@ pub fn first_seq(AugmentedGrammar, Array[Symbol]) -> @set.Set[Int]
 pub fn first_set(AugmentedGrammar, Symbol) -> @set.Set[Int]
 
 pub fn follow_set(AugmentedGrammar, Int) -> @set.Set[Int]
+
+pub fn generate_parse_table(@grammar.Grammar) -> Result[(ParseTable, Array[ConflictReport]), String]
 
 pub fn goto_set(AugmentedGrammar, @set.Set[LRItem], Symbol) -> @set.Set[LRItem]
 
@@ -55,6 +59,8 @@ pub(all) struct AugmentedGrammar {
   productions : Array[Production]
   terminal_patterns : Map[Int, TerminalDef]
   extras : Array[Int]
+  prec_table : Map[Int, (Int, @grammar.PrecKind)]
+  nt_metas : Array[SymbolMeta]
 }
 
 pub(all) struct BodySymbol {
@@ -100,6 +106,12 @@ pub(all) struct LexerDfa {
   valid_tokens : Map[Int, Array[Int]]
 }
 
+pub(all) enum LookaheadConstraint {
+  NotFollowedBy(Array[Int])
+  FollowedBy(Array[Int])
+}
+pub impl Show for LookaheadConstraint
+
 pub(all) struct ParseTable {
   states : Int
   action : Map[(Int, Int), Array[Action]]
@@ -107,6 +119,9 @@ pub(all) struct ParseTable {
   productions : Array[Production]
   lexer_dfa : LexerDfa
   symbol_metadata : Array[SymbolMeta]
+  terminal_patterns : Map[Int, TerminalDef]
+  terminal_names : Map[Int, String]
+  extras : Array[Int]
 }
 
 pub(all) struct Production {
@@ -116,6 +131,7 @@ pub(all) struct Production {
   prec : Int?
   assoc : @grammar.PrecKind?
   rule_name : String
+  lookahead : LookaheadConstraint?
 }
 pub impl Show for Production
 

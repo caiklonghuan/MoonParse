@@ -162,6 +162,43 @@ fn terminal_def_to_json(td : TerminalDef) -> String {
     AnyChar => jobj([("type", jstr("anychar"))])
   }
 }
+
+///|
+/// DfaState → JSON
+fn dfa_state_to_json(state : DfaState) -> String {
+  // transitions: [[char_code, target_state], ...]
+  let tr_entries : Array[String] = []
+  for ch, tgt in state.transitions {
+    tr_entries.push(jarray(["\{ch.to_int()}", "\{tgt}"]))
+  }
+  let fields : Array[(String, String)] = [
+    ("id", "\{state.id}"),
+    ("tr", jarray(tr_entries)),
+  ]
+  match state.accept {
+    Some(tid) => fields.push(("acc", "\{tid}"))
+    None => ()
+  }
+  jobj(fields)
+}
+
+///|
+/// LexerDfa → JSON
+fn lexer_dfa_to_json(dfa : LexerDfa) -> String {
+  let states_json = jarray(dfa.states.map(dfa_state_to_json))
+  // valid_tokens: [[lr_state, [tid, ...]], ...]
+  let vt_entries : Array[String] = []
+  for lr_state, tids in dfa.valid_tokens {
+    let tids_json = jarray(tids.map(fn(t) { "\{t}" }))
+    vt_entries.push(jarray(["\{lr_state}", tids_json]))
+  }
+  jobj([
+    ("states", states_json),
+    ("start", "\{dfa.start}"),
+    ("vt", jarray(vt_entries)),
+  ])
+}
+
 // 公开 API
 
 ///|
@@ -247,6 +284,7 @@ pub fn table_to_json(table : ParseTable) -> String {
     ("terminal_patterns", tp_json),
     ("terminal_names", tn_json),
     ("extras", extras_json),
+    ("lexer_dfa", lexer_dfa_to_json(table.lexer_dfa)),
   ])
 }
 
@@ -980,5 +1018,252 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
   } catch {
     UnexpectedEof(msg) => Err("deserialize_table: unexpected EOF at \{msg}")
     InvalidData(msg) => Err("deserialize_table: invalid data: \{msg}")
+  }
+}
+
+///|
+// JSON 反序列化
+//
+// 将 `table_to_json` 的输出还原为 ParseTable（用于预编译表的快速加载）。
+// 注意：`lookahead` 约束不做往返（运行时不需要），其余字段完整重建。
+
+///|
+/// JSON 解析错误（内部 suberror，仅在 `table_from_json` 内部传播）
+priv suberror JsonTableError {
+  JBadField(String)
+  JBadType(String)
+}
+
+///|
+/// 取对象字段，不存在时抛错
+fn jfield(obj : Map[String, Json], key : String) -> Json raise JsonTableError {
+  match obj.get(key) {
+    Some(v) => v
+    None => raise JBadField("missing key: \{key}")
+  }
+}
+
+///|
+/// 取 Int 字段（Number → to_int）
+fn jint(j : Json) -> Int raise JsonTableError {
+  match j {
+    Number(n, ..) => n.to_int()
+    _ => raise JBadType("expected number, got \{j}")
+  }
+}
+
+///|
+/// 取 String 字段
+fn jstr_v(j : Json) -> String raise JsonTableError {
+  match j {
+    String(s) => s
+    _ => raise JBadType("expected string, got \{j}")
+  }
+}
+
+///|
+/// 取 Bool 字段
+fn jbool(j : Json) -> Bool raise JsonTableError {
+  match j {
+    True => true
+    False => false
+    _ => raise JBadType("expected bool, got \{j}")
+  }
+}
+
+///|
+/// 取 Array 字段
+fn jarr(j : Json) -> Array[Json] raise JsonTableError {
+  match j {
+    Array(a) => a
+    _ => raise JBadType("expected array, got \{j}")
+  }
+}
+
+///|
+/// 取 Object 字段
+fn jobj_v(j : Json) -> Map[String, Json] raise JsonTableError {
+  match j {
+    Object(o) => o
+    _ => raise JBadType("expected object, got \{j}")
+  }
+}
+
+///|
+fn json_to_symbol(j : Json) -> Symbol raise JsonTableError {
+  let o = jobj_v(j)
+  match jstr_v(jfield(o, "type")) {
+    "terminal" => Terminal(jint(jfield(o, "id")))
+    "nonterminal" => NonTerminal(jint(jfield(o, "id")))
+    "eoi" => EndOfInput
+    t => raise JBadField("unknown symbol type: \{t}")
+  }
+}
+
+///|
+fn json_to_body_symbol(j : Json) -> BodySymbol raise JsonTableError {
+  let o = jobj_v(j)
+  let symbol = json_to_symbol(jfield(o, "symbol"))
+  let field_name = match o.get("field_name") {
+    Some(String(s)) => Some(s)
+    _ => None
+  }
+  { symbol, field_name }
+}
+
+///|
+fn json_to_action(j : Json) -> Action raise JsonTableError {
+  let o = jobj_v(j)
+  match jstr_v(jfield(o, "type")) {
+    "shift" => Shift(jint(jfield(o, "state")))
+    "reduce" => Reduce(jint(jfield(o, "production")))
+    "accept" => Accept
+    t => raise JBadField("unknown action type: \{t}")
+  }
+}
+
+///|
+fn json_to_production(j : Json) -> Production raise JsonTableError {
+  let o = jobj_v(j)
+  let id = jint(jfield(o, "id"))
+  let head = jint(jfield(o, "head"))
+  let body = jarr(jfield(o, "body")).map(json_to_body_symbol)
+  let rule_name = jstr_v(jfield(o, "rule_name"))
+  let prec : Int? = match o.get("prec") {
+    Some(n) => Some(jint(n))
+    None => None
+  }
+  let assoc : @grammar.PrecKind? = match o.get("assoc") {
+    Some(String("left")) => Some(@grammar.PrecKind::Left)
+    Some(String("right")) => Some(@grammar.PrecKind::Right)
+    Some(String("nonassoc")) => Some(@grammar.PrecKind::Nonassoc)
+    Some(String("dynamic")) => Some(@grammar.PrecKind::Dynamic)
+    _ => None
+  }
+  { id, head, body, rule_name, prec, assoc, lookahead: None }
+}
+
+///|
+fn json_to_terminal_def(j : Json) -> TerminalDef raise JsonTableError {
+  let o = jobj_v(j)
+  match jstr_v(jfield(o, "type")) {
+    "literal" => Literal(jstr_v(jfield(o, "value")))
+    "regex" => Regex(jstr_v(jfield(o, "value")))
+    "anychar" => AnyChar
+    t => raise JBadField("unknown terminal_def type: \{t}")
+  }
+}
+
+///|
+fn json_to_dfa_state(j : Json) -> DfaState raise JsonTableError {
+  let o = jobj_v(j)
+  let id = jint(jfield(o, "id"))
+  let transitions : Map[Char, DfaStateId] = Map::new()
+  for pair_j in jarr(jfield(o, "tr")) {
+    let pair = jarr(pair_j)
+    guard pair.length() == 2 else { raise JBadType("dfa_state tr pair") }
+    let ch_code = jint(pair[0])
+    let tgt = jint(pair[1])
+    transitions.set(ch_code.unsafe_to_char(), tgt)
+  }
+  let accept : TerminalId? = match o.get("acc") {
+    Some(n) => Some(jint(n))
+    None => None
+  }
+  { id, transitions, accept }
+}
+
+///|
+fn json_to_lexer_dfa(j : Json) -> LexerDfa raise JsonTableError {
+  let o = jobj_v(j)
+  let states = jarr(jfield(o, "states")).map(json_to_dfa_state)
+  let start = jint(jfield(o, "start"))
+  let valid_tokens : Map[StateId, Array[TerminalId]] = Map::new()
+  for pair_j in jarr(jfield(o, "vt")) {
+    let pair = jarr(pair_j)
+    guard pair.length() == 2 else { raise JBadType("lexer_dfa vt pair") }
+    let lr_state = jint(pair[0])
+    let tids = jarr(pair[1]).map(jint)
+    valid_tokens.set(lr_state, tids)
+  }
+  { states, start, valid_tokens }
+}
+
+///|
+/// 从 `table_to_json` 的输出还原 ParseTable。
+///
+/// 注意：`Production.lookahead` 不做往返，重建后均为 `None`（运行时不需要）。
+pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
+  let j = try @json.parse(json_str) catch {
+    err => return Err("table_from_json: JSON parse error: \{err}")
+  }
+  try {
+    let root = jobj_v(j)
+
+    let states = jint(jfield(root, "states"))
+
+    // productions
+    let productions = jarr(jfield(root, "productions")).map(json_to_production)
+
+    // action table
+    let action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
+    for entry_j in jarr(jfield(root, "action")) {
+      let o = jobj_v(entry_j)
+      let state = jint(jfield(o, "state"))
+      let terminal = jint(jfield(o, "terminal"))
+      let acts = jarr(jfield(o, "actions")).map(json_to_action)
+      action.set((state, terminal), acts)
+    }
+
+    // goto table
+    let goto_table : Map[(StateId, NonTerminalId), StateId] = Map::new()
+    for entry_j in jarr(jfield(root, "goto")) {
+      let o = jobj_v(entry_j)
+      let state = jint(jfield(o, "state"))
+      let nt = jint(jfield(o, "nonterminal"))
+      let target = jint(jfield(o, "target"))
+      goto_table.set((state, nt), target)
+    }
+
+    // symbol_metadata
+    let symbol_metadata : Array[SymbolMeta] = []
+    for m_j in jarr(jfield(root, "symbol_metadata")) {
+      let o = jobj_v(m_j)
+      let name = jstr_v(jfield(o, "name"))
+      let is_named = jbool(jfield(o, "is_named"))
+      symbol_metadata.push({ name, is_named })
+    }
+
+    // terminal_patterns
+    let terminal_patterns : Map[TerminalId, TerminalDef] = Map::new()
+    for entry_j in jarr(jfield(root, "terminal_patterns")) {
+      let o = jobj_v(entry_j)
+      let id = jint(jfield(o, "id"))
+      let def = json_to_terminal_def(jfield(o, "pattern"))
+      terminal_patterns.set(id, def)
+    }
+
+    // terminal_names
+    let terminal_names : Map[TerminalId, String] = Map::new()
+    for entry_j in jarr(jfield(root, "terminal_names")) {
+      let o = jobj_v(entry_j)
+      let id = jint(jfield(o, "id"))
+      let name = jstr_v(jfield(o, "name"))
+      terminal_names.set(id, name)
+    }
+
+    // extras
+    let extras : Array[TerminalId] = []
+    for e_j in jarr(jfield(root, "extras")) {
+      extras.push(jint(e_j))
+    }
+
+    // lexer_dfa
+    let lexer_dfa = json_to_lexer_dfa(jfield(root, "lexer_dfa"))
+
+    Ok({ states, action, goto_table, productions, lexer_dfa, symbol_metadata, terminal_patterns, terminal_names, extras })
+  } catch {
+    JBadField(msg) => Err("table_from_json: \{msg}")
+    JBadType(msg) => Err("table_from_json: \{msg}")
   }
 }

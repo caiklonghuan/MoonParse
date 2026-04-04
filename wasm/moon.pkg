@@ -14,6 +14,8 @@ options(
       // 显式列出要暴露给 JS 的 pub fn
       "exports": [
         "parser_create_from_dsl",
+        "parser_create_from_json",
+        "parser_table_to_json",
         "parser_free",
         "parse_full",
         "tree_to_json",
