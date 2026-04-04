@@ -437,20 +437,9 @@ fn GlrEngine::run_shift(
 ) -> Array[GssRef] {
   let next_tops : Array[GssRef] = []
 
-  // 构造叶节点（所有 Shift 路径共享同一 token，CstNode 不可变可安全共享）
+  // ep 从 tok 和 cur_point 计算，各路径相同；leaf 在循环内按栈顶 state 分别构造，
+  // 保证 parse_state 正确（单路径无歧义时内部节点非 fragile，leaf 可增量复用）。
   let ep = bytes_to_point(input, tok.start_byte, cur_point, tok.end_byte)
-  let leaf = CstNode::leaf(
-    tok.terminal_id,
-    false,
-    tok.start_byte,
-    tok.end_byte,
-    cur_point,
-    ep,
-    0, // parse_state：TODO 增量复用时填入实际 LR 状态
-    tok.lookahead_bytes,
-    tok.is_keyword,
-    false,
-  )
 
   // 对每个活跃栈顶，收集所有 Shift 动作
   for top_ref in self.active_tops {
@@ -461,6 +450,18 @@ fn GlrEngine::run_shift(
         for act in acts {
           match act {
             Shift(next_state) => {
+              let leaf = CstNode::leaf(
+                tok.terminal_id,
+                false,
+                tok.start_byte,
+                tok.end_byte,
+                cur_point,
+                ep,
+                state, // parse_state：当前栈顶 LR 状态
+                tok.lookahead_bytes,
+                tok.is_keyword,
+                false,
+              )
               let link : GssLink = {
                 predecessor: top_ref,
                 node: Some(leaf),

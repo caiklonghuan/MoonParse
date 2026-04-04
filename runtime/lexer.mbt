@@ -154,7 +154,7 @@ fn LexerEngine::run_dfa(
     terminal_id: best_tid,
     start_byte: pos,
     end_byte: best_pos,
-    lookahead_bytes: best_pos, // TODO: 应为 DFA 实际读到的最远位置
+    lookahead_bytes: cur_pos, // DFA 实际停止位置（>= end_byte，增量边界检查用）
     is_keyword: false, // TODO: 两阶段 keyword 检查
     is_extra,
   }
