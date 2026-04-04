@@ -1,5 +1,6 @@
 
 import {
+  "caiklonghuan/MoonParse/grammar",
   "caiklonghuan/MoonParse/runtime",
   "caiklonghuan/MoonParse/tablegen",
 }
@@ -10,8 +11,18 @@ options(
       // use-js-builtin-string 使 String 等价于 JS String (ref extern)
       // 要求: Chrome >= 117 / Node.js >= 22 / Deno >= 1.37
       "use-js-builtin-string": true,
-      // 显式列出要暴露给 JS 的 pub fn（此处为验证实验函数）
-      "exports": [ "echo_string", "string_len" ],
+      // 显式列出要暴露给 JS 的 pub fn
+      "exports": [
+        "parser_create_from_dsl",
+        "parser_free",
+        "parse_full",
+        "tree_to_json",
+        "tree_free",
+        "parse_incremental",
+        "tree_root_sexp",
+        "tree_error_summary",
+        "moonparse_version"
+      ],
       "export-memory-name": "moonbit.memory",
     },
   },
