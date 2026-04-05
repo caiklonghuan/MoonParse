@@ -66,19 +66,58 @@ fn write_json_string(buf : StringBuilder, s : String) -> Unit {
 }
 
 ///|
-// ── WASM 导出 ────────────────────────────────────────────────────
+// WASM 导出
+
+///|
+/// 最近一次 query_compile 失败时的错误信息（JSON 对象字符串）。
+/// 格式：{"offset": 5, "message": "expected ')'"}
+/// 编译成功时清空为 ""。
+let last_compile_error : Array[String] = [""]
 
 ///|
 /// 将 S-表达式模式字符串编译为查询对象，返回句柄 ID（失败返回 -1）。
 ///
 /// JS 调用：
 ///   const qid = query_compile("(identifier) @name");
-///   if (qid < 0) { /* 编译失败 */ }
+///   if (qid < 0) {
+///     const err = JSON.parse(query_compile_error_last());
+///     console.error(`offset ${err.offset}: ${err.message}`);
+///   }
 pub fn query_compile(pattern_str : String) -> Int {
   match @query.compile(pattern_str) {
-    Ok(q) => query_registry.register({ query: q })
-    Err(_) => -1
+    Ok(q) => {
+      last_compile_error[0] = ""
+      query_registry.register({ query: q })
+    }
+    Err(@query.ParseError(offset, msg)) => {
+      let buf = StringBuilder::new()
+      buf.write_string("{\"offset\":")
+      buf.write_string(offset.to_string())
+      buf.write_string(",\"message\":")
+      write_json_string(buf, msg)
+      buf.write_char('}')
+      last_compile_error[0] = buf.to_string()
+      -1
+    }
+    Err(@query.ExecError(msg)) => {
+      let buf = StringBuilder::new()
+      buf.write_string("{\"offset\":0,\"message\":")
+      write_json_string(buf, msg)
+      buf.write_char('}')
+      last_compile_error[0] = buf.to_string()
+      -1
+    }
   }
+}
+
+///|
+/// 返回最近一次 query_compile 失败的错误详情（JSON 对象字符串）。
+/// 若上次编译成功，返回空字符串 ""。
+///
+/// JS 调用：
+///   const errJson = query_compile_error_last(); // "" 或 JSON string
+pub fn query_compile_error_last() -> String {
+  last_compile_error[0]
 }
 
 ///|
