@@ -1,23 +1,5 @@
 ///|
 // Query WASM 导出
-//
-// 暴露三组 API：
-//   query_compile(pattern_str) -> query_id | -1
-//   query_exec(query_id, tree_id) -> result_json | ""
-//   query_free(query_id) -> Unit
-//
-// result_json 格式（JSON 数组）：
-//   [
-//     { "match_id": 0, "capture": "fn", "start": 0, "end": 3, "row": 0, "col": 0 },
-//     ...
-//   ]
-//
-// 设计决策：
-//   - 结果不注册为句柄，直接序列化为 JSON 字符串返回（与 tree_to_json 一致）。
-//   - exec 每次调用即时执行，结果一次性返回给 JS，不维护游标状态。
-
-///|
-// ── 内部辅助 ────────────────────────────────────────────────────
 
 ///|
 /// 序列化单条 CaptureResult 为 JSON object 字符串

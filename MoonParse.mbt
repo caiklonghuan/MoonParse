@@ -10,7 +10,12 @@ pub fn generate(grammar_dsl : String) -> String {
   let g = match @grammar.parse_grammar(grammar_dsl) {
     Success(g) => g
     Error(err) =>
-      return "Error: parse failed at " + err.location.line.to_string() + ":" + err.location.column.to_string() + ": " + err.message
+      return "Error: parse failed at " +
+        err.location.line.to_string() +
+        ":" +
+        err.location.column.to_string() +
+        ": " +
+        err.message
   }
   let (table, _reports) = match @tablegen.generate_parse_table(g) {
     Ok(r) => r

@@ -46,6 +46,8 @@ let json_table : @tablegen.ParseTable = make_json_table()
 /// 用内置 JSON 语法解析 source，返回 CST 根节点。
 ///
 /// 解析结果始终为 Ok（语法错误以 ERROR 节点形式嵌入 CST）。
-pub fn parse_json(source : String) -> Result[@runtime.CstNode, @runtime.ParseError] {
+pub fn parse_json(
+  source : String,
+) -> Result[@runtime.CstNode, @runtime.ParseError] {
   @runtime.parse(json_table, source)
 }

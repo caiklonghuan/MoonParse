@@ -4,4 +4,3 @@ import {
   "caiklonghuan/MoonParse/runtime" @runtime,
   "caiklonghuan/MoonParse/grammars" @grammars,
 }
-

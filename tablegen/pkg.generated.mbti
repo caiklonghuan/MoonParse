@@ -39,6 +39,8 @@ pub fn resolve_conflicts(ParseTable, AugmentedGrammar) -> (ParseTable, Array[Con
 
 pub fn serialize_table(ParseTable) -> Bytes
 
+pub fn table_from_json(String) -> Result[ParseTable, String]
+
 pub fn table_to_json(ParseTable) -> String
 
 // Errors

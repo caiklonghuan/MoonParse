@@ -1194,7 +1194,7 @@ fn json_to_lexer_dfa(j : Json) -> LexerDfa raise JsonTableError {
 ///
 /// 注意：`Production.lookahead` 不做往返，重建后均为 `None`（运行时不需要）。
 pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
-  let j = try @json.parse(json_str) catch {
+  let j = @json.parse(json_str) catch {
     err => return Err("table_from_json: JSON parse error: \{err}")
   }
   try {
@@ -1261,7 +1261,17 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
     // lexer_dfa
     let lexer_dfa = json_to_lexer_dfa(jfield(root, "lexer_dfa"))
 
-    Ok({ states, action, goto_table, productions, lexer_dfa, symbol_metadata, terminal_patterns, terminal_names, extras })
+    Ok({
+      states,
+      action,
+      goto_table,
+      productions,
+      lexer_dfa,
+      symbol_metadata,
+      terminal_patterns,
+      terminal_names,
+      extras,
+    })
   } catch {
     JBadField(msg) => Err("table_from_json: \{msg}")
     JBadType(msg) => Err("table_from_json: \{msg}")
