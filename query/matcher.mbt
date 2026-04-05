@@ -33,9 +33,86 @@ fn get_field(field_names : Array[String?], child_idx : Int) -> String? {
 // 子节点匹配
 
 ///|
-/// 在 node.children 中按顺序匹配 pattern_children 列表。
+/// match_children 的回溯递归核心。
 ///
-/// 跳过 extra 节点；若模式有字段约束，则同时校验字段名。
+/// 从 pattern_children[pc_idx] 开始，在 semantic[sem_idx..] 中寻找匹配位置。
+/// 对每个候选位置先做字段约束和模式匹配，再递归匹配剩余模式；
+/// 若递归失败则回退并尝试下一个候选位置（回溯）。
+/// 成功时将本次捕获追加到 captures，返回 true；穷举所有候选后仍失败返回 false。
+fn match_children_from(
+  pattern_children : Array[PatternChild],
+  pc_idx : Int,
+  semantic : Array[(Int, @runtime.CstNode)],
+  sem_idx : Int,
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+  match_id : Int,
+  captures : Array[CaptureResult],
+) -> Bool {
+  // 所有模式均已匹配成功
+  if pc_idx >= pattern_children.length() {
+    return true
+  }
+  let pc = pattern_children[pc_idx]
+  let mut i = sem_idx
+  while i < semantic.length() {
+    let (real_idx, child) = semantic[i]
+    // 字段约束检查
+    let field_ok = match pc.field {
+      None => true
+      Some(f) =>
+        match get_field(node.field_names, real_idx) {
+          Some(cf) => cf == f
+          None => false
+        }
+    }
+    if field_ok {
+      // 模式匹配（捕获写入临时缓冲）
+      let this_captures : Array[CaptureResult] = []
+      if try_match(pc.pattern, child, input, table, match_id, this_captures) {
+        match pc.capture {
+          Some(name) =>
+            this_captures.push({ match_id, capture_name: name, node: child })
+          None => ()
+        }
+        // 递归匹配剩余模式；失败时回溯，尝试下一个 sem_idx
+        let rest_captures : Array[CaptureResult] = []
+        if match_children_from(
+          pattern_children,
+          pc_idx + 1,
+          semantic,
+          i + 1,
+          node,
+          input,
+          table,
+          match_id,
+          rest_captures,
+        ) {
+          for c in this_captures {
+            captures.push(c)
+          }
+          for c in rest_captures {
+            captures.push(c)
+          }
+          return true
+        }
+        // 回溯：当前位置不行，继续尝试下一个候选
+      }
+    }
+    i = i + 1
+  }
+  false
+}
+
+///|
+/// 在 node.children 中按顺序匹配 pattern_children 列表（有序子集匹配，带回溯）。
+///
+/// 模式子节点按声明顺序依次在 CST 语义子节点序列中匹配：
+/// - 允许跳过 CST 中间的语义节点（模式无需覆盖所有子节点）；
+/// - 当某个候选位置导致后续模式失败时，会回溯并尝试下一个候选位置；
+/// - extra 节点（空白/注释）始终被跳过；
+/// - 若模式有字段约束，则同时校验字段名。
 /// 成功时将本次捕获写入 captures，返回 true；任一子模式失败返回 false。
 fn match_children(
   pattern_children : Array[PatternChild],
@@ -53,54 +130,27 @@ fn match_children(
       semantic.push((i, child))
     }
   }
-
-  // 模式子节点必须完全匹配（pattern 数量 <= 语义子节点数）
   if pattern_children.length() > semantic.length() {
     return false
   }
-
-  // 尝试从 semantic 中顺序匹配每个 PatternChild
   let sub_captures : Array[CaptureResult] = []
-  let mut sem_idx = 0
-  for pc in pattern_children {
-    // 找到下一个满足字段约束（若有）的语义子节点
-    let mut found = false
-    while sem_idx < semantic.length() {
-      let (real_idx, child) = semantic[sem_idx]
-      sem_idx = sem_idx + 1
-      // 字段约束检查
-      let field_ok = match pc.field {
-        None => true
-        Some(f) =>
-          match get_field(node.field_names, real_idx) {
-            Some(cf) => cf == f
-            None => false
-          }
-      }
-      if not(field_ok) {
-        continue
-      }
-      // 模式匹配
-      if try_match(pc.pattern, child, input, table, match_id, sub_captures) {
-        // 捕获标注
-        match pc.capture {
-          Some(name) =>
-            sub_captures.push({ match_id, capture_name: name, node: child })
-          None => ()
-        }
-        found = true
-        break
-      }
+  if match_children_from(
+    pattern_children,
+    0,
+    semantic,
+    0,
+    node,
+    input,
+    table,
+    match_id,
+    sub_captures,
+  ) {
+    for c in sub_captures {
+      captures.push(c)
     }
-    if not(found) {
-      return false
-    }
+    return true
   }
-  // 全部匹配成功，提交 sub_captures
-  for c in sub_captures {
-    captures.push(c)
-  }
-  true
+  false
 }
 
 ///|
@@ -144,7 +194,7 @@ fn try_match_top(
   pat_idx : Int,
   pattern : QueryPattern,
   top_capture : String?,
-  predicates : Array[(Int, Predicate)],
+  predicates : Array[Array[Predicate]],
   node : @runtime.CstNode,
   input : String,
   table : @tablegen.ParseTable,
@@ -160,25 +210,23 @@ fn try_match_top(
     Some(name) => captures.push({ match_id, capture_name: name, node })
     None => ()
   }
-  // 谓词后置过滤
-  for pred in predicates {
-    let (pidx, p) = pred
-    if pidx != pat_idx {
-      continue
-    }
-    match p {
-      Eq(cap_name, expected) => {
-        let mut ok = false
-        for c in captures {
-          if c.capture_name == cap_name {
-            if node_text(c.node, input) == expected {
-              ok = true
+  // 谓词后置过滤：直接索引当前模式的谓词列表，无需全表扫描
+  if pat_idx < predicates.length() {
+    for p in predicates[pat_idx] {
+      match p {
+        Eq(cap_name, expected) => {
+          let mut ok = false
+          for c in captures {
+            if c.capture_name == cap_name {
+              if node_text(c.node, input) == expected {
+                ok = true
+              }
+              break
             }
-            break
           }
-        }
-        if not(ok) {
-          return false
+          if not(ok) {
+            return false
+          }
         }
       }
     }

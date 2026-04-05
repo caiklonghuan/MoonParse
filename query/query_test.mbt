@@ -160,10 +160,10 @@ test "compile/eq_predicate" {
   match compile("(identifier) @name\n#eq? @name \"add\"") {
     Ok(q) => {
       assert_eq(q.patterns.length(), 1)
+      // predicates 按 pat_idx 分组，长度与 patterns 相同
       assert_eq(q.predicates.length(), 1)
-      let (pidx, pred) = q.predicates[0]
-      assert_eq(pidx, 0)
-      assert_true(pred is Eq("name", "add"))
+      assert_eq(q.predicates[0].length(), 1)
+      assert_true(q.predicates[0][0] is Eq("name", "add"))
     }
     Err(e) => fail("unexpected error: \{e}")
   }
@@ -219,7 +219,6 @@ test "compile/error_unclosed_paren" {
   match compile("(identifier") {
     Ok(_) => fail("expected parse error")
     Err(ParseError(_, _)) => ()
-    Err(e) => fail("unexpected error type: \{e}")
   }
 }
 
@@ -228,7 +227,6 @@ test "compile/error_unexpected_char" {
   match compile("$foo") {
     Ok(_) => fail("expected parse error")
     Err(ParseError(_, _)) => ()
-    Err(e) => fail("unexpected error type: \{e}")
   }
 }
 
@@ -237,7 +235,6 @@ test "compile/error_predicate_without_pattern" {
   match compile("#eq? @name \"foo\"") {
     Ok(_) => fail("expected parse error")
     Err(ParseError(_, _)) => ()
-    Err(e) => fail("unexpected error type: \{e}")
   }
 }
 

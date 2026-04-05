@@ -107,9 +107,21 @@ pub fn parser_free(parser_id : Int) -> Unit {
 }
 
 ///|
-/// 从预编译 JSON 字符串（由 `parser_table_to_json` 导出）快速还原解析器。
+/// 返回该解析器创建时使用的 DSL 字符串。
 ///
-/// 开发流程：
+/// 返回值语义：
+/// - DSL 编译（parser_create_from_dsl）：返回原始 DSL 字符串。
+/// - JSON 加载（parser_create_from_json）：返回 ""（DSL 信息未随 JSON 保存）。
+/// - parser_id 无效：返回 ""。
+pub fn parser_get_dsl(parser_id : Int) -> String {
+  match parser_registry.get(parser_id) {
+    Some(e) => e.dsl
+    None => ""
+  }
+}
+
+///|
+/// 从预编译 JSON 字符串（由 `parser_table_to_json` 导出）快速还原解析器。
 ///   1. 调用 `parser_create_from_dsl(dsl)` → parser_id（一次性编译，慢）
 ///   2. 调用 `parser_table_to_json(parser_id)` → json（保存到 JS 代码中）
 ///   3. 之后用 `parser_create_from_json(json)` 直接加载（无需重新编译，快）

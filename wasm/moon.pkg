@@ -17,6 +17,7 @@ options(
         "parser_create_from_json",
         "parser_table_to_json",
         "parser_free",
+        "parser_get_dsl",
         "parse_full",
         "tree_to_json",
         "tree_free",

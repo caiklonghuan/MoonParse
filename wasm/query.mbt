@@ -6,63 +6,27 @@
 fn capture_to_json(c : @query.CaptureResult, tree : TreeEntry) -> String {
   let node = c.node
   let buf = StringBuilder::new()
-  buf.write_string("{")
-  buf.write_string("\"match_id\":")
-  buf.write_string(c.match_id.to_string())
-  buf.write_string(",\"capture\":\"")
-  // capture_name 已由 parser 保证只含安全字符，无需转义
-  buf.write_string(c.capture_name)
-  buf.write_string("\"")
-  buf.write_string(",\"start\":")
-  buf.write_string(node.start_byte.to_string())
-  buf.write_string(",\"end\":")
-  buf.write_string(node.end_byte.to_string())
-  buf.write_string(",\"start_row\":")
-  buf.write_string(node.start_point.row.to_string())
-  buf.write_string(",\"start_col\":")
-  buf.write_string(node.start_point.column.to_string())
-  buf.write_string(",\"end_row\":")
-  buf.write_string(node.end_point.row.to_string())
-  buf.write_string(",\"end_col\":")
-  buf.write_string(node.end_point.column.to_string())
-  buf.write_string(",\"text\":")
-  let text = tree.input[node.start_byte:node.end_byte].to_string()
-  write_json_string(buf, text)
-  buf.write_string("}")
+  buf.write_char('{')
+  write_kvi(buf, "match_id", c.match_id)
+  buf.write_char(',')
+  // capture_name 经过完整 JSON 转义（write_kvs），而非依赖"字段名已安全"的隐式假设。
+  write_kvs(buf, "capture", c.capture_name)
+  buf.write_char(',')
+  write_kvi(buf, "start", node.start_byte)
+  buf.write_char(',')
+  write_kvi(buf, "end", node.end_byte)
+  buf.write_char(',')
+  write_kvi(buf, "start_row", node.start_point.row)
+  buf.write_char(',')
+  write_kvi(buf, "start_col", node.start_point.column)
+  buf.write_char(',')
+  write_kvi(buf, "end_row", node.end_point.row)
+  buf.write_char(',')
+  write_kvi(buf, "end_col", node.end_point.column)
+  buf.write_char(',')
+  write_kvs(buf, "text", tree.input[node.start_byte:node.end_byte].to_string())
+  buf.write_char('}')
   buf.to_string()
-}
-
-///|
-/// 将字符串以 JSON 字符串形式（带双引号）写入 buf，进行必要的转义
-fn write_json_string(buf : StringBuilder, s : String) -> Unit {
-  buf.write_char('"')
-  for i in 0..<s.length() {
-    let c = s[i].to_int().unsafe_to_char()
-    match c {
-      '"' => {
-        buf.write_char('\\')
-        buf.write_char('"')
-      }
-      '\\' => {
-        buf.write_char('\\')
-        buf.write_char('\\')
-      }
-      '\n' => {
-        buf.write_char('\\')
-        buf.write_char('n')
-      }
-      '\r' => {
-        buf.write_char('\\')
-        buf.write_char('r')
-      }
-      '\t' => {
-        buf.write_char('\\')
-        buf.write_char('t')
-      }
-      _ => buf.write_char(c)
-    }
-  }
-  buf.write_char('"')
 }
 
 ///|
@@ -72,6 +36,10 @@ fn write_json_string(buf : StringBuilder, s : String) -> Unit {
 /// 最近一次 query_compile 失败时的错误信息（JSON 对象字符串）。
 /// 格式：{"offset": 5, "message": "expected ')'"}
 /// 编译成功时清空为 ""。
+///
+/// **线程安全：** WASM MVP 为单线程模型，此全局变量无竞争风险。
+/// 若将来在 Node.js worker_threads 或 Wasm Component Model 共享内存场景下
+/// 并发调用 query_compile，需改为线程本地存储或加锁保护。
 let last_compile_error : Array[String] = [""]
 
 ///|
@@ -94,15 +62,7 @@ pub fn query_compile(pattern_str : String) -> Int {
       buf.write_string("{\"offset\":")
       buf.write_string(offset.to_string())
       buf.write_string(",\"message\":")
-      write_json_string(buf, msg)
-      buf.write_char('}')
-      last_compile_error[0] = buf.to_string()
-      -1
-    }
-    Err(@query.ExecError(msg)) => {
-      let buf = StringBuilder::new()
-      buf.write_string("{\"offset\":0,\"message\":")
-      write_json_string(buf, msg)
+      write_jstr(buf, msg)
       buf.write_char('}')
       last_compile_error[0] = buf.to_string()
       -1

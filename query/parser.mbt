@@ -228,11 +228,7 @@ fn Parser::parse_child(self : Parser) -> PatternChild raise ParseErr {
 
 ///|
 /// 解析谓词：`#eq? '@' capture_name '"' literal '"'`
-/// pattern_index 为谓词关联的顶层模式编号（最近一条模式）
-fn Parser::parse_predicate(
-  self : Parser,
-  pattern_index : Int,
-) -> (Int, Predicate) raise ParseErr {
+fn Parser::parse_predicate(self : Parser) -> Predicate raise ParseErr {
   self.expect('#')
   let buf = StringBuilder::new()
   while not(self.at_end()) && is_pred_char(self.cur()) {
@@ -246,7 +242,7 @@ fn Parser::parse_predicate(
       let capture_name = self.read_capture_name()
       self.skip_ws()
       let literal = self.read_string()
-      (pattern_index, Eq(capture_name, literal))
+      Eq(capture_name, literal)
     }
     _ => raise PE(self.pos, "unknown predicate '#\{pred_name}'")
   }
@@ -265,7 +261,7 @@ fn Parser::parse_predicate(
 pub fn compile(src : String) -> Result[CompiledQuery, QueryError] {
   let p = Parser::new(src)
   let patterns : Array[(QueryPattern, String?)] = []
-  let predicates : Array[(Int, Predicate)] = []
+  let predicates : Array[Array[Predicate]] = []
   try {
     p.skip_ws()
     while not(p.at_end()) {
@@ -281,13 +277,14 @@ pub fn compile(src : String) -> Result[CompiledQuery, QueryError] {
             None
           }
           patterns.push((pat, top_capture))
+          predicates.push([]) // 为该模式初始化空谓词列表
         }
         '#' => {
           if patterns.is_empty() {
             raise PE(p.pos, "predicate must follow a pattern")
           }
-          let pred = p.parse_predicate(patterns.length() - 1)
-          predicates.push(pred)
+          let pred = p.parse_predicate()
+          predicates[patterns.length() - 1].push(pred)
         }
         c => raise PE(p.pos, "unexpected character '\{c}'")
       }

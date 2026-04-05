@@ -53,11 +53,10 @@ pub(all) struct CompiledQuery {
   /// 顶层模式列表：`(pattern, top_capture?)`
   /// - pattern     : 编译后的模式 AST
   /// - top_capture : `(expr) @name` 中的顶层捕获名，无则为 None
-  /// 两者合并为一个数组，类型系统保证等长不变式。
   patterns : Array[(QueryPattern, String?)]
-  /// 谓词列表：`(pattern_index, predicate)`
-  /// pattern_index 指向 `patterns` 中对应的顶层模式
-  predicates : Array[(Int, Predicate)]
+  /// 谓词列表（按顶层模式分组）：`predicates[i]` 为第 i 条顶层模式的谓词列表。
+  /// 长度始终等于 `patterns.length()`，无谓词时为空数组 `[]`。
+  predicates : Array[Array[Predicate]]
 } derive(Show)
 
 ///|
@@ -76,8 +75,6 @@ pub(all) struct CaptureResult {
 pub(all) enum QueryError {
   /// 模式字符串语法错误（偏移 + 描述）
   ParseError(Int, String)
-  /// 执行时内部错误（理论上不应发生）
-  ExecError(String)
 } derive(Show)
 
 ///|
