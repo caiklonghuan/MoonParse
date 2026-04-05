@@ -9,6 +9,46 @@ import {
 // Values
 pub fn cst_to_json(@runtime.CstNode, String, @tablegen.ParseTable) -> String
 
+pub fn cursor_free(Int) -> Unit
+
+pub fn cursor_goto_first_child(Int) -> Int
+
+pub fn cursor_goto_next_sibling(Int) -> Int
+
+pub fn cursor_goto_parent(Int) -> Int
+
+pub fn cursor_new(Int) -> Int
+
+pub fn cursor_node_child_count(Int) -> Int
+
+pub fn cursor_node_end_byte(Int) -> Int
+
+pub fn cursor_node_end_col(Int) -> Int
+
+pub fn cursor_node_end_row(Int) -> Int
+
+pub fn cursor_node_extra(Int) -> Int
+
+pub fn cursor_node_field(Int) -> String
+
+pub fn cursor_node_is_error(Int) -> Int
+
+pub fn cursor_node_is_missing(Int) -> Int
+
+pub fn cursor_node_is_named(Int) -> Int
+
+pub fn cursor_node_named_child_count(Int) -> Int
+
+pub fn cursor_node_start_byte(Int) -> Int
+
+pub fn cursor_node_start_col(Int) -> Int
+
+pub fn cursor_node_start_row(Int) -> Int
+
+pub fn cursor_node_text(Int) -> String
+
+pub fn cursor_node_type(Int) -> String
+
 pub fn moonparse_version() -> String
 
 pub fn parse_full(Int, String) -> Int
@@ -17,7 +57,17 @@ pub fn parse_incremental(Int, Int, String, Int, Int, Int, Int, Int, Int, Int, In
 
 pub fn parser_create_from_dsl(String) -> Int
 
+pub fn parser_create_from_json(String) -> Int
+
 pub fn parser_free(Int) -> Unit
+
+pub fn parser_table_to_json(Int) -> String
+
+pub fn query_compile(String) -> Int
+
+pub fn query_exec(Int, Int) -> String
+
+pub fn query_free(Int) -> Unit
 
 pub fn tree_error_summary(Int) -> String
 

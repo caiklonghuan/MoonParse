@@ -17,7 +17,7 @@ fn write_sexp(
   node : @runtime.CstNode,
   input : String,
   table : @tablegen.ParseTable,
-  field : String?
+  field : String?,
 ) -> Unit {
   // field 前缀
   match field {
@@ -155,12 +155,11 @@ pub fn parse_full(parser_id : Int, source : String) -> Int {
 pub fn tree_to_json(tree_id : Int) -> String {
   match tree_registry.get(tree_id) {
     None => ""
-    Some(entry) => {
+    Some(entry) =>
       match parser_registry_for_tree(tree_id) {
         None => ""
         Some(table) => cst_to_json(entry.root, entry.input, table)
       }
-    }
   }
 }
 
@@ -195,7 +194,7 @@ pub fn parse_incremental(
   old_end_row : Int,
   old_end_col : Int,
   new_end_row : Int,
-  new_end_col : Int
+  new_end_col : Int,
 ) -> Int {
   let entry = match parser_registry.get(parser_id) {
     None => return -1

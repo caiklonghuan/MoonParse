@@ -99,3 +99,12 @@ priv struct CursorEntry {
 
 ///|
 let cursor_registry : Registry[CursorEntry] = Registry::new()
+
+///|
+/// 查询条目：持有已编译的 CompiledQuery
+priv struct QueryEntry {
+  query : @query.CompiledQuery
+}
+
+///|
+let query_registry : Registry[QueryEntry] = Registry::new()

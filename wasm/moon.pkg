@@ -1,6 +1,6 @@
-
 import {
   "caiklonghuan/MoonParse/grammar",
+  "caiklonghuan/MoonParse/query" @query,
   "caiklonghuan/MoonParse/runtime",
   "caiklonghuan/MoonParse/tablegen",
 }
@@ -10,8 +10,8 @@ options(
     "wasm-gc": {
       // use-js-builtin-string 使 String 等价于 JS String (ref extern)
       // 要求: Chrome >= 117 / Node.js >= 22 / Deno >= 1.37
-      "use-js-builtin-string": true,
       // 显式列出要暴露给 JS 的 pub fn
+      "export-memory-name": "moonbit.memory",
       "exports": [
         "parser_create_from_dsl",
         "parser_create_from_json",
@@ -43,9 +43,12 @@ options(
         "cursor_node_text",
         "cursor_node_field",
         "cursor_node_child_count",
-        "cursor_node_named_child_count"
+        "cursor_node_named_child_count",
+        "query_compile",
+        "query_exec",
+        "query_free",
       ],
-      "export-memory-name": "moonbit.memory",
+      "use-js-builtin-string": true,
     },
   },
 )

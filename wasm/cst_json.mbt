@@ -65,12 +65,13 @@ fn write_kvb(buf : StringBuilder, key : String, value : Bool) -> Unit {
 /// - 内部节点：symbol 是 NonTerminalId，从 symbol_metadata 查
 fn node_type_name(
   node : @runtime.CstNode,
-  table : @tablegen.ParseTable
+  table : @tablegen.ParseTable,
 ) -> String {
   if node.is_error {
     return "ERROR"
   }
-  if node.symbol == @runtime.sym_error || node.symbol == @runtime.sym_error_repeat {
+  if node.symbol == @runtime.sym_error ||
+    node.symbol == @runtime.sym_error_repeat {
     return "ERROR"
   }
   if node.children.is_empty() {
@@ -106,7 +107,7 @@ fn write_node(
   node : @runtime.CstNode,
   input : String,
   table : @tablegen.ParseTable,
-  field : String?
+  field : String?,
 ) -> Unit {
   buf.write_char('{')
   let mut comma = false
@@ -205,7 +206,7 @@ fn write_node(
 pub fn cst_to_json(
   node : @runtime.CstNode,
   input : String,
-  table : @tablegen.ParseTable
+  table : @tablegen.ParseTable,
 ) -> String {
   let buf = StringBuilder::new()
   write_node(buf, node, input, table, None)

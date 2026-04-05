@@ -105,7 +105,7 @@ pub fn cursor_goto_next_sibling(cursor_id : Int) -> Int {
 pub fn cursor_goto_parent(cursor_id : Int) -> Int {
   match cursor_registry.get(cursor_id) {
     None => 0
-    Some(cursor) => {
+    Some(cursor) =>
       if cursor.parent_nodes.is_empty() {
         0
       } else {
@@ -118,7 +118,6 @@ pub fn cursor_goto_parent(cursor_id : Int) -> Int {
         let _ = cursor.parent_fields.pop()
         1
       }
-    }
   }
 }
 
