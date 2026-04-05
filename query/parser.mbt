@@ -264,24 +264,23 @@ fn Parser::parse_predicate(
 /// ```
 pub fn compile(src : String) -> Result[CompiledQuery, QueryError] {
   let p = Parser::new(src)
-  let patterns : Array[QueryPattern] = []
+  let patterns : Array[(QueryPattern, String?)] = []
   let predicates : Array[(Int, Predicate)] = []
-  let top_captures : Array[String?] = []
   try {
     p.skip_ws()
     while not(p.at_end()) {
       match p.cur() {
         '(' | '"' | '_' => {
           let pat = p.parse_pattern()
-          patterns.push(pat)
           // 可选顶层捕获标注：pattern @capture_name
           p.skip_ws()
-          if not(p.at_end()) && p.cur() == '@' {
+          let top_capture : String? = if not(p.at_end()) && p.cur() == '@' {
             p.pos = p.pos + 1
-            top_captures.push(Some(p.read_capture_name()))
+            Some(p.read_capture_name())
           } else {
-            top_captures.push(None)
+            None
           }
+          patterns.push((pat, top_capture))
         }
         '#' => {
           if patterns.is_empty() {
@@ -294,7 +293,7 @@ pub fn compile(src : String) -> Result[CompiledQuery, QueryError] {
       }
       p.skip_ws()
     }
-    Ok({ patterns, predicates, top_captures })
+    Ok({ patterns, predicates })
   } catch {
     PE(offset, msg) => Err(ParseError(offset, msg))
   }

@@ -143,8 +143,8 @@ fn try_match(
 fn try_match_top(
   pat_idx : Int,
   pattern : QueryPattern,
+  top_capture : String?,
   predicates : Array[(Int, Predicate)],
-  top_captures : Array[String?],
   node : @runtime.CstNode,
   input : String,
   table : @tablegen.ParseTable,
@@ -156,11 +156,9 @@ fn try_match_top(
     return false
   }
   // 顶层 @capture 标注：将 node 本身加入捕获
-  if pat_idx < top_captures.length() {
-    match top_captures[pat_idx] {
-      Some(name) => captures.push({ match_id, capture_name: name, node })
-      None => ()
-    }
+  match top_capture {
+    Some(name) => captures.push({ match_id, capture_name: name, node })
+    None => ()
   }
   // 谓词后置过滤
   for pred in predicates {
@@ -206,13 +204,13 @@ fn walk(
   results : Array[CaptureResult],
 ) -> Unit {
   for i in 0..<query.patterns.length() {
-    let pat = query.patterns[i]
+    let (pat, top_capture) = query.patterns[i]
     let mid = match_counter[0]
     if try_match_top(
         i,
         pat,
+        top_capture,
         query.predicates,
-        query.top_captures,
         node,
         input,
         table,

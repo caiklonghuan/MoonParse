@@ -50,14 +50,14 @@ pub(all) enum Predicate {
 ///
 /// 一个查询字符串可包含多条并列的顶层模式，每条独立匹配、独立编号 match_id。
 pub(all) struct CompiledQuery {
-  /// 顶层模式列表（顺序对应模式在字符串中的出现顺序）
-  patterns : Array[QueryPattern]
+  /// 顶层模式列表：`(pattern, top_capture?)`
+  /// - pattern     : 编译后的模式 AST
+  /// - top_capture : `(expr) @name` 中的顶层捕获名，无则为 None
+  /// 两者合并为一个数组，类型系统保证等长不变式。
+  patterns : Array[(QueryPattern, String?)]
   /// 谓词列表：`(pattern_index, predicate)`
   /// pattern_index 指向 `patterns` 中对应的顶层模式
   predicates : Array[(Int, Predicate)]
-  /// 顶层模式自身的捕获标注：`(node_pattern) @capture_name`
-  /// top_captures[i] 对应 patterns[i] 的顶层 @capture，无则为 None
-  top_captures : Array[String?]
 } derive(Show)
 
 ///|

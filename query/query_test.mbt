@@ -1,14 +1,7 @@
 ///|
-// query_test.mbt — query 包黑盒测试
-//
-// 分两部分：
-//   Part 1: compile()   — S-表达式模式字符串 → CompiledQuery
-//   Part 2: exec()      — CompiledQuery × CST → CaptureResult[]
-//
-// 辅助函数：
-//   make_table(dsl)      → ParseTable（失败则 panic）
-//   parse_ok(dsl, input) → (CstNode, ParseTable)（失败则 panic）
-
+// query_test.mbt 
+// make_table(dsl)      → ParseTable（失败则 panic）
+// parse_ok(dsl, input) → (CstNode, ParseTable)（失败则 panic）
 // 辅助
 
 ///|
@@ -39,16 +32,15 @@ fn parse_ok(
 }
 
 ///|
-// ────────────────────────────────────────────────────────────────
-// Part 1: compile() — 模式编译器测试
-// ────────────────────────────────────────────────────────────────
+// compile() — 模式编译器测试
 
 ///|
 test "compile/wildcard" {
   match compile("_") {
     Ok(q) => {
       assert_eq(q.patterns.length(), 1)
-      assert_true(q.patterns[0] is Wildcard)
+      let (pat, _) = q.patterns[0]
+      assert_true(pat is Wildcard)
     }
     Err(e) => fail("unexpected error: \{e}")
   }
@@ -59,7 +51,8 @@ test "compile/anon_pattern" {
   match compile("\"hello\"") {
     Ok(q) => {
       assert_eq(q.patterns.length(), 1)
-      assert_true(q.patterns[0] is AnonPattern("hello"))
+      let (pat, _) = q.patterns[0]
+      assert_true(pat is AnonPattern("hello"))
     }
     Err(e) => fail("unexpected error: \{e}")
   }
@@ -70,7 +63,8 @@ test "compile/simple_node_pattern" {
   match compile("(identifier)") {
     Ok(q) => {
       assert_eq(q.patterns.length(), 1)
-      assert_true(q.patterns[0] is NodePattern("identifier", _))
+      let (pat, _) = q.patterns[0]
+      assert_true(pat is NodePattern("identifier", _))
     }
     Err(e) => fail("unexpected error: \{e}")
   }
@@ -81,7 +75,8 @@ test "compile/node_with_child" {
   match compile("(binary_expr (identifier))") {
     Ok(q) => {
       assert_eq(q.patterns.length(), 1)
-      match q.patterns[0] {
+      let (pat, _) = q.patterns[0]
+      match pat {
         NodePattern(name, children) => {
           assert_eq(name, "binary_expr")
           assert_eq(children.length(), 1)
@@ -101,10 +96,10 @@ test "compile/capture_annotation" {
   match compile("(identifier) @name") {
     Ok(q) => {
       assert_eq(q.patterns.length(), 1)
-      assert_true(q.patterns[0] is NodePattern("identifier", _))
-      // 顶层 @capture 存入 top_captures
-      assert_eq(q.top_captures.length(), 1)
-      assert_eq(q.top_captures[0], Some("name"))
+      let (pat, top_cap) = q.patterns[0]
+      assert_true(pat is NodePattern("identifier", _))
+      // 顶层 @capture 存入 tuple 的第二元素
+      assert_eq(top_cap, Some("name"))
     }
     Err(e) => fail("unexpected error: \{e}")
   }
@@ -113,8 +108,9 @@ test "compile/capture_annotation" {
 ///|
 test "compile/field_constraint" {
   match compile("(binary_expr left: (identifier) right: (identifier))") {
-    Ok(q) =>
-      match q.patterns[0] {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
         NodePattern(_, children) => {
           assert_eq(children.length(), 2)
           assert_eq(children[0].field, Some("left"))
@@ -122,6 +118,7 @@ test "compile/field_constraint" {
         }
         _ => fail("expected NodePattern")
       }
+    }
     Err(e) => fail("unexpected error: \{e}")
   }
 }
@@ -129,8 +126,9 @@ test "compile/field_constraint" {
 ///|
 test "compile/capture_in_child" {
   match compile("(binary_expr (identifier) @lhs (identifier) @rhs)") {
-    Ok(q) =>
-      match q.patterns[0] {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
         NodePattern(_, children) => {
           assert_eq(children.length(), 2)
           assert_eq(children[0].capture, Some("lhs"))
@@ -138,6 +136,7 @@ test "compile/capture_in_child" {
         }
         _ => fail("expected NodePattern")
       }
+    }
     Err(e) => fail("unexpected error: \{e}")
   }
 }
@@ -147,8 +146,10 @@ test "compile/multiple_top_level_patterns" {
   match compile("(identifier)\n(number)") {
     Ok(q) => {
       assert_eq(q.patterns.length(), 2)
-      assert_true(q.patterns[0] is NodePattern("identifier", _))
-      assert_true(q.patterns[1] is NodePattern("number", _))
+      let (pat0, _) = q.patterns[0]
+      let (pat1, _) = q.patterns[1]
+      assert_true(pat0 is NodePattern("identifier", _))
+      assert_true(pat1 is NodePattern("number", _))
     }
     Err(e) => fail("unexpected error: \{e}")
   }
@@ -179,8 +180,9 @@ test "compile/line_comment_ignored" {
 ///|
 test "compile/nested_pattern" {
   match compile("(binary_expr (identifier) (number))") {
-    Ok(q) =>
-      match q.patterns[0] {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
         NodePattern(name, children) => {
           assert_eq(name, "binary_expr")
           assert_eq(children.length(), 2)
@@ -189,6 +191,7 @@ test "compile/nested_pattern" {
         }
         _ => fail("expected NodePattern")
       }
+    }
     Err(e) => fail("unexpected error: \{e}")
   }
 }
@@ -196,8 +199,9 @@ test "compile/nested_pattern" {
 ///|
 test "compile/wildcard_in_child" {
   match compile("(binary_expr _ _)") {
-    Ok(q) =>
-      match q.patterns[0] {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
         NodePattern(_, children) => {
           assert_eq(children.length(), 2)
           assert_true(children[0].pattern is Wildcard)
@@ -205,6 +209,7 @@ test "compile/wildcard_in_child" {
         }
         _ => fail("expected NodePattern")
       }
+    }
     Err(e) => fail("unexpected error: \{e}")
   }
 }
@@ -237,10 +242,7 @@ test "compile/error_predicate_without_pattern" {
 }
 
 ///|
-// ────────────────────────────────────────────────────────────────
-// Part 2: exec() — 匹配引擎测试
-// ────────────────────────────────────────────────────────────────
-//
+// exec() — 匹配引擎测试
 // 使用简单 DSL 语法构造可预测的 CST，再对其执行 query 查询。
 
 ///|

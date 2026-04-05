@@ -26,9 +26,8 @@ pub(all) struct CaptureResult {
 pub impl Show for CaptureResult
 
 pub(all) struct CompiledQuery {
-  patterns : Array[QueryPattern]
+  patterns : Array[(QueryPattern, String?)]
   predicates : Array[(Int, Predicate)]
-  top_captures : Array[String?]
 }
 pub impl Show for CompiledQuery
 
