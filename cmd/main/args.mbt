@@ -1,5 +1,6 @@
 ///|
 // args.mbt — CLI 参数解析器
+
 ///|
 // 各命令的参数结构体
 
@@ -297,16 +298,14 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
     return Err("parse: grammar or table file required\n\{parse_usage()}")
   }
   Ok(
-    Parse(
-      {
-        grammar_file,
-        table_file,
-        input_file,
-        format,
-        tokens,
-        error_summary,
-      },
-    ),
+    Parse({
+      grammar_file,
+      table_file,
+      input_file,
+      format,
+      tokens,
+      error_summary,
+    }),
   )
 }
 
@@ -419,16 +418,14 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
         return Err("query: --grammar or --table required\n\{query_usage()}")
       }
       Ok(
-        Query(
-          {
-            pattern: pat,
-            input_file,
-            grammar_file,
-            table_file,
-            json,
-            count,
-          },
-        ),
+        Query({
+          pattern: pat,
+          input_file,
+          grammar_file,
+          table_file,
+          json,
+          count,
+        }),
       )
     }
   }
@@ -450,7 +447,7 @@ fn parse_test(p : ArgParser) -> Result[Command, String] {
       None => break
     }
   }
-  Ok(Test({ test_dir }))
+  Ok(Test({ test_dir, }))
 }
 
 ///|
@@ -458,77 +455,89 @@ fn parse_test(p : ArgParser) -> Result[Command, String] {
 
 ///|
 pub fn global_usage() -> String {
-  #|Usage: moonparse <command> [options]
-  #|
-  #|Commands:
-  #|  generate <file.grammar>   Compile grammar to .parse_table
-  #|  parse    <file.grammar>   Parse input and print CST
-  #|  check    <file.grammar>   Validate grammar and report conflicts
-  #|  fmt      <file.grammar>   Format a .grammar file
-  #|  query    <pattern>        Run S-expression query on CST
-  #|  test     [dir]            Run corpus test cases
-  #|
-  #|Options:
-  #|  -h, --help     Show help
-  #|  -v, --version  Show version
-  #|
-  #|Run 'moonparse help <command>' for command-specific help.
+  (
+    #|Usage: moonparse <command> [options]
+    #|
+    #|Commands:
+    #|  generate <file.grammar>   Compile grammar to .parse_table
+    #|  parse    <file.grammar>   Parse input and print CST
+    #|  check    <file.grammar>   Validate grammar and report conflicts
+    #|  fmt      <file.grammar>   Format a .grammar file
+    #|  query    <pattern>        Run S-expression query on CST
+    #|  test     [dir]            Run corpus test cases
+    #|
+    #|Options:
+    #|  -h, --help     Show help
+    #|  -v, --version  Show version
+    #|
+    #|Run 'moonparse help <command>' for command-specific help.
+  )
 }
 
 ///|
 pub fn generate_usage() -> String {
-  #|Usage: moonparse generate <file.grammar> [options]
-  #|
-  #|Options:
-  #|  -o, --output <path>   Output file (default: <base>.parse_table)
-  #|  --json                Output JSON format parse table (debug)
-  #|  --diagnostic          Print LR item sets and GOTO table to stderr
-  #|  --force               Output despite ambiguity conflicts
-  #|  -h, --help            Show this help
+  (
+    #|Usage: moonparse generate <file.grammar> [options]
+    #|
+    #|Options:
+    #|  -o, --output <path>   Output file (default: <base>.parse_table)
+    #|  --json                Output JSON format parse table (debug)
+    #|  --diagnostic          Print LR item sets and GOTO table to stderr
+    #|  --force               Output despite ambiguity conflicts
+    #|  -h, --help            Show this help
+  )
 }
 
 ///|
 pub fn parse_usage() -> String {
-  #|Usage: moonparse parse <file.grammar> [input-file] [options]
-  #|
-  #|Options:
-  #|  -g, --grammar <file>  Grammar file (.grammar)
-  #|  -t, --table   <file>  Parse table file (.parse_table)
-  #|  --format <sexp|json>  Output format (default: sexp)
-  #|  --tokens              Also print token stream
-  #|  --error-summary       Only print ERROR node summary
-  #|  --stdin               Read input from stdin
-  #|  -h, --help            Show this help
+  (
+    #|Usage: moonparse parse <file.grammar> [input-file] [options]
+    #|
+    #|Options:
+    #|  -g, --grammar <file>  Grammar file (.grammar)
+    #|  -t, --table   <file>  Parse table file (.parse_table)
+    #|  --format <sexp|json>  Output format (default: sexp)
+    #|  --tokens              Also print token stream
+    #|  --error-summary       Only print ERROR node summary
+    #|  --stdin               Read input from stdin
+    #|  -h, --help            Show this help
+  )
 }
 
 ///|
 pub fn check_usage() -> String {
-  #|Usage: moonparse check <file.grammar>
-  #|
-  #|Exit codes: 0 = ok, 1 = warnings, 2 = errors
-  #|
-  #|Options:
-  #|  -h, --help  Show this help
+  (
+    #|Usage: moonparse check <file.grammar>
+    #|
+    #|Exit codes: 0 = ok, 1 = warnings, 2 = errors
+    #|
+    #|Options:
+    #|  -h, --help  Show this help
+  )
 }
 
 ///|
 pub fn fmt_usage() -> String {
-  #|Usage: moonparse fmt <file.grammar> [options]
-  #|
-  #|Options:
-  #|  --check   Check only, do not write (for CI)
-  #|  --stdout  Write result to stdout instead of in-place
-  #|  -h, --help  Show this help
+  (
+    #|Usage: moonparse fmt <file.grammar> [options]
+    #|
+    #|Options:
+    #|  --check   Check only, do not write (for CI)
+    #|  --stdout  Write result to stdout instead of in-place
+    #|  -h, --help  Show this help
+  )
 }
 
 ///|
 pub fn query_usage() -> String {
-  #|Usage: moonparse query <pattern> [input-file] [options]
-  #|
-  #|Options:
-  #|  -g, --grammar <file>  Grammar file (.grammar)
-  #|  -t, --table   <file>  Parse table file (.parse_table)
-  #|  --json                Output JSON format
-  #|  --count               Only print match count
-  #|  -h, --help            Show this help
+  (
+    #|Usage: moonparse query <pattern> [input-file] [options]
+    #|
+    #|Options:
+    #|  -g, --grammar <file>  Grammar file (.grammar)
+    #|  -t, --table   <file>  Parse table file (.parse_table)
+    #|  --json                Output JSON format
+    #|  --count               Only print match count
+    #|  -h, --help            Show this help
+  )
 }

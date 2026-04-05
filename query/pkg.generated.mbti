@@ -27,7 +27,7 @@ pub impl Show for CaptureResult
 
 pub(all) struct CompiledQuery {
   patterns : Array[(QueryPattern, String?)]
-  predicates : Array[(Int, Predicate)]
+  predicates : Array[Array[Predicate]]
 }
 pub impl Show for CompiledQuery
 
@@ -45,7 +45,6 @@ pub impl Show for Predicate
 
 pub(all) enum QueryError {
   ParseError(Int, String)
-  ExecError(String)
 }
 pub impl Show for QueryError
 

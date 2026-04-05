@@ -24,11 +24,21 @@ extern "c" fn c_ftell(file : Int64) -> Int64 = "ftell"
 
 ///|
 #borrow(buf)
-extern "c" fn c_fread(buf : Bytes, size : Int, count : Int, file : Int64) -> Int = "fread"
+extern "c" fn c_fread(
+  buf : Bytes,
+  size : Int,
+  count : Int,
+  file : Int64,
+) -> Int = "fread"
 
 ///|
 #borrow(buf)
-extern "c" fn c_fwrite(buf : Bytes, size : Int, count : Int, file : Int64) -> Int = "fwrite"
+extern "c" fn c_fwrite(
+  buf : Bytes,
+  size : Int,
+  count : Int,
+  file : Int64,
+) -> Int = "fwrite"
 
 ///|
 // POSIX read(fd, buf, count): 从文件描述符读取最多 count 字节
@@ -43,9 +53,14 @@ extern "c" fn c_read(fd : Int, buf : Bytes, count : Int) -> Int = "read"
 extern "c" fn c_write(fd : Int, buf : Bytes, count : Int) -> Int = "write"
 
 ///|
+// POSIX isatty(fd): 检查文件描述符是否连接到终端
+extern "c" fn c_isatty(fd : Int) -> Int = "isatty"
+
+///|
 // fseek whence 常量（C stdio）
 let seek_set : Int = 0 // 从文件头偏移
 
+///|
 let seek_end : Int = 2 // 从文件尾偏移
 
 ///|
@@ -98,9 +113,7 @@ fn write_file_impl(path : String, content : String) -> Result[Unit, String] {
   let written = c_fwrite(bytes, 1, len, file)
   let _ = c_fclose(file)
   if written != len {
-    return Err(
-      "fwrite incomplete: wrote \{written} of \{len} bytes to \{path}",
-    )
+    return Err("fwrite incomplete: wrote \{written} of \{len} bytes to \{path}")
   }
   Ok(())
 }
@@ -124,4 +137,9 @@ fn print_err_impl(s : String) -> Unit {
   // 向 stderr（fd=2）写入 UTF-8 编码的字符串 + 换行
   let bytes = str_to_utf8(s + "\n")
   let _ = c_write(2, bytes, bytes.length())
+}
+
+///|
+fn isatty_impl(fd : Int) -> Bool {
+  c_isatty(fd) != 0
 }

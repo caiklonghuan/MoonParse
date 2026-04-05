@@ -79,16 +79,16 @@ fn match_children_from(
         // 递归匹配剩余模式；失败时回溯，尝试下一个 sem_idx
         let rest_captures : Array[CaptureResult] = []
         if match_children_from(
-          pattern_children,
-          pc_idx + 1,
-          semantic,
-          i + 1,
-          node,
-          input,
-          table,
-          match_id,
-          rest_captures,
-        ) {
+            pattern_children,
+            pc_idx + 1,
+            semantic,
+            i + 1,
+            node,
+            input,
+            table,
+            match_id,
+            rest_captures,
+          ) {
           for c in this_captures {
             captures.push(c)
           }
@@ -135,16 +135,8 @@ fn match_children(
   }
   let sub_captures : Array[CaptureResult] = []
   if match_children_from(
-    pattern_children,
-    0,
-    semantic,
-    0,
-    node,
-    input,
-    table,
-    match_id,
-    sub_captures,
-  ) {
+      pattern_children, 0, semantic, 0, node, input, table, match_id, sub_captures,
+    ) {
     for c in sub_captures {
       captures.push(c)
     }

@@ -12,8 +12,15 @@ let use_color_cell : Array[Bool] = [false]
 ///|
 /// 设置是否使用 ANSI 颜色输出。
 /// 通常在 main 中检测 NO_COLOR 环境变量或 --no-color flag 后调用。
-pub fn set_color_output(enabled : Bool) -> Unit {
-  use_color_cell[0] = enabled
+/// 如果未显式设置，则自动检测 stderr 是否连接到终端。
+pub fn set_color_output(enabled : Bool?) -> Unit {
+  let should_use_color = match enabled {
+    Some(e) => e
+    None =>
+      // 自动检测：检查 stderr (fd=2) 是否为终端
+      isatty_impl(2)
+  }
+  use_color_cell[0] = should_use_color
 }
 
 ///|
@@ -89,14 +96,14 @@ fn get_source_line(source : String, line_no : Int) -> String? {
   for i in 0..<len {
     if source[i] == '\n' {
       if cur == line_no {
-        return Some(source.substring(start=line_begin, end=i))
+        return Some(source[line_begin:i].to_string())
       }
       cur = cur + 1
       line_begin = i + 1
     }
   }
   if cur == line_no {
-    return Some(source.substring(start=line_begin, end=len))
+    return Some(source[line_begin:len].to_string())
   }
   None
 }
@@ -104,7 +111,13 @@ fn get_source_line(source : String, line_no : Int) -> String? {
 ///|
 /// 生成带行号槽和 `^` 插入符的源码上下文块（三行：空槽 / 代码行 / 指针行）。
 /// line_no: 1-indexed，col: 1-indexed。
-fn render_source_snippet(source : String, line_no : Int, col : Int) -> String {
+/// label: （可选）显示在 `^` 旁边的错误消息。
+fn render_source_snippet(
+  source : String,
+  line_no : Int,
+  col : Int,
+  label : String?,
+) -> String {
   let n = line_no.to_string()
   let w = n.length()
   let g = spaces(w)
@@ -114,7 +127,11 @@ fn render_source_snippet(source : String, line_no : Int, col : Int) -> String {
     Some(content) => {
       let indent = spaces(if col > 1 { col - 1 } else { 0 })
       let caret = ansi_red("^")
-      "\{blank_gutter}\n \{ansi_blue(n)} | \{content}\n\{blank_gutter} \{indent}\{caret}\n"
+      let label_str = match label {
+        Some(msg) => " " + ansi_red(msg)
+        None => ""
+      }
+      "\{blank_gutter}\n \{ansi_blue(n)} | \{content}\n\{blank_gutter} \{indent}\{caret}\{label_str}\n"
     }
   }
 }
@@ -130,6 +147,26 @@ fn loc_line(file : String, line : Int, col : Int) -> String {
 // 公开报告函数
 
 ///|
+/// 初始化 reporter 模块。应在程序启动时调用。
+/// 自动检测终端并设置颜色输出。
+pub fn init_reporter() -> Unit {
+  set_color_output(None)
+}
+
+///|
+/// 打印一般信息消息到 stdout。
+pub fn print_info(msg : String) -> Unit {
+  println(msg)
+}
+
+///|
+/// 打印警告消息到 stderr。
+pub fn print_warning(msg : String) -> Unit {
+  let tag = ansi_yellow("warning")
+  print_err("\{tag}: \{msg}")
+}
+
+///|
 /// 打印 Grammar DSL 解析错误到 stderr。
 ///
 /// - `file`：（可选）语法文件路径，用于显示位置箭头行
@@ -137,7 +174,7 @@ fn loc_line(file : String, line : Int, col : Int) -> String {
 pub fn report_grammar_parse_error(
   err : @grammar.ParseError,
   file : String?,
-  source : String?
+  source : String?,
 ) -> Unit {
   let loc = err.location
   let tag = ansi_red("error")
@@ -149,7 +186,9 @@ pub fn report_grammar_parse_error(
   }
   match (file, source) {
     (Some(_), Some(src)) =>
-      print_err(render_source_snippet(src, loc.line, loc.column))
+      print_err(
+        render_source_snippet(src, loc.line, loc.column, Some(err.message)),
+      )
     _ => ()
   }
 }
@@ -160,7 +199,7 @@ pub fn report_grammar_parse_error(
 /// `file`：（可选）语法文件路径，用于显示位置行。
 pub fn report_validation_errors(
   errors : Array[@grammar.ValidationError],
-  file : String?
+  file : String?,
 ) -> Unit {
   let tag = ansi_red("error")
   for e in errors {
@@ -222,7 +261,7 @@ pub fn report_conflicts(reports : Array[@tablegen.ConflictReport]) -> Unit {
 pub fn report_parse_error(
   err : @runtime.ParseError,
   file : String?,
-  source : String?
+  source : String?,
 ) -> Unit {
   let p = err.point
   // runtime.Point 是 0-indexed，转为 1-indexed 显示
@@ -236,7 +275,8 @@ pub fn report_parse_error(
     Some(path) => print_err(loc_line(path, line, col))
   }
   match (file, source) {
-    (Some(_), Some(src)) => print_err(render_source_snippet(src, line, col))
+    (Some(_), Some(src)) =>
+      print_err(render_source_snippet(src, line, col, Some(err.message)))
     _ => ()
   }
 }
@@ -245,10 +285,7 @@ pub fn report_parse_error(
 /// 打印 Query 编译错误到 stderr。
 ///
 /// `pattern`：（可选）原始查询模式字符串，用于显示错误位置插入符。
-pub fn report_query_error(
-  err : @query.QueryError,
-  pattern : String?
-) -> Unit {
+pub fn report_query_error(err : @query.QueryError, pattern : String?) -> Unit {
   match err {
     ParseError(offset, msg) => {
       let tag = ansi_red("error")
@@ -262,9 +299,10 @@ pub fn report_query_error(
           // 显示模式字符串与偏移量插入符
           if offset >= 0 && offset <= pat.length() {
             let caret = ansi_red("^")
+            let label_str = " " + ansi_red(msg)
             let indent = spaces(offset)
             print_err("  \{pat}")
-            print_err("  \{indent}\{caret}")
+            print_err("  \{indent}\{caret}\{label_str}")
           }
         }
       }

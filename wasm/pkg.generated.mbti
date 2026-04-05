@@ -61,9 +61,13 @@ pub fn parser_create_from_json(String) -> Int
 
 pub fn parser_free(Int) -> Unit
 
+pub fn parser_get_dsl(Int) -> String
+
 pub fn parser_table_to_json(Int) -> String
 
 pub fn query_compile(String) -> Int
+
+pub fn query_compile_error_last() -> String
 
 pub fn query_exec(Int, Int) -> String
 

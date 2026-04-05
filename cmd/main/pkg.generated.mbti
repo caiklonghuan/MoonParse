@@ -1,11 +1,125 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "caiklonghuan/MoonParse/cmd/main"
 
+import {
+  "caiklonghuan/MoonParse/grammar",
+  "caiklonghuan/MoonParse/query",
+  "caiklonghuan/MoonParse/runtime",
+  "caiklonghuan/MoonParse/tablegen",
+}
+
 // Values
+pub fn check_usage() -> String
+
+pub fn fmt_usage() -> String
+
+pub fn generate_usage() -> String
+
+pub fn global_usage() -> String
+
+pub fn init_reporter() -> Unit
+
+pub fn isatty(Int) -> Bool
+
+pub fn parse_args(Array[String]) -> Result[Command, String]
+
+pub fn parse_usage() -> String
+
+pub fn print_err(String) -> Unit
+
+pub fn print_info(String) -> Unit
+
+pub fn print_warning(String) -> Unit
+
+pub fn query_usage() -> String
+
+pub fn read_file(String) -> Result[String, String]
+
+pub fn read_stdin() -> String
+
+pub fn report_conflicts(Array[@tablegen.ConflictReport]) -> Unit
+
+pub fn report_grammar_parse_error(@grammar.ParseError, String?, String?) -> Unit
+
+pub fn report_parse_error(@runtime.ParseError, String?, String?) -> Unit
+
+pub fn report_query_error(@query.QueryError, String?) -> Unit
+
+pub fn report_summary(Int, Int) -> Unit
+
+pub fn report_validation_errors(Array[@grammar.ValidationError], String?) -> Unit
+
+pub fn set_color_output(Bool?) -> Unit
+
+pub fn write_file(String, String) -> Result[Unit, String]
 
 // Errors
 
 // Types and methods
+pub struct CheckArgs {
+  grammar_file : String
+}
+pub impl Show for CheckArgs
+
+pub enum Command {
+  Generate(GenerateArgs)
+  Parse(ParseArgs)
+  Check(CheckArgs)
+  Fmt(FmtArgs)
+  Query(QueryArgs)
+  Test(TestArgs)
+  Help(String?)
+  Version
+}
+pub impl Show for Command
+
+pub struct FmtArgs {
+  grammar_file : String
+  check : Bool
+  stdout : Bool
+}
+pub impl Show for FmtArgs
+
+pub struct GenerateArgs {
+  grammar_file : String
+  output : String?
+  json : Bool
+  diagnostic : Bool
+  force : Bool
+}
+pub impl Show for GenerateArgs
+
+pub enum OutputFormat {
+  Sexp
+  Json
+}
+pub impl Eq for OutputFormat
+pub impl Show for OutputFormat
+
+pub struct ParseArgs {
+  grammar_file : String?
+  table_file : String?
+  input_file : String?
+  format : OutputFormat
+  tokens : Bool
+  error_summary : Bool
+}
+pub impl Show for ParseArgs
+
+pub struct QueryArgs {
+  pattern : String
+  input_file : String?
+  grammar_file : String?
+  table_file : String?
+  json : Bool
+  count : Bool
+}
+pub impl Show for QueryArgs
+
+pub struct TestArgs {
+  test_dir : String?
+}
+pub impl Show for TestArgs
 
 // Type aliases
 
