@@ -1,8 +1,16 @@
 import {
   "caiklonghuan/MoonParse/grammar" @grammar,
   "caiklonghuan/MoonParse/tablegen" @tablegen,
+  "caiklonghuan/MoonParse/runtime" @runtime,
+  "caiklonghuan/MoonParse/query" @query,
+  "moonbitlang/core/buffer" @buffer,
+  "moonbitlang/core/encoding/utf8" @utf8,
 }
 
 options(
   "is-main": true,
+  targets: {
+    "io_native.mbt": ["native", "llvm"],
+    "io_wasm.mbt": ["wasm", "wasm-gc"],
+  },
 )
