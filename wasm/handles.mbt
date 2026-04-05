@@ -74,3 +74,28 @@ let parser_registry : Registry[ParserEntry] = Registry::new()
 
 ///|
 let tree_registry : Registry[TreeEntry] = Registry::new()
+
+///|
+/// 游标条目：持有游标在 CST 树中的当前位置和父节点回溯路径。
+///
+/// 导航模型（三向移动）：
+///   - goto_first_child  → 下移，将当前节点压入父节点栈
+///   - goto_next_sibling → 平移，在父节点栈顶的 children 中前进一位
+///   - goto_parent       → 上移，从父节点栈弹出
+priv struct CursorEntry {
+  /// 关联的语法树 ID（查询 input / table 用）
+  tree_id : Int
+  /// 当前节点
+  mut current : @runtime.CstNode
+  /// 当前节点在父节点 children 数组中的索引（根节点时为 -1）
+  mut current_index : Int
+  /// 当前节点在父节点中的字段名（根节点时为 None）
+  mut current_field : String?
+  /// 父节点栈（由根到直接父节点），与 parent_indices / parent_fields 等长
+  parent_nodes : Array[@runtime.CstNode]
+  parent_indices : Array[Int]
+  parent_fields : Array[String?]
+}
+
+///|
+let cursor_registry : Registry[CursorEntry] = Registry::new()
