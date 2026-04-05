@@ -21,10 +21,7 @@
 
 ///|
 /// 从 node + field_names 数组中取 child_idx 处的字段名
-fn get_field(
-  field_names : Array[String?],
-  child_idx : Int
-) -> String? {
+fn get_field(field_names : Array[String?], child_idx : Int) -> String? {
   if child_idx < field_names.length() {
     field_names[child_idx]
   } else {
@@ -46,7 +43,7 @@ fn match_children(
   input : String,
   table : @tablegen.ParseTable,
   match_id : Int,
-  captures : Array[CaptureResult]
+  captures : Array[CaptureResult],
 ) -> Bool {
   // 收集语义子节点（排除 extra）
   let semantic : Array[(Int, @runtime.CstNode)] = []
@@ -116,14 +113,13 @@ fn try_match(
   input : String,
   table : @tablegen.ParseTable,
   match_id : Int,
-  captures : Array[CaptureResult]
+  captures : Array[CaptureResult],
 ) -> Bool {
   match pattern {
     Wildcard => true
-    AnonPattern(s) => {
+    AnonPattern(s) =>
       // 叶节点，原文与字面量相等
       node.children.is_empty() && node_text(node, input) == s
-    }
     NodePattern(type_name, children) => {
       // 类型名校验
       if node_type_name(node, table) != type_name {
@@ -148,15 +144,23 @@ fn try_match_top(
   pat_idx : Int,
   pattern : QueryPattern,
   predicates : Array[(Int, Predicate)],
+  top_captures : Array[String?],
   node : @runtime.CstNode,
   input : String,
   table : @tablegen.ParseTable,
   match_id : Int,
-  results : Array[CaptureResult]
+  results : Array[CaptureResult],
 ) -> Bool {
   let captures : Array[CaptureResult] = []
   if not(try_match(pattern, node, input, table, match_id, captures)) {
     return false
+  }
+  // 顶层 @capture 标注：将 node 本身加入捕获
+  if pat_idx < top_captures.length() {
+    match top_captures[pat_idx] {
+      Some(name) => captures.push({ match_id, capture_name: name, node })
+      None => ()
+    }
   }
   // 谓词后置过滤
   for pred in predicates {
@@ -199,21 +203,22 @@ fn walk(
   input : String,
   table : @tablegen.ParseTable,
   match_counter : Array[Int],
-  results : Array[CaptureResult]
+  results : Array[CaptureResult],
 ) -> Unit {
   for i in 0..<query.patterns.length() {
     let pat = query.patterns[i]
     let mid = match_counter[0]
     if try_match_top(
-      i,
-      pat,
-      query.predicates,
-      node,
-      input,
-      table,
-      mid,
-      results,
-    ) {
+        i,
+        pat,
+        query.predicates,
+        query.top_captures,
+        node,
+        input,
+        table,
+        mid,
+        results,
+      ) {
       match_counter[0] = mid + 1
     }
   }
@@ -240,7 +245,7 @@ pub fn exec(
   query : CompiledQuery,
   root : @runtime.CstNode,
   input : String,
-  table : @tablegen.ParseTable
+  table : @tablegen.ParseTable,
 ) -> Array[CaptureResult] {
   let results : Array[CaptureResult] = []
   let counter = [0]

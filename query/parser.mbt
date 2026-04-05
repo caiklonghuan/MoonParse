@@ -231,7 +231,7 @@ fn Parser::parse_child(self : Parser) -> PatternChild raise ParseErr {
 /// pattern_index 为谓词关联的顶层模式编号（最近一条模式）
 fn Parser::parse_predicate(
   self : Parser,
-  pattern_index : Int
+  pattern_index : Int,
 ) -> (Int, Predicate) raise ParseErr {
   self.expect('#')
   let buf = StringBuilder::new()
@@ -258,7 +258,7 @@ fn Parser::parse_predicate(
 /// 一个查询字符串可包含多条顶层模式，每条独立匹配。
 /// 谓词（`#eq?` 等）关联到它**之前**最近一条顶层模式。
 ///
-/// ```moonbit
+/// ```moonbit nocheck
 /// compile("(identifier) @name") // → Ok(...)
 /// compile("(bad")               // → Err(ParseError(5, "expected ')'..."))
 /// ```
@@ -266,6 +266,7 @@ pub fn compile(src : String) -> Result[CompiledQuery, QueryError] {
   let p = Parser::new(src)
   let patterns : Array[QueryPattern] = []
   let predicates : Array[(Int, Predicate)] = []
+  let top_captures : Array[String?] = []
   try {
     p.skip_ws()
     while not(p.at_end()) {
@@ -273,6 +274,14 @@ pub fn compile(src : String) -> Result[CompiledQuery, QueryError] {
         '(' | '"' | '_' => {
           let pat = p.parse_pattern()
           patterns.push(pat)
+          // 可选顶层捕获标注：pattern @capture_name
+          p.skip_ws()
+          if not(p.at_end()) && p.cur() == '@' {
+            p.pos = p.pos + 1
+            top_captures.push(Some(p.read_capture_name()))
+          } else {
+            top_captures.push(None)
+          }
         }
         '#' => {
           if patterns.is_empty() {
@@ -285,7 +294,7 @@ pub fn compile(src : String) -> Result[CompiledQuery, QueryError] {
       }
       p.skip_ws()
     }
-    Ok({ patterns, predicates })
+    Ok({ patterns, predicates, top_captures })
   } catch {
     PE(offset, msg) => Err(ParseError(offset, msg))
   }

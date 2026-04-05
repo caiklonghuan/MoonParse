@@ -1,0 +1,63 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/query"
+
+import {
+  "caiklonghuan/MoonParse/runtime",
+  "caiklonghuan/MoonParse/tablegen",
+}
+
+// Values
+pub fn compile(String) -> Result[CompiledQuery, QueryError]
+
+pub fn exec(CompiledQuery, @runtime.CstNode, String, @tablegen.ParseTable) -> Array[CaptureResult]
+
+pub fn node_text(@runtime.CstNode, String) -> String
+
+pub fn node_type_name(@runtime.CstNode, @tablegen.ParseTable) -> String
+
+// Errors
+
+// Types and methods
+pub(all) struct CaptureResult {
+  match_id : Int
+  capture_name : String
+  node : @runtime.CstNode
+}
+pub impl Show for CaptureResult
+
+pub(all) struct CompiledQuery {
+  patterns : Array[QueryPattern]
+  predicates : Array[(Int, Predicate)]
+  top_captures : Array[String?]
+}
+pub impl Show for CompiledQuery
+
+pub(all) struct PatternChild {
+  field : String?
+  pattern : QueryPattern
+  capture : String?
+}
+pub impl Show for PatternChild
+
+pub(all) enum Predicate {
+  Eq(String, String)
+}
+pub impl Show for Predicate
+
+pub(all) enum QueryError {
+  ParseError(Int, String)
+  ExecError(String)
+}
+pub impl Show for QueryError
+
+pub(all) enum QueryPattern {
+  NodePattern(String, Array[PatternChild])
+  AnonPattern(String)
+  Wildcard
+}
+pub impl Show for QueryPattern
+
+// Type aliases
+
+// Traits
+

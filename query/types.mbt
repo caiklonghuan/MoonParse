@@ -55,6 +55,9 @@ pub(all) struct CompiledQuery {
   /// 谓词列表：`(pattern_index, predicate)`
   /// pattern_index 指向 `patterns` 中对应的顶层模式
   predicates : Array[(Int, Predicate)]
+  /// 顶层模式自身的捕获标注：`(node_pattern) @capture_name`
+  /// top_captures[i] 对应 patterns[i] 的顶层 @capture，无则为 None
+  top_captures : Array[String?]
 } derive(Show)
 
 ///|
@@ -85,7 +88,7 @@ pub(all) enum QueryError {
 /// 返回节点的类型名称：ERROR 节点 → "ERROR"；叶节点查 terminal_names；内部节点查 symbol_metadata
 pub fn node_type_name(
   node : @runtime.CstNode,
-  table : @tablegen.ParseTable
+  table : @tablegen.ParseTable,
 ) -> String {
   if node.is_error {
     return "ERROR"
