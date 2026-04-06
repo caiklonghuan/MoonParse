@@ -82,7 +82,20 @@ pub(all) enum QueryError {
 // （与 wasm/cst_json.mbt 中的 node_type_name 逻辑一致，但 query 包不依赖 wasm）
 
 ///|
-/// 返回节点的类型名称：ERROR 节点 → "ERROR"；叶节点查 terminal_names；内部节点查 symbol_metadata
+/// 返回 CST 节点的类型名称字符串，规则如下（按优先顺序）：
+///
+/// | 条件 | 返回值 |
+/// |------|--------|
+/// | `node.is_error == true` | `"ERROR"` |
+/// | `node.symbol == sym_error \|\| sym_error_repeat` | `"ERROR"` |
+/// | `node.symbol == sym_end`（叶节点） | `"EOF"` |
+/// | 叶节点（`children` 为空），`symbol` 在 `table.terminal_names` 中 | 对应终结符展示名称 |
+/// | 叶节点，`symbol` 不在 `terminal_names` 中 | `"<terminal:N>"` |
+/// | 内部节点，`symbol` 在 `table.symbol_metadata` 合法下标范围内 | `symbol_metadata[symbol].name` |
+/// | 内部节点，`symbol` 越界 | `"<nonterminal:N>"` |
+///
+/// 特殊符号常量（`sym_error`、`sym_error_repeat`、`sym_end`）由 runtime 包导出，
+/// 均为负整数或保留编号，不与用户定义的 TerminalId 或 NonTerminalId 冲突。
 pub fn node_type_name(
   node : @runtime.CstNode,
   table : @tablegen.ParseTable,
@@ -113,7 +126,14 @@ pub fn node_type_name(
 }
 
 ///|
-/// 从原始输入字符串中切取节点对应的文本
+/// 从原始输入字符串中切取节点对应的文本（UTF-8 字节切片）。
+///
+/// 底层使用 `input[node.start_byte:node.end_byte]`。
+///
+/// 边界检查：若 `start_byte > end_byte` 或 `end_byte > input.length()`，
+/// 则返回空字符串 `""`，而非 panic。这在以下情况会出现：
+/// - 错误恢复插入的虚拟缺失节点（`is_missing == true`，长度为 0）
+/// - ERROR 节点的首末字节与实际输入不对齐时
 pub fn node_text(node : @runtime.CstNode, input : String) -> String {
   if node.start_byte <= node.end_byte && node.end_byte <= input.length() {
     input[node.start_byte:node.end_byte].to_string()

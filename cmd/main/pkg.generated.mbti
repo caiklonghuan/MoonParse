@@ -9,8 +9,6 @@ import {
 }
 
 // Values
-pub fn check_usage() -> String
-
 pub fn cmd_check(CheckArgs) -> Int
 
 pub fn cmd_fmt(FmtArgs) -> Int
@@ -23,19 +21,11 @@ pub fn cmd_query(QueryArgs) -> Int
 
 pub fn cmd_run_tests(TestArgs) -> Int
 
-pub fn fmt_usage() -> String
-
-pub fn generate_usage() -> String
-
-pub fn global_usage() -> String
-
 pub fn init_reporter() -> Unit
 
 pub fn isatty(Int) -> Bool
 
 pub fn parse_args(Array[String]) -> Result[Command, String]
-
-pub fn parse_usage() -> String
 
 pub fn print_err(String) -> Unit
 
@@ -44,8 +34,6 @@ pub fn print_info(String) -> Unit
 pub fn print_warning(String) -> Unit
 
 pub fn process_exit(Int) -> Unit
-
-pub fn query_usage() -> String
 
 pub fn read_bytes(String) -> Result[Bytes, String]
 
@@ -112,6 +100,7 @@ pub impl Show for GenerateArgs
 pub enum OutputFormat {
   Sexp
   Json
+  Dot
 }
 pub impl Eq for OutputFormat
 pub impl Show for OutputFormat

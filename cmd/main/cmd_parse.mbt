@@ -210,6 +210,7 @@ pub fn cmd_parse(args : ParseArgs) -> Int {
     match args.format {
       Sexp => print_info(cst_to_sexp(root, input, table))
       Json => print_info(cst_to_json_str(root, input, table))
+      Dot => print_info(cst_to_dot(root, input, table))
     }
   }
 

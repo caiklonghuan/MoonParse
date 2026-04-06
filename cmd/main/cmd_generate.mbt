@@ -44,7 +44,7 @@ pub fn cmd_generate(args : GenerateArgs) -> Int {
     }
   }
 
-  // 语义校验：有错误则中止（除非 --force）
+  // 语义校验：有错误则中止（--force 覆盖第一类情况：ValidationError）
   let val_errors = @grammar.validate_grammar(grammar)
   if not(val_errors.is_empty()) {
     report_validation_errors(val_errors, Some(args.grammar_file))
@@ -74,7 +74,8 @@ pub fn cmd_generate(args : GenerateArgs) -> Int {
     print_err(@tablegen.table_to_json(table))
   }
 
-  // 检测歧义冲突
+  // 检测歧义冲突（--force 覆盖第二类 :: Ambiguous）
+  // 注意：Warn 和 DynamicConflict 不受 --force 影响，實质上是“可执行忍耦”，始终继续生成。
   let mut has_ambiguous = false
   for r in conflict_reports {
     match r.severity {

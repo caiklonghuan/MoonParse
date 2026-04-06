@@ -503,3 +503,62 @@ test "regex literal with escaped slash in extras" {
     Success(g) => assert_eq(g.extras.length(), 1)
   }
 }
+
+///|
+/// 负面测试：{n,m} 区间中 n > m 应报错
+test "parse_negative: RepeatRange min > max is rejected" {
+  // {5,2}：下界 5 大于上界 2，语义非法
+  match parse_grammar("rule r: digit{5,2}\nrule digit: /\\d/") {
+    Success(_) => fail("should have rejected {5,2} range where min > max")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+  // {0,0}：重复 0-0 次，合法（等价于不出现）
+  match parse_grammar("rule r: digit{0,0}\nrule digit: /\\d/") {
+    Error(e) => fail("unexpected error for {0,0}: \{e.message}")
+    Success(g) => assert_true(g.rules.contains("r"))
+  }
+}
+
+///|
+/// 负面测试：未闭合括号 '(' 应报错并报告正确位置
+test "parse_negative: unclosed parenthesis reports error" {
+  // 行内未闭合
+  match parse_grammar("rule expr: (number \"*\" factor") {
+    Success(_) => fail("should fail for unclosed '('")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+  // 嵌套未闭合：外层已关闭但内层未闭合
+  match parse_grammar("rule expr: ((number)") {
+    Success(_) => fail("should fail for nested unclosed '('")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+  // 多行：第二行出现未闭合括号
+  match parse_grammar("rule a: b\nrule b: (\"x\"") {
+    Success(_) => fail("should fail for unclosed '(' on line 2")
+    Error(err) => {
+      assert_true(err.message.length() > 0)
+      // 错误应出现在第 2 行
+      assert_eq(err.location.line, 2)
+    }
+  }
+}
+
+///|
+/// 负面测试：precedence 后接非标识符 token（如数字字面量、符号）应报错
+test "parse_negative: precedence with invalid token after keyword" {
+  // precedence left 后接数字而非规则名
+  match parse_grammar("precedence left 42\nrule plus: \"+\"") {
+    Success(_) => fail("should fail: precedence followed by integer literal")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+  // precedence 后直接换行（没有结合性也没有规则名）
+  match parse_grammar("precedence\nrule plus: \"+\"") {
+    Success(_) => fail("should fail: bare 'precedence' with no rules")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+  // precedence left 后接引号字面量而非标识符
+  match parse_grammar("precedence left \"+\"\nrule plus: \"+\"") {
+    Success(_) => fail("should fail: precedence followed by string literal")
+    Error(err) => assert_true(err.message.length() > 0)
+  }
+}

@@ -185,19 +185,32 @@ pub(all) struct ParseTable {
 ///|
 /// 冲突严重级别
 pub(all) enum ConflictSeverity {
-  /// 有 prec/assoc 可编译期消解（仅告警）
+  /// 有 prec/assoc 可在编译期消解（Shift-Reduce 或 Reduce-Reduce 均可由优先级解决）。
+  /// 携带描述字符串，说明采用了哪条规则（如 "left-assoc shift preference"）。
+  /// 仍会输出告警，但不阻止生成。
   Warn(String)
-  /// 无优先级，GLR 并行保留全部路径
+  /// 无优先级信息可消解：GLR 并行保留全部冲突路径。
+  /// 携带描述字符串，说明具体冲突（如 "shift/reduce on '+'"）。
+  /// 除非使用 --force，否则阻止生成。
   Ambiguous(String)
-  /// prec.dynamic：编译期无法消解，携带 dynamic prec id 待 runtime/ 比较
+  /// prec.dynamic 标记的冲突：编译期无法消解，在 runtime 根据 dynamic_precedence
+  /// 字段比较两棵子树的动态优先级来选择路径。携带 dynamic prec id（来自 grammar DSL）。
   DynamicConflict(Int)
 } derive(Show)
 
 ///|
-/// 单条冲突报告
+/// 单条冲突报告（由 tablegen 在构建 LALR 表时生成，每个 (state, terminal) 冲突点一条）
 pub(all) struct ConflictReport {
+  /// 发生冲突的 LR 解析器状态编号（StateId）。
+  /// 可结合 --diagnostic 输出的 GOTO 表定位到具体项目集。
   state : StateId
+  /// 触发冲突的前瞻终结符编号（TerminalId）。
+  /// 可通过 ParseTable.terminal_names 还原为可读字符串。
   terminal : TerminalId
+  /// 该 (state, terminal) 对应的全部冲突 Action（至少 2 条）。
+  /// 例如 [Shift(s), Reduce(p)] 表示经典 Shift-Reduce 冲突；
+  /// [Reduce(p1), Reduce(p2)] 表示 Reduce-Reduce 冲突。
   actions : Array[Action]
+  /// 冲突的严重程度与消解策略，见 ConflictSeverity。
   severity : ConflictSeverity
 } derive(Show)

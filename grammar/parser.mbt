@@ -114,17 +114,36 @@ fn parse_prec_decl(state : ParserState, level : Int) -> ParseResult[PrecDecl] {
   } else {
     PrecKind::Nonassoc
   }
-  // 逗号分隔的规则名列表
+  // 逗号分隔的规则名列表（必须以字母或下划线开头，不得为纯数字）
   let rules : Array[String] = []
   while state.pos < state.tokens.length() {
     match state.tokens[state.pos].token {
       Identifier(name) => {
+        if name.length() > 0 &&
+          name[0].to_int() >= '0'.to_int() &&
+          name[0].to_int() <= '9'.to_int() {
+          return Error({
+            message: "Expected rule name in precedence declaration, got numeric literal '\{name}'",
+            location: state.tokens[state.pos].location,
+          })
+        }
         rules.push(name)
         state.pos = state.pos + 1
       }
       Symbol(",") => state.pos = state.pos + 1
       _ => break
     }
+  }
+  if rules.is_empty() {
+    let loc = if state.pos < state.tokens.length() {
+      state.tokens[state.pos].location
+    } else {
+      state.tokens[state.tokens.length() - 1].location
+    }
+    return Error({
+      message: "precedence declaration requires at least one rule name",
+      location: loc,
+    })
   }
   Success({ level, kind, rules })
 }
@@ -341,6 +360,12 @@ fn parse_repeat_range(
                       match state.tokens[state.pos].token {
                         Symbol("}") => {
                           state.pos = state.pos + 1
+                          if min > max {
+                            return Error({
+                              message: "Invalid repeat range: minimum \{min} is greater than maximum \{max}",
+                              location: state.tokens[state.pos - 1].location,
+                            })
+                          }
                           Success(RepeatRange(pattern, min, max))
                         }
                         _ =>

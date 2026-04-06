@@ -22,6 +22,21 @@ test "serialize_roundtrip_simple" {
 }
 
 ///|
+/// fmt(fmt(src)) == fmt(src)：grammar_to_string 的幂等性。
+/// fmt --check 依赖此性质：若两次序列化结果不等，CI 会报假阳性。
+test "serialize_idempotent" {
+  let cases = [
+    "start expr\nrule expr: /\\d+/", "start s\nrule s: \"if\" | \"else\"", "start e\nprecedence left plus\nrule e: /\\d+/\nrule plus: \"+\"",
+    "rule a: b c*\nrule b: /[a-z]+/\nrule c: \",\" b", "start p\nextras [/\\s+/]\nrule p: item+\nrule item: /\\w+/",
+  ]
+  for src in cases {
+    let s1 = grammar_to_string(parse_ok_s(src))
+    let s2 = grammar_to_string(parse_ok_s(s1))
+    assert_eq(s2, s1)
+  }
+}
+
+///|
 test "serialize_contains_start" {
   let g = parse_ok_s("start foo\nrule foo: /\\d+/")
   let out = grammar_to_string(g)

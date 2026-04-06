@@ -14,7 +14,10 @@ pub struct GenerateArgs {
   json : Bool
   /// 是否打印 LR 项目集和 GOTO 表到 stderr
   diagnostic : Bool
-  /// 有歧义冲突时仍然输出（不中止）
+  /// --force：以下两类情况日均继续生成，不中止：
+  ///   1. 语义校验错误（ValidationError，如未定义规则引用、重复 rule 定义等）
+  ///   2. 歧义冲突（ConflictSeverity::Ambiguous）
+  /// 优先级冲突（Warn / DynamicConflict）不受此 flag 影响，始终继续生成。
   force : Bool
 } derive(Show)
 
@@ -76,6 +79,8 @@ pub struct TestArgs {
 pub enum OutputFormat {
   Sexp
   Json
+  /// Graphviz DOT 格式，输出后可用 `dot -Tsvg` 渲染为 SVG
+  Dot
 } derive(Show, Eq)
 
 ///|
@@ -282,9 +287,10 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
         match p.require_value("--format") {
           Ok("sexp") => format = Sexp
           Ok("json") => format = Json
+          Ok("dot") => format = Dot
           Ok(v) =>
             return Err(
-              "unknown format '\{v}', expected 'sexp' or 'json'\n\{parse_usage()}",
+              "unknown format '\{v}', expected 'sexp', 'json', or 'dot'\n\{parse_usage()}",
             )
           Err(e) => return Err(e)
         }
@@ -487,7 +493,7 @@ fn parse_test(p : ArgParser) -> Result[Command, String] {
 // 使用帮助文本
 
 ///|
-pub fn global_usage() -> String {
+fn global_usage() -> String {
   (
     #|Usage: moonparse [global-options] <command> [options]
     #|
@@ -512,7 +518,7 @@ pub fn global_usage() -> String {
 }
 
 ///|
-pub fn generate_usage() -> String {
+fn generate_usage() -> String {
   (
     #|Usage: moonparse generate <file.grammar> [options]
     #|
@@ -526,14 +532,14 @@ pub fn generate_usage() -> String {
 }
 
 ///|
-pub fn parse_usage() -> String {
+fn parse_usage() -> String {
   (
     #|Usage: moonparse parse <file.grammar> [input-file] [options]
     #|
     #|Options:
     #|  -g, --grammar <file>  Grammar file (.grammar)
     #|  -t, --table   <file>  Parse table file (.parse_table)
-    #|  --format <sexp|json>  Output format (default: sexp)
+    #|  --format <fmt>        Output format: sexp (default), json, dot (Graphviz)
     #|  --tokens              Also print token stream
     #|  --error-summary       Only print ERROR node summary
     #|  --stdin               Read input from stdin
@@ -542,7 +548,7 @@ pub fn parse_usage() -> String {
 }
 
 ///|
-pub fn check_usage() -> String {
+fn check_usage() -> String {
   (
     #|Usage: moonparse check <file.grammar>
     #|
@@ -554,7 +560,7 @@ pub fn check_usage() -> String {
 }
 
 ///|
-pub fn fmt_usage() -> String {
+fn fmt_usage() -> String {
   (
     #|Usage: moonparse fmt <file.grammar> [options]
     #|
@@ -566,7 +572,7 @@ pub fn fmt_usage() -> String {
 }
 
 ///|
-pub fn query_usage() -> String {
+fn query_usage() -> String {
   (
     #|Usage: moonparse query <pattern> [input-file] [options]
     #|
