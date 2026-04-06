@@ -10,17 +10,9 @@ pub(all) struct Point {
 } derive(Eq, Show)
 
 ///|
-/// 将 UTF-8 字节偏移列号转换为 Unicode 代码点列号（LSP UTF-8 位置编码集成用）。
-///
-/// LSP 客户端在"utf-8 position encoding"模式下传入的 `character` 是该行的
-/// UTF-8 字节偏移，而 MoonParse 内部 `Point.column` 存储的是代码点偏移。
-/// 本函数完成从"外部字节偏移"到"内部代码点偏移"的转换。
-///
-/// 参数：
-///   `source`    — 完整的 UTF-8 输入字符串（MoonBit String，按代码点索引）
-///   `line`      — 目标行（0-based，以 '\n' 为分隔符）
-///   `col_bytes` — 该行内的 UTF-8 字节偏移
-///
+/// 将 UTF-8 字节偏移列号转换为 Unicode 代码点列号（LSP UTF-8 位置编码集成用）
+
+///|
 /// 返回值：UTF-8 字节偏移 `col_bytes` 对应的代码点数（0-based）。
 /// 若 `line` 超出范围或 `col_bytes` 超出行长度，安全退化为返回 `col_bytes`。
 pub fn byte_offset_to_char_col(
@@ -73,6 +65,181 @@ pub fn byte_offset_to_char_col(
 }
 
 ///|
+/// 将 Unicode 代码点列号（`Point.column`）转换为 UTF-8 字节偏移列号
+///
+/// MoonBit 在 wasm-gc 模式下使用 UTF-16 编码存储字符串。
+/// 补充平面字符（U+10000+，如 emoji）以代理对存储，本函数正确处理代理对
+/// 并还原其真实 Unicode 代码点以计算 UTF-8 字节数（1/2/3/4 字节）。
+///
+/// 返回值：等价的 UTF-8 字节偏移。
+/// 若 `line` 超出范围，安全退化为返回 `char_col`。
+pub fn char_col_to_utf8_offset(
+  source : String,
+  line : Int,
+  char_col : Int,
+) -> Int {
+  if char_col <= 0 {
+    return 0
+  }
+  let n = source.length()
+  let mut line_start = 0
+  let mut cur_line = 0
+  while cur_line < line && line_start < n {
+    if source[line_start] == '\n' {
+      cur_line = cur_line + 1
+    }
+    line_start = line_start + 1
+  }
+  if cur_line < line {
+    return char_col
+  }
+  let mut byte_acc = 0
+  let mut i = line_start
+  let mut chars = 0
+  while i < n && chars < char_col {
+    if source[i] == '\n' {
+      break
+    }
+    let cu = source[i].to_int()
+    // Combine UTF-16 surrogate pair → single Unicode codepoint
+    let cp = if cu >= 0xD800 && cu <= 0xDBFF && i + 1 < n {
+      let lo = source[i + 1].to_int()
+      i = i + 1 // skip low surrogate; loop will increment i once more
+      0x10000 + (cu - 0xD800) * 0x400 + (lo - 0xDC00)
+    } else {
+      cu
+    }
+    let bytes = if cp < 0x80 {
+      1
+    } else if cp < 0x800 {
+      2
+    } else if cp < 0x10000 {
+      3
+    } else {
+      4
+    }
+    byte_acc = byte_acc + bytes
+    chars = chars + 1
+    i = i + 1
+  }
+  byte_acc
+}
+
+///|
+/// 将 Unicode 代码点列号（`Point.column`）转换为 UTF-16 代码单元偏移列号
+///
+/// MoonBit 在 wasm-gc 模式下使用 UTF-16 存储字符串，补充平面字符（emoji 等）
+/// 以高代理（0xD800–0xDBFF）+ 低代理（0xDC00–0xDFFF）形式存储。
+/// 本函数将每个代理对计为 2 个 UTF-16 代码单元、1 个代码点。
+///
+/// 返回值：等价的 UTF-16 代码单元偏移。
+/// 若 `line` 超出范围，安全退化为返回 `char_col`。
+pub fn char_col_to_utf16_offset(
+  source : String,
+  line : Int,
+  char_col : Int,
+) -> Int {
+  if char_col <= 0 {
+    return 0
+  }
+  let n = source.length()
+  let mut line_start = 0
+  let mut cur_line = 0
+  while cur_line < line && line_start < n {
+    if source[line_start] == '\n' {
+      cur_line = cur_line + 1
+    }
+    line_start = line_start + 1
+  }
+  if cur_line < line {
+    return char_col
+  }
+  let mut utf16_acc = 0
+  let mut i = line_start
+  let mut chars = 0
+  while i < n && chars < char_col {
+    if source[i] == '\n' {
+      break
+    }
+    let cu = source[i].to_int()
+    let is_high = cu >= 0xD800 && cu <= 0xDBFF
+    let is_pair = is_high &&
+      i + 1 < n &&
+      ({
+        let lo = source[i + 1].to_int()
+        lo >= 0xDC00 && lo <= 0xDFFF
+      })
+    if is_pair {
+      // High surrogate + low surrogate: pair = 1 codepoint = 2 UTF-16 units
+      utf16_acc = utf16_acc + 2
+      i = i + 2
+    } else {
+      utf16_acc = utf16_acc + 1
+      i = i + 1
+    }
+    chars = chars + 1
+  }
+  utf16_acc
+}
+
+///|
+/// 将 UTF-16 代码单元偏移列号转换为 Unicode 代码点列号（`Point.column`）。
+///
+/// 与 `char_col_to_utf16_offset` 互为逆运算。补充平面字符（代理对）计为
+/// 2 个 UTF-16 代码单元但只对应 1 个代码点。
+///
+/// 返回值：等价的代码点偏移（可赋给 `Point.column`）。
+/// 若 `line` 超出范围，安全退化为返回 `utf16_col`。
+pub fn utf16_offset_to_char_col(
+  source : String,
+  line : Int,
+  utf16_col : Int,
+) -> Int {
+  if utf16_col <= 0 {
+    return 0
+  }
+  let n = source.length()
+  let mut line_start = 0
+  let mut cur_line = 0
+  while cur_line < line && line_start < n {
+    if source[line_start] == '\n' {
+      cur_line = cur_line + 1
+    }
+    line_start = line_start + 1
+  }
+  if cur_line < line {
+    return utf16_col
+  }
+  let mut utf16_acc = 0
+  let mut i = line_start
+  let mut char_count = 0
+  while i < n && utf16_acc < utf16_col {
+    if source[i] == '\n' {
+      break
+    }
+    let cu = source[i].to_int()
+    let is_high = cu >= 0xD800 && cu <= 0xDBFF
+    let is_pair = is_high &&
+      i + 1 < n &&
+      ({
+        let lo = source[i + 1].to_int()
+        lo >= 0xDC00 && lo <= 0xDFFF
+      })
+    if is_pair {
+      utf16_acc = utf16_acc + 2
+      i = i + 2
+    } else {
+      utf16_acc = utf16_acc + 1
+      i = i + 1
+    }
+    if utf16_acc <= utf16_col {
+      char_count = char_count + 1
+    }
+  }
+  char_count
+}
+
+///|
 /// 编辑描述：描述输入的一次原地修改（用于增量解析）
 pub(all) struct InputEdit {
   start_byte : Int
@@ -82,6 +249,15 @@ pub(all) struct InputEdit {
   old_end_point : Point
   new_end_point : Point
 } derive(Show)
+
+///|
+/// 节点位置区间（代码点索引 + 行列坐标）
+pub(all) struct Span {
+  start_byte : Int
+  end_byte : Int
+  start_point : Point
+  end_point : Point
+} derive(Eq, Show)
 
 ///|
 // CST 节点
@@ -299,6 +475,20 @@ pub fn CstNode::missing_leaf(
     has_changes: false,
     fragile_left: false,
     fragile_right: false,
+  }
+}
+
+///|
+/// 从节点提取位置区间（`Span`）。
+///
+/// 将 `CstNode` 的四个位置字段打包为 `Span`，便于传递给需要位置信息但
+/// 不需要完整 CST 节点的 API（如错误报告、高亮、跳转定义等）。
+pub fn CstNode::span(self : CstNode) -> Span {
+  {
+    start_byte: self.start_byte,
+    end_byte: self.end_byte,
+    start_point: self.start_point,
+    end_point: self.end_point,
   }
 }
 

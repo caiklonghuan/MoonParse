@@ -279,6 +279,53 @@ pub fn moonparse_version() -> String {
 }
 
 ///|
+// ── 可视化导出 ───────────────────────────────────────────────────
+
+///|
+/// 将语法树渲染为 ASCII 树形字符串（适合终端/日志输出）。
+/// tree_id 无效时返回空串 ""。
+pub fn tree_to_ascii_tree(tree_id : Int) -> String {
+  match tree_registry.get(tree_id) {
+    None => ""
+    Some(entry) =>
+      match parser_registry_for_tree(tree_id) {
+        None => ""
+        Some(table) => cst_to_ascii_tree(entry.root, entry.input, table)
+      }
+  }
+}
+
+///|
+/// 将语法树导出为 Graphviz DOT 格式字符串。
+/// 可通过 `dot -Tsvg` / `dot -Tpng` 生成图像。
+/// tree_id 无效时返回空串 ""。
+pub fn tree_to_dot(tree_id : Int) -> String {
+  match tree_registry.get(tree_id) {
+    None => ""
+    Some(entry) =>
+      match parser_registry_for_tree(tree_id) {
+        None => ""
+        Some(table) => cst_to_dot(entry.root, entry.input, table)
+      }
+  }
+}
+
+///|
+/// 将语法树渲染为独立 HTML 页面字符串（含内联 CSS，无需外部依赖）。
+/// 可直接写入 .html 文件或通过 data: URI 在浏览器中打开。
+/// tree_id 无效时返回空串 ""。
+pub fn tree_to_html(tree_id : Int) -> String {
+  match tree_registry.get(tree_id) {
+    None => ""
+    Some(entry) =>
+      match parser_registry_for_tree(tree_id) {
+        None => ""
+        Some(table) => cst_to_html(entry.root, entry.input, table)
+      }
+  }
+}
+
+///|
 // ── 内部辅助 ─────────────────────────────────────────────────────
 
 ///|

@@ -12,6 +12,10 @@ pub fn byte_offset_to_char_col(String, Int, Int) -> Int
 
 pub fn bytes_to_point(String, Int, Point, Int) -> Point
 
+pub fn char_col_to_utf16_offset(String, Int, Int) -> Int
+
+pub fn char_col_to_utf8_offset(String, Int, Int) -> Int
+
 pub fn find_reusable_node(OldTree, Int, Int, Int) -> CstNode?
 
 pub fn glr_parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
@@ -39,6 +43,8 @@ pub let sym_end : Int
 pub let sym_error : Int
 
 pub let sym_error_repeat : Int
+
+pub fn utf16_offset_to_char_col(String, Int, Int) -> Int
 
 // Errors
 
@@ -68,6 +74,7 @@ pub fn CstNode::error_node(Array[Self], Int, Int, Point, Point) -> Self
 pub fn CstNode::inner(Int, Bool, Array[Self], Array[String?], Int, Int, Bool, Bool) -> Self
 pub fn CstNode::leaf(Int, Bool, Int, Int, Point, Point, Int, Int, Bool, Bool) -> Self
 pub fn CstNode::missing_leaf(Int, Bool, Int, Point) -> Self
+pub fn CstNode::span(Self) -> Span
 pub impl Show for CstNode
 
 type ErrorStatus
@@ -132,6 +139,15 @@ pub(all) struct Point {
 }
 pub impl Eq for Point
 pub impl Show for Point
+
+pub(all) struct Span {
+  start_byte : Int
+  end_byte : Int
+  start_point : Point
+  end_point : Point
+}
+pub impl Eq for Span
+pub impl Show for Span
 
 type StackFrame
 pub impl Show for StackFrame

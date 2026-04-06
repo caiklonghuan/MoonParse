@@ -7,7 +7,6 @@
 //   parse_with_old_tree(table, input, ot, ed)  → parse_incremental（复用旧子树）
 //   parse_from_dsl(dsl, input)                 → 便捷入口，Grammar DSL 一键解析
 
-
 ///|
 /// 解析 input，返回完整 CST。
 /// 语法错误以带 ERROR/MISSING 节点的 CST 形式返回 Ok。
@@ -59,6 +58,7 @@ pub fn parse_with_config(
 ///|
 /// 带自定义配置的增量解析入口。
 
+///|
 /// # 参数
 /// - table    : LALR 解析表
 /// - input    : 新的完整输入字符串（编辑后）
