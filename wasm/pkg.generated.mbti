@@ -7,12 +7,6 @@ import {
 }
 
 // Values
-pub fn cst_to_ascii_tree(@runtime.CstNode, String, @tablegen.ParseTable) -> String
-
-pub fn cst_to_dot(@runtime.CstNode, String, @tablegen.ParseTable) -> String
-
-pub fn cst_to_html(@runtime.CstNode, String, @tablegen.ParseTable) -> String
-
 pub fn cst_to_json(@runtime.CstNode, String, @tablegen.ParseTable) -> String
 
 pub fn cursor_free(Int) -> Unit
@@ -85,18 +79,11 @@ pub fn tree_free(Int) -> Unit
 
 pub fn tree_root_sexp(Int) -> String
 
-pub fn tree_to_ascii_tree(Int) -> String
-
-pub fn tree_to_dot(Int) -> String
-
-pub fn tree_to_html(Int) -> String
-
 pub fn tree_to_json(Int) -> String
 
 // Errors
 
 // Types and methods
-type Counter
 
 // Type aliases
 
