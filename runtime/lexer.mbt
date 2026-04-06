@@ -6,9 +6,10 @@
 //   · context-aware：只匹配 valid_tokens[lr_state] ∪ extras 中的 terminal
 //   · extras 识别后标记 is_extra=true（parser 决定如何处理）
 //   · 单槽 token 缓存，GLR 多版本同位置复用
+//   · 两阶段 keyword 检查：Regex/AnyChar 匹配后，在 valid 集合中查是否有同内容的 Literal，
+//     若有则升级 terminal_id 并标记 is_keyword=true
 //
 // 暂不实现：
-//   · 两阶段 keyword 检查
 //   · 外部词法器（external scanner，不做）
 
 ///|

@@ -1040,7 +1040,6 @@ test "parse_incremental — 删除换行后 end_point 与全量解析一致" {
   }
 }
 
-
 // Nonassoc — 重复使用非结合运算符触发空动作表路径
 //
 // 当 nonassoc 冲突中 Shift 和 Reduce 均被删除后，

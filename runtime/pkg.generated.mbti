@@ -16,6 +16,8 @@ pub fn find_reusable_node(OldTree, Int, Int, Int) -> CstNode?
 
 pub fn glr_parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
 
+pub fn glr_parse_with_config(@tablegen.ParseTable, String, ParseConfig) -> Result[CstNode, ParseError]
+
 pub fn is_reusable(CstNode, Int, Int, Int) -> Bool
 
 pub fn parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
@@ -24,7 +26,13 @@ pub fn parse_from_dsl(String, String) -> Result[CstNode, ParseError]
 
 pub fn parse_incremental(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
 
+pub fn parse_incremental_with_config(@tablegen.ParseTable, String, OldTree?, InputEdit?, ParseConfig) -> Result[CstNode, ParseError]
+
+pub fn parse_with_config(@tablegen.ParseTable, String, ParseConfig) -> Result[CstNode, ParseError]
+
 pub fn parse_with_old_tree(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
+
+pub fn parse_with_old_tree_and_config(@tablegen.ParseTable, String, OldTree?, InputEdit?, ParseConfig) -> Result[CstNode, ParseError]
 
 pub let sym_end : Int
 
@@ -99,6 +107,17 @@ pub(all) struct OldTree {
   old_input : String
 }
 pub impl Show for OldTree
+
+pub(all) struct ParseConfig {
+  error_cost_per_skipped_tree : Int
+  error_cost_per_skipped_char : Int
+  error_cost_per_skipped_line : Int
+  error_cost_per_missing_tree : Int
+  error_cost_per_recovery : Int
+  max_version_count : Int
+  max_version_count_overflow : Int
+}
+pub fn ParseConfig::default() -> Self
 
 pub(all) struct ParseError {
   position : Int

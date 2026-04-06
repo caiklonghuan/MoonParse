@@ -190,6 +190,7 @@ fn glr_parse_incremental(
   input : String,
   old_tree : OldTree,
   edit : InputEdit,
+  config : ParseConfig,
 ) -> Result[CstNode, ParseError] {
   let marked = apply_edit(old_tree, edit)
   // byte_delta / row_delta / col_delta 均为整次编辑的常数，解析期间不变
@@ -198,7 +199,7 @@ fn glr_parse_incremental(
   let col_delta = edit.new_end_point.column - edit.old_end_point.column
   let lexer = LexerEngine::new(table.lexer_dfa)
   let engine = {
-    ..GlrEngine::new(lexer),
+    ..GlrEngine::new(lexer, config),
     old_tree: Some(marked),
     byte_delta: delta,
     edit_start: edit.start_byte,
@@ -222,8 +223,24 @@ pub fn parse_incremental(
   _edit : InputEdit?,
 ) -> Result[CstNode, ParseError] {
   match (old_tree, _edit) {
-    (Some(ot), Some(edit)) => glr_parse_incremental(table, input, ot, edit)
+    (Some(ot), Some(edit)) =>
+      glr_parse_incremental(table, input, ot, edit, ParseConfig::default())
     _ => glr_parse(table, input)
+  }
+}
+
+///|
+/// 带自定义配置的增量解析入口
+pub fn parse_incremental_with_config(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree?,
+  edit : InputEdit?,
+  config : ParseConfig,
+) -> Result[CstNode, ParseError] {
+  match (old_tree, edit) {
+    (Some(ot), Some(e)) => glr_parse_incremental(table, input, ot, e, config)
+    _ => glr_parse_with_config(table, input, config)
   }
 }
 
@@ -241,7 +258,7 @@ pub fn is_reusable(
   if node.start_byte != cur_pos {
     return false
   }
-  // LR 状态一致（parse_state 当前置 0，条件永远通过，实现时需填入实际状态）
+  // LR 状态一致
   if node.parse_state != lr_state {
     return false
   }

@@ -61,6 +61,8 @@ struct GlrEngine {
   /// skip_token / insert_missing 等恢复策略在此累积代价；
   /// condense_stack 据此剪枝超限版本。
   error_status : Map[GssRef, ErrorStatus]
+  /// 错误恢复与 GLR 版本数可配置参数
+  config : ParseConfig
   // 增量复用上下文（None = 非增量全量解析）
   old_tree : OldTree?
   byte_delta : Int // new_end_byte - old_end_byte（常数，整个 parse 期间不变）
@@ -75,13 +77,14 @@ struct GlrEngine {
 /// 初始化 GLR 引擎
 ///
 /// 创建唯一底部哨兵结点（state=0, links=[]），并将其设为唯一活跃栈顶。
-fn GlrEngine::new(lexer : LexerEngine) -> GlrEngine {
+fn GlrEngine::new(lexer : LexerEngine, config : ParseConfig) -> GlrEngine {
   let sentinel : GssNode = { state: 0, links: [] }
   {
     gss_nodes: [sentinel],
     active_tops: [0],
     lexer,
     error_status: Map::new(),
+    config,
     old_tree: None,
     byte_delta: 0,
     edit_start: 0,
@@ -103,7 +106,21 @@ pub fn glr_parse(
   input : String,
 ) -> Result[CstNode, ParseError] {
   let lexer = LexerEngine::new(table.lexer_dfa)
-  let engine = GlrEngine::new(lexer)
+  let engine = GlrEngine::new(lexer, ParseConfig::default())
+  engine.run(table, input)
+}
+
+///|
+/// 带自定义错误恢复配置的 GLR 解析入口
+///
+/// 与 `glr_parse` 相同，但使用调用方传入的 `config` 替代默认配置。
+pub fn glr_parse_with_config(
+  table : @tablegen.ParseTable,
+  input : String,
+  config : ParseConfig,
+) -> Result[CstNode, ParseError] {
+  let lexer = LexerEngine::new(table.lexer_dfa)
+  let engine = GlrEngine::new(lexer, config)
   engine.run(table, input)
 }
 
@@ -605,9 +622,9 @@ fn GlrEngine::skip_token(
       Some(s) => not(s.is_in_error)
       None => true
     }
-    let skip_cost = error_cost_for_skipped_node(error_node)
+    let skip_cost = error_cost_for_skipped_node(error_node, self.config)
     let recovery_penalty = if is_first_error {
-      error_cost_per_recovery
+      self.config.error_cost_per_recovery
     } else {
       0
     }
@@ -729,11 +746,11 @@ fn GlrEngine::insert_missing(
                     if not(shifted.is_empty()) {
                       let new_cost = base_cost +
                         (if is_first_error {
-                          error_cost_per_recovery
+                          self.config.error_cost_per_recovery
                         } else {
                           0
                         }) +
-                        error_cost_per_missing_tree
+                        self.config.error_cost_per_missing_tree
                       for r in shifted {
                         result_tops.push(r)
                         result_costs.push((r, new_cost))
@@ -896,11 +913,11 @@ fn GlrEngine::insert_missing_and_relex(
                           if not(shifted.is_empty()) {
                             let new_cost = base_cost +
                               (if is_first_error {
-                                error_cost_per_recovery
+                                self.config.error_cost_per_recovery
                               } else {
                                 0
                               }) +
-                              error_cost_per_missing_tree
+                              self.config.error_cost_per_missing_tree
                             for r in shifted {
                               result_tops.push(r)
                               result_costs.push((r, new_cost))
@@ -1015,7 +1032,7 @@ fn GlrEngine::recover_to_state(
         None => () // 哨兵边（底部），无节点
       }
       let lc = match link.node {
-        Some(n) => error_cost_for_skipped_node(n)
+        Some(n) => error_cost_for_skipped_node(n, self.config)
         None => 0
       }
       frontier.push((link.predecessor, collected, lc))
@@ -1034,7 +1051,7 @@ fn GlrEngine::recover_to_state(
             None => ()
           }
           let extra_cost = match link.node {
-            Some(n) => error_cost_for_skipped_node(n)
+            Some(n) => error_cost_for_skipped_node(n, self.config)
             None => 0
           }
           frontier.push(
@@ -1074,7 +1091,7 @@ fn GlrEngine::recover_to_state(
         let shifted = self.run_shift(table, tok, cur_point, input, [])
         if not(shifted.is_empty()) {
           let recovery_penalty = if is_first_error {
-            error_cost_per_recovery
+            self.config.error_cost_per_recovery
           } else {
             0
           }
@@ -1385,7 +1402,9 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
 /// 避免在短暂并行爆发窗口内过早丢弃仍有希望的路径。
 fn GlrEngine::condense_stack(self : GlrEngine) -> Unit {
   let n = self.active_tops.length()
-  if n <= max_version_count {
+  // 仅当超过 max_version_count + max_version_count_overflow 时才触发，
+  // 避免在短暂并行爆发窗口内过早丢弃仍有希望的路径。
+  if n <= self.config.max_version_count + self.config.max_version_count_overflow {
     return
   }
   // 对 active_tops 按 (cost ASC, dynamic_precedence DESC) 排序
@@ -1418,7 +1437,7 @@ fn GlrEngine::condense_stack(self : GlrEngine) -> Unit {
     i = i + 1
   }
   // 截尾：只保留前 max_version_count 条
-  while self.active_tops.length() > max_version_count {
+  while self.active_tops.length() > self.config.max_version_count {
     let _ = self.active_tops.pop()
   }
   // compact 回收被丢弃路径的 GssNode

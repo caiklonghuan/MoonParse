@@ -116,11 +116,11 @@ pub(all) struct CstNode {
   end_point : Point
 
   // 叶节点字段（children 为空时有效）
-  /// 创建该叶节点时的 LR 状态（增量复用判断用，暂置零）
+  /// 创建该叶节点时的 LR 状态（Shift 前栈顶 LR 状态，增量复用匹配用）
   parse_state : Int
-  /// 词法器实际读到的末尾字节偏移（>= end_byte，增量边界检查用，暂置零）
+  /// 词法器实际读到的末尾字节偏移（>= end_byte，增量边界检查用）
   lookahead_bytes : Int
-  /// 该 token 是关键字（两阶段词法用，暂置 false）
+  /// 该 token 是关键字（两阶段词法用）
   is_keyword : Bool
 
   // 内部节点字段（children 非空时有效）
@@ -339,24 +339,6 @@ struct StackFrame {
 } derive(Show)
 
 ///|
-/// 错误代价常量
-let error_cost_per_skipped_tree : Int = 100
-
-///|
-let error_cost_per_skipped_char : Int = 1
-
-///|
-let error_cost_per_skipped_line : Int = 30
-
-///|
-let error_cost_per_missing_tree : Int = 110
-
-///|
-/// 每次进入恢复模式本身的固定惩罚（叠加到 per-token 代价之上）
-/// 防止解析器频繁触发恢复导致不稳定
-let error_cost_per_recovery : Int = 500
-
-///|
 /// GLR 并行版本的代价描述（condense_stack 用）
 ///
 /// 代价存在版本级 ErrorStatus 而不是 CstNode 上，原因：
@@ -373,8 +355,37 @@ struct ErrorStatus {
 } derive(Show)
 
 ///|
-/// GLR 版本上限常量
-let max_version_count : Int = 6
+/// 错误恢复与 GLR 并发版本数的可配置参数
+///
+/// 通过 `parse_with_config` / `parse_with_old_tree_and_config` 传入；
+/// `ParseConfig::default()` 返回与内置常量等价的默认配置。
+pub(all) struct ParseConfig {
+  /// 跳过一棵子树的错误代价（默认 100）
+  error_cost_per_skipped_tree : Int
+  /// 跳过一个字节的错误代价（默认 1）
+  error_cost_per_skipped_char : Int
+  /// 跳过一行的额外错误代价（默认 30）
+  error_cost_per_skipped_line : Int
+  /// 插入一个 MISSING 节点的错误代价（默认 110）
+  error_cost_per_missing_tree : Int
+  /// 首次进入错误恢复的固定惩罚（默认 500）
+  error_cost_per_recovery : Int
+  /// GLR 并行版本数上限（默认 6）
+  max_version_count : Int
+  /// 超出 max_version_count 后触发截尾前的容忍量（默认 4）
+  max_version_count_overflow : Int
+}
 
 ///|
-let max_version_count_overflow : Int = 4
+/// 返回与内置常量等价的默认错误恢复配置。
+pub fn ParseConfig::default() -> ParseConfig {
+  {
+    error_cost_per_skipped_tree: 100,
+    error_cost_per_skipped_char: 1,
+    error_cost_per_skipped_line: 30,
+    error_cost_per_missing_tree: 110,
+    error_cost_per_recovery: 500,
+    max_version_count: 6,
+    max_version_count_overflow: 4,
+  }
+}
