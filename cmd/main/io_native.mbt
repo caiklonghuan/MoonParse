@@ -143,3 +143,59 @@ fn print_err_impl(s : String) -> Unit {
 fn isatty_impl(fd : Int) -> Bool {
   c_isatty(fd) != 0
 }
+
+///|
+fn write_bytes_impl(path : String, bytes : Bytes) -> Result[Unit, String] {
+  let cpath = str_to_cstr(path)
+  let mode = str_to_cstr("wb")
+  let file = c_fopen(cpath, mode)
+  if file == 0L {
+    return Err("cannot open file for writing: \{path}")
+  }
+  let len = bytes.length()
+  let written = c_fwrite(bytes, 1, len, file)
+  let _ = c_fclose(file)
+  if written != len {
+    return Err("write incomplete: wrote \{written} of \{len} bytes to \{path}")
+  }
+  Ok(())
+}
+
+///|
+fn read_bytes_impl(path : String) -> Result[Bytes, String] {
+  let cpath = str_to_cstr(path)
+  let mode = str_to_cstr("rb")
+  let file = c_fopen(cpath, mode)
+  if file == 0L {
+    return Err("cannot open file: \{path}")
+  }
+  if c_fseek(file, 0L, seek_end) != 0 {
+    let _ = c_fclose(file)
+    return Err("fseek(SEEK_END) failed: \{path}")
+  }
+  let size64 = c_ftell(file)
+  if size64 < 0L {
+    let _ = c_fclose(file)
+    return Err("ftell failed: \{path}")
+  }
+  if c_fseek(file, 0L, seek_set) != 0 {
+    let _ = c_fclose(file)
+    return Err("fseek(SEEK_SET) failed: \{path}")
+  }
+  let size = size64.to_int()
+  let buf = Bytes::new(size)
+  let read = c_fread(buf, 1, size, file)
+  let _ = c_fclose(file)
+  if read < 0 {
+    return Err("fread failed: \{path}")
+  }
+  Ok(buf[0:read])
+}
+
+///|
+extern "c" fn c_exit(code : Int) -> Unit = "exit"
+
+///|
+fn process_exit_impl(code : Int) -> Unit {
+  c_exit(code)
+}

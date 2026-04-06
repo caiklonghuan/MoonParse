@@ -35,3 +35,23 @@ fn isatty_impl(fd : Int) -> Bool {
   // WASM 目标通常不连接到终端
   false
 }
+
+///|
+fn write_bytes_impl(path : String, bytes : Bytes) -> Result[Unit, String] {
+  let _ = path
+  let _ = bytes
+  Err("write_bytes is not available in WASM target")
+}
+
+///|
+fn read_bytes_impl(path : String) -> Result[Bytes, String] {
+  let _ = path
+  Err("read_bytes is not available in WASM target")
+}
+
+///|
+fn process_exit_impl(code : Int) -> Unit {
+  if code != 0 {
+    panic()
+  }
+}

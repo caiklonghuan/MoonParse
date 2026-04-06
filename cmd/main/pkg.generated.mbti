@@ -11,6 +11,18 @@ import {
 // Values
 pub fn check_usage() -> String
 
+pub fn cmd_check(CheckArgs) -> Int
+
+pub fn cmd_fmt(FmtArgs) -> Int
+
+pub fn cmd_generate(GenerateArgs) -> Int
+
+pub fn cmd_parse(ParseArgs) -> Int
+
+pub fn cmd_query(QueryArgs) -> Int
+
+pub fn cmd_run_tests(TestArgs) -> Int
+
 pub fn fmt_usage() -> String
 
 pub fn generate_usage() -> String
@@ -31,7 +43,11 @@ pub fn print_info(String) -> Unit
 
 pub fn print_warning(String) -> Unit
 
+pub fn process_exit(Int) -> Unit
+
 pub fn query_usage() -> String
+
+pub fn read_bytes(String) -> Result[Bytes, String]
 
 pub fn read_file(String) -> Result[String, String]
 
@@ -50,6 +66,8 @@ pub fn report_summary(Int, Int) -> Unit
 pub fn report_validation_errors(Array[@grammar.ValidationError], String?) -> Unit
 
 pub fn set_color_output(Bool?) -> Unit
+
+pub fn write_bytes(String, Bytes) -> Result[Unit, String]
 
 pub fn write_file(String, String) -> Result[Unit, String]
 

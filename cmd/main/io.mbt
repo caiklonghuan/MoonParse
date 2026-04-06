@@ -58,3 +58,26 @@ pub fn print_err(s : String) -> Unit {
 pub fn isatty(fd : Int) -> Bool {
   isatty_impl(fd)
 }
+
+///|
+/// 将字节数组内容以二进制模式写入文件（覆盖写）。
+///
+/// 失败返回 `Err(message)`。
+pub fn write_bytes(path : String, bytes : Bytes) -> Result[Unit, String] {
+  write_bytes_impl(path, bytes)
+}
+
+///|
+/// 读取文件全部内容，返回原始字节（不做 UTF-8 解码，适用于二进制文件）。
+///
+/// 失败返回 `Err(message)`。
+pub fn read_bytes(path : String) -> Result[Bytes, String] {
+  read_bytes_impl(path)
+}
+
+///|
+/// 退出进程，使用指定的退出码。
+/// 在 native 目标上调用 C 的 exit()；在 wasm 目标上，非零码触发 panic。
+pub fn process_exit(code : Int) -> Unit {
+  process_exit_impl(code)
+}

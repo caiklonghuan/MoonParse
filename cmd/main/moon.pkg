@@ -5,6 +5,7 @@ import {
   "caiklonghuan/MoonParse/query" @query,
   "moonbitlang/core/buffer" @buffer,
   "moonbitlang/core/encoding/utf8" @utf8,
+  "moonbitlang/core/env" @env,
 }
 
 options(
