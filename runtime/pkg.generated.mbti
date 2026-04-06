@@ -8,6 +8,8 @@ import {
 // Values
 pub fn apply_edit(OldTree, InputEdit) -> OldTree
 
+pub fn byte_offset_to_char_col(String, Int, Int) -> Int
+
 pub fn bytes_to_point(String, Int, Point, Int) -> Point
 
 pub fn find_reusable_node(OldTree, Int, Int, Int) -> CstNode?

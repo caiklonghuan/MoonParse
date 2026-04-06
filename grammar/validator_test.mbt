@@ -157,18 +157,21 @@ test "validate_error_to_string" {
   let e1 : ValidationError = {
     rule: "expr",
     kind: ValidationErrorKind::UndefinedRule("ghost"),
+    location: None,
   }
   assert_true(e1.to_string().length() > 0)
 
   let e2 : ValidationError = {
     rule: "a",
     kind: ValidationErrorKind::DirectLeftRecursion("a"),
+    location: None,
   }
   assert_true(e2.to_string().length() > 0)
 
   let e3 : ValidationError = {
     rule: "b",
     kind: ValidationErrorKind::IndirectLeftRecursion(["a", "b", "a"]),
+    location: None,
   }
   assert_true(e3.to_string().length() > 0)
 }

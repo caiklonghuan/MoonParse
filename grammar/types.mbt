@@ -66,6 +66,8 @@ pub(all) struct Rule {
   pattern : Pattern
   /// 是否为命名节点（名称以 _ 开头则为匿名节点）
   is_named : Bool
+  /// 规则名在源码中的位置（行列，用于错误报告）
+  location : SourceLocation?
 }
 
 ///|

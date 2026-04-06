@@ -1039,3 +1039,206 @@ test "parse_incremental — 删除换行后 end_point 与全量解析一致" {
       }
   }
 }
+
+
+// Nonassoc — 重复使用非结合运算符触发空动作表路径
+//
+// 当 nonassoc 冲突中 Shift 和 Reduce 均被删除后，
+// action 表中存入空数组 Some([])，GLR 引擎无法 Shift，
+// 必须走 skip_token / insert_missing 错误恢复，最终仍返回 Ok（带 ERROR 节点）。
+
+///|
+test "nonassoc — 重复运算符触发空动作表，错误恢复后返回 Ok" {
+  // e → e "==" e | /[a-z]+/，优先级：nonassoc ==
+  // 输入 "a==b==c"：归约 "a==b"→e 后，再见 "==" 时 action=[] → 错误恢复
+  let dsl = "start e\nprecedence nonassoc ==\nrule e: e \"==\" e | /[a-z]+/"
+  match parse_from_dsl(dsl, "a==b==c") {
+    Err(e) => fail("expected Ok (with recovery) but got Err: \{e.message}")
+    Ok(root) => {
+      assert_eq(root.start_byte, 0)
+      assert_true(root.end_byte > 0)
+    }
+  }
+}
+
+// 场景 2：Nonassoc — 单次合法使用（无冲突）
+//
+// nonassoc 仅阻止同一层级运算符的连续使用，单次使用是完全合法的。
+
+///|
+test "nonassoc — 单次合法使用不触发错误" {
+  let dsl = "start e\nprecedence nonassoc ==\nrule e: e \"==\" e | /[a-z]+/"
+  match parse_from_dsl(dsl, "a==b") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => assert_eq(root.end_byte, 4)
+  }
+}
+
+// 场景 3：extras — 空字符串输入（extras 已声明）
+//
+// 输入长度为 0，词法器立即返回 EOF。extras DFA 不会被调用。
+// 必填规则 "a" 无法匹配 → 错误恢复也无法补全 → 最终 Err。
+
+///|
+test "extras — 空字符串输入（extras 已声明）返回 Err" {
+  let dsl = "start s\nrule s: \"a\"\nextras [/\\s+/]"
+  match parse_from_dsl(dsl, "") {
+    Err(_) => () // 期望失败
+    Ok(_) => fail("expected Err but got Ok")
+  }
+}
+
+// 场景 4：extras — 纯空白输入（只有 extras token，无必填 token）
+//
+// 输入为 "   "（3 个空格），全部被 extras DFA 消耗后遇到 EOF。
+// 必填规则 "a" 没有匹配 → 错误恢复无法修复 → 最终 Err。
+
+///|
+test "extras — 纯空白输入（无非空 token）返回 Err" {
+  let dsl = "start s\nrule s: \"a\"\nextras [/\\s+/]"
+  match parse_from_dsl(dsl, "   ") {
+    Err(_) => () // 期望失败
+    Ok(_) => fail("expected Err but got Ok")
+  }
+}
+
+// 非初始 LR 状态下的词法错误
+//
+// 已成功 Shift 第一个 token（LR 进入非初始状态），
+// 然后遇到产生式体中间的词法 sym_error。
+// skip_token 的"停留路径"在产生式体中间无法被 enum_paths 正确穿透，
+// 当前实现返回 Err（而非 Ok），且不崩溃——验证此路径的健壮性。
+
+///|
+test "非初始 LR 状态下的词法错误 — 解析器不崩溃且返回 Result" {
+  // s → "a" "b"，输入 "a#b"：
+  // Shift "a" 后（LR 进入非初始状态），遇到 "#"（sym_error）,
+  // skip_token 停留路径在产生式体中间无法被 enum_paths 穿透
+  // → 当前实现返回 Err（不崩溃）
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  let result = parse_from_dsl(dsl, "a#b")
+  // 无论 Ok/Err，解析器必须正常完成（不 panic）
+  // 当前实现：enum_paths 无法穿透停留路径 → Err
+  match result {
+    Err(_) => () // 当前实现：产生式中间的 skip_token 不可恢复，期望 Err
+    Ok(root) => {
+      // 若将来错误恢复逻辑改进，Ok 亦可接受；此时根节点应覆盖完整输入
+      assert_eq(root.start_byte, 0)
+      assert_true(root.end_byte > 0)
+    }
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 增量解析端对端正确性：节点真正复用验证
+//
+// 策略：向旧树的第一个子节点注入"哨兵"字段（is_keyword=true）。
+//   · is_reusable 不检查 is_keyword → 哨兵不影响复用判定
+//   · shift_node 复用路径将 ..node 展开 → is_keyword 原样保留
+//   · 新建叶节点路径经词法器填充 is_keyword → 对于非关键字 regex 为 false
+// 因此：
+//   new_root.children[0].is_keyword == true  ⟺ 旧节点被真正复用
+//   new_root.children[1].is_keyword == false ⟺ 第二个节点已重新词法+解析
+// ──────────────────────────────────────────────────────────────────────────────
+
+///|
+test "parse_incremental — 旧节点被真正复用（哨兵字段保留验证）" {
+  // 文法：两个独立 regex token
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) =>
+          match parse_linear(table, "ab") {
+            Err(e) => fail("old parse failed: \{e.message}")
+            Ok(old_root) => {
+              // 向第一个 child 注入哨兵：is_keyword=true
+              // （普通 regex token 不是 keyword，真正复用时该值会原样保留）
+              let sentinel_child = { ..old_root.children[0], is_keyword: true }
+              let sentinel_children = old_root.children.copy()
+              sentinel_children[0] = sentinel_child
+              let sentinel_root = { ..old_root, children: sentinel_children }
+              let old_tree : OldTree = { root: sentinel_root, old_input: "ab" }
+              // 编辑：替换第二个字符 'b' → 'd'（同长度，位置 [1,2)）
+              let edit : InputEdit = {
+                start_byte: 1,
+                old_end_byte: 2,
+                new_end_byte: 2,
+                start_point: { row: 0, column: 1 },
+                old_end_point: { row: 0, column: 2 },
+                new_end_point: { row: 0, column: 2 },
+              }
+              match parse_incremental(table, "ad", Some(old_tree), Some(edit)) {
+                Err(e) => fail("incremental parse failed: \{e.message}")
+                Ok(new_root) => {
+                  assert_eq(new_root.start_byte, 0)
+                  assert_eq(new_root.end_byte, 2)
+                  assert_eq(new_root.children.length(), 2)
+                  // 第一个子节点未变，哨兵 is_keyword=true 保留 → 证明复用
+                  assert_eq(new_root.children[0].is_keyword, true)
+                  // 第一个子节点位置正确
+                  assert_eq(new_root.children[0].start_byte, 0)
+                  assert_eq(new_root.children[0].end_byte, 1)
+                  // 第二个子节点重新词法解析 → is_keyword=false（'d' 非 keyword）
+                  assert_eq(new_root.children[1].is_keyword, false)
+                  assert_eq(new_root.children[1].start_byte, 1)
+                  assert_eq(new_root.children[1].end_byte, 2)
+                }
+              }
+            }
+          }
+      }
+  }
+}
+
+// byte_offset_to_char_col — UTF-8 字节偏移到代码点列号转换
+
+///|
+test "byte_offset_to_char_col — ASCII 字符（1 字节/char）恒等映射" {
+  // 纯 ASCII：每个字符 1 字节，字节偏移 == 代码点偏移
+  let src = "hello\nworld"
+  assert_eq(byte_offset_to_char_col(src, 0, 0), 0)
+  assert_eq(byte_offset_to_char_col(src, 0, 3), 3)
+  assert_eq(byte_offset_to_char_col(src, 0, 5), 5)
+  // 第二行
+  assert_eq(byte_offset_to_char_col(src, 1, 2), 2)
+}
+
+///|
+test "byte_offset_to_char_col — 3 字节 CJK 字符" {
+  // CJK 字符（U+4E00–U+9FFF）每个占 3 UTF-8 字节
+  // "你好" = U+4F60 U+597D，各 3 字节 → 共 6 字节，2 个代码点
+  let src = "你好"
+  // 字节偏移 0 → 代码点 0
+  assert_eq(byte_offset_to_char_col(src, 0, 0), 0)
+  // 字节偏移 3（"你" 后面）→ 代码点 1
+  assert_eq(byte_offset_to_char_col(src, 0, 3), 1)
+  // 字节偏移 6（"好" 后面）→ 代码点 2
+  assert_eq(byte_offset_to_char_col(src, 0, 6), 2)
+}
+
+///|
+test "byte_offset_to_char_col — 混合 ASCII + CJK" {
+  // "a你b" = 'a'(1) + '你'(3) + 'b'(1) = 5 字节，3 个代码点
+  let src = "a你b"
+  assert_eq(byte_offset_to_char_col(src, 0, 1), 1) // 'a' 之后
+  assert_eq(byte_offset_to_char_col(src, 0, 4), 2) // '你' 之后
+  assert_eq(byte_offset_to_char_col(src, 0, 5), 3) // 'b' 之后
+}
+
+///|
+test "byte_offset_to_char_col — 多行：正确跳过前几行" {
+  // "ab\ncd\nef"，第 2 行（0-based）从索引 6 开始
+  let src = "ab\ncd\nef"
+  assert_eq(byte_offset_to_char_col(src, 2, 0), 0)
+  assert_eq(byte_offset_to_char_col(src, 2, 1), 1)
+  assert_eq(byte_offset_to_char_col(src, 2, 2), 2)
+}
+
+///|
+test "byte_offset_to_char_col — col_bytes=0 时返回 0" {
+  let src = "hello"
+  assert_eq(byte_offset_to_char_col(src, 0, 0), 0)
+}

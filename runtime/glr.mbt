@@ -529,7 +529,7 @@ fn GlrEngine::run_shift(
                     tok.end_byte,
                     cur_point,
                     ep,
-                    state, // parse_state：当前栈顶 LR 状态
+                    state, // parse_state：Shift 前栈顶 LR 状态（增量复用匹配用）
                     tok.lookahead_bytes,
                     tok.is_keyword,
                     false,

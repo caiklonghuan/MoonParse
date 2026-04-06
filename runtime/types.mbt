@@ -3,11 +3,74 @@
 
 ///|
 /// 行列坐标（0-based）
-/// column 是字节偏移，不是字符数。
+/// column 是 Unicode 代码点偏移（codepoint offset），不是 UTF-8 字节偏移。
 pub(all) struct Point {
   row : Int
   column : Int
 } derive(Eq, Show)
+
+///|
+/// 将 UTF-8 字节偏移列号转换为 Unicode 代码点列号（LSP UTF-8 位置编码集成用）。
+///
+/// LSP 客户端在"utf-8 position encoding"模式下传入的 `character` 是该行的
+/// UTF-8 字节偏移，而 MoonParse 内部 `Point.column` 存储的是代码点偏移。
+/// 本函数完成从"外部字节偏移"到"内部代码点偏移"的转换。
+///
+/// 参数：
+///   `source`    — 完整的 UTF-8 输入字符串（MoonBit String，按代码点索引）
+///   `line`      — 目标行（0-based，以 '\n' 为分隔符）
+///   `col_bytes` — 该行内的 UTF-8 字节偏移
+///
+/// 返回值：UTF-8 字节偏移 `col_bytes` 对应的代码点数（0-based）。
+/// 若 `line` 超出范围或 `col_bytes` 超出行长度，安全退化为返回 `col_bytes`。
+pub fn byte_offset_to_char_col(
+  source : String,
+  line : Int,
+  col_bytes : Int,
+) -> Int {
+  if col_bytes <= 0 {
+    return 0
+  }
+  let n = source.length()
+  // 步骤 1：定位目标行的起始代码点下标
+  let mut line_start = 0
+  let mut cur_line = 0
+  while cur_line < line && line_start < n {
+    if source[line_start].to_int().to_char().unwrap() == '\n' {
+      cur_line = cur_line + 1
+    }
+    line_start = line_start + 1
+  }
+  if cur_line < line {
+    return col_bytes // 行超出范围，退化
+  }
+  // 步骤 2：自行首逐代码点累加 UTF-8 字节数，直至消耗满 col_bytes
+  let mut char_count = 0
+  let mut byte_acc = 0
+  let mut i = line_start
+  while i < n && byte_acc < col_bytes {
+    let c = source[i].to_int().to_char().unwrap()
+    if c == '\n' {
+      break // 不越过行边界
+    }
+    let cp = c.to_int()
+    let bytes = if cp < 0x80 {
+      1
+    } else if cp < 0x800 {
+      2
+    } else if cp < 0x10000 {
+      3
+    } else {
+      4
+    }
+    byte_acc = byte_acc + bytes
+    if byte_acc <= col_bytes {
+      char_count = char_count + 1
+    }
+    i = i + 1
+  }
+  char_count
+}
 
 ///|
 /// 编辑描述：描述输入的一次原地修改（用于增量解析）

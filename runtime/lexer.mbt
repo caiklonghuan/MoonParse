@@ -152,12 +152,33 @@ fn LexerEngine::run_dfa(
     }
   }
 
+  // 两阶段 keyword 检查：若最佳 terminal 对应 Regex/AnyChar 模式，
+  // 检查匹配文本是否等于某个合法 Literal terminal，若是则提升为该 keyword terminal。
+  let matched_text = input[pos:best_pos].to_string()
+  let mut final_tid = best_tid
+  let mut is_keyword = false
+  match table.terminal_patterns.get(best_tid) {
+    Some(@tablegen.TerminalDef::Literal(_)) => () // 已经是 Literal，无需检查
+    _ =>
+      for t in valid {
+        match table.terminal_patterns.get(t) {
+          Some(@tablegen.TerminalDef::Literal(lit)) =>
+            if lit == matched_text {
+              final_tid = t
+              is_keyword = true
+              break
+            }
+          _ => ()
+        }
+      }
+  }
+
   let tok : Token = {
-    terminal_id: best_tid,
+    terminal_id: final_tid,
     start_byte: pos,
     end_byte: best_pos,
     lookahead_bytes: cur_pos, // DFA 实际停止位置（>= end_byte，增量边界检查用）
-    is_keyword: false, // TODO: 两阶段 keyword 检查
+    is_keyword,
     is_extra,
   }
   self.cached_pos = pos

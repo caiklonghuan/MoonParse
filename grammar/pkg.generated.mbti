@@ -70,6 +70,7 @@ pub(all) struct Rule {
   name : String
   pattern : Pattern
   is_named : Bool
+  location : SourceLocation?
 }
 
 pub(all) struct SourceLocation {
@@ -87,6 +88,7 @@ pub(all) struct TokenWithLocation {
 pub(all) struct ValidationError {
   rule : String
   kind : ValidationErrorKind
+  location : SourceLocation?
 }
 pub fn ValidationError::to_string(Self) -> String
 

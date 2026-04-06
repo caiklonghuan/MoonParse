@@ -153,7 +153,8 @@ fn parse_rule(state : ParserState) -> ParseResult[Rule] {
           state.pos = state.pos + 1
           let is_named = name.length() == 0 || name[0] != '_'
           match parse_pattern(state) {
-            Success(pattern) => Success({ name, pattern, is_named })
+            Success(pattern) =>
+              Success({ name, pattern, is_named, location: Some(name_loc) })
             Error(err) => Error(err)
           }
         }

@@ -209,7 +209,10 @@ pub fn report_validation_errors(
       None => ()
       Some(path) => {
         let arrow = ansi_cyan("-->")
-        print_err("  \{arrow} \{path} (rule '\{e.rule}')")
+        match e.location {
+          None => print_err("  \{arrow} \{path} (rule '\{e.rule}')")
+          Some(loc) => print_err(loc_line(path, loc.line, loc.column))
+        }
       }
     }
   }

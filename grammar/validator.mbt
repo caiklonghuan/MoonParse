@@ -23,6 +23,8 @@ pub(all) struct ValidationError {
   rule : String
   /// 错误类别及附带信息
   kind : ValidationErrorKind
+  /// 规则名在源码中的位置（行列）
+  location : SourceLocation?
 }
 
 ///|
@@ -62,6 +64,7 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
         errors.push({
           rule: start_name,
           kind: ValidationErrorKind::UndefinedStartRule(start_name),
+          location: None,
         })
       }
     None => ()
@@ -74,6 +77,10 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
         errors.push({
           rule: name,
           kind: ValidationErrorKind::UndefinedRule(ref_name),
+          location: match grammar.rules.get(name) {
+            Some(r) => r.location
+            None => None
+          },
         })
       }
     }
@@ -92,6 +99,10 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
             errors.push({
               rule: name,
               kind: ValidationErrorKind::UnreachableRule(name),
+              location: match grammar.rules.get(name) {
+                Some(r) => r.location
+                None => None
+              },
             })
           }
         }
@@ -203,14 +214,22 @@ fn dfs_left(
         errors.push({
           rule: name,
           kind: ValidationErrorKind::DirectLeftRecursion(name),
+          location: match grammar.rules.get(name) {
+            Some(r) => r.location
+            None => None
+          },
         })
       } else {
-        // 已经在 errors 里找一遍，避免同一个环重复报告
+        // 已经在 errors 里找一遗，避免同一个环重复报告
         let already = ref_already_reported(errors, cycle)
         if not(already) {
           errors.push({
             rule: name,
             kind: ValidationErrorKind::IndirectLeftRecursion(cycle),
+            location: match grammar.rules.get(name) {
+              Some(r) => r.location
+              None => None
+            },
           })
         }
       }
@@ -233,6 +252,10 @@ fn dfs_left(
             errors.push({
               rule: name,
               kind: ValidationErrorKind::DirectLeftRecursion(name),
+              location: match grammar.rules.get(name) {
+                Some(r) => r.location
+                None => None
+              },
             })
           }
         } else {
