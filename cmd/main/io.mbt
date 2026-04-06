@@ -2,26 +2,6 @@
 // 文件 I/O 适配层
 
 ///|
-// 共用辅助
-
-///|
-/// MoonBit String → null 结尾 UTF-8 字节（C 字符串，用于 fopen 路径等参数）
-fn str_to_cstr(s : String) -> Bytes {
-  let buf = @buffer.new(size_hint=s.length() + 1)
-  buf.write_string_utf8(s)
-  buf.write_byte(b'\x00')
-  buf.to_bytes()
-}
-
-///|
-/// MoonBit String → UTF-8 字节（无 null 结尾，用于写入文件内容）
-fn str_to_utf8(s : String) -> Bytes {
-  let buf = @buffer.new(size_hint=s.length())
-  buf.write_string_utf8(s)
-  buf.to_bytes()
-}
-
-///|
 // 公开 API
 
 ///|

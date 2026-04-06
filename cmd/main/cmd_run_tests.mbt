@@ -1,5 +1,6 @@
 ///|
 // 语料库测试运行器
+
 ///|
 /// 单条测试用例
 priv struct TestCase {
@@ -120,14 +121,18 @@ fn parse_corpus(content : String) -> Array[TestCase] {
 }
 
 ///|
-/// 运行单个 corpus 文件，返回 (passed, failed)
-fn run_corpus_file(path : String, grammar_file : String) -> (Int, Int) {
+/// 运行单个 corpus 文件，返回 (passed, failed)。
+/// 返回 Err(()) 表示加载/编译失败（错误已打印），区别于“无测试用例”
+fn run_corpus_file(
+  path : String,
+  grammar_file : String,
+) -> Result[(Int, Int), Unit] {
   // 读取并解析 corpus 文件
   let content = match read_file(path) {
     Ok(s) => s
     Err(msg) => {
       print_err("error: cannot read corpus file '\{path}': " + msg)
-      return (0, 0)
+      return Err(())
     }
   }
   // 加载 grammar 并编译解析表
@@ -135,13 +140,13 @@ fn run_corpus_file(path : String, grammar_file : String) -> (Int, Int) {
     Ok(t) => t
     Err(msg) => {
       print_err("error: cannot compile grammar: " + msg)
-      return (0, 0)
+      return Err(())
     }
   }
   let cases = parse_corpus(content)
   if cases.is_empty() {
     print_warning("no test cases found in '\{path}'")
-    return (0, 0)
+    return Ok((0, 0))
   }
   let mut passed = 0
   let mut failed = 0
@@ -160,7 +165,7 @@ fn run_corpus_file(path : String, grammar_file : String) -> (Int, Int) {
       print_err("  actual:   \{actual}")
     }
   }
-  (passed, failed)
+  Ok((passed, failed))
 }
 
 ///|
@@ -181,7 +186,10 @@ pub fn cmd_run_tests(args : TestArgs) -> Int {
   // 支持 "<grammar>:<corpus>" 冒号分隔格式
   let (grammar_path, corpus_path) = parse_test_spec(spec)
 
-  let (passed, failed) = run_corpus_file(corpus_path, grammar_path)
+  let (passed, failed) = match run_corpus_file(corpus_path, grammar_path) {
+    Err(_) => return 2 // 加载或编译失败，错误已打印
+    Ok(r) => r
+  }
   let total = passed + failed
   if total == 0 {
     print_info("no tests found")

@@ -1,5 +1,6 @@
 ///|
 // parse 命令处理器
+
 ///|
 // 工具：节点原文切片
 
@@ -12,72 +13,6 @@ fn node_text(node : @runtime.CstNode, input : String) -> String {
   } else {
     ""
   }
-}
-
-///|
-// S-表达式 CST 序列化
-
-///|
-/// 将 CST 节点写成 S-表达式（tree-sitter corpus 兼容格式）。
-/// 只输出命名节点和 ERROR 节点；匿名/extra 节点跳过。
-fn write_sexp(
-  buf : StringBuilder,
-  node : @runtime.CstNode,
-  input : String,
-  table : @tablegen.ParseTable,
-) -> Unit {
-  // extra 节点（注释/空白）跳过
-  if node.extra {
-    return
-  }
-  // 匿名节点跳过（不含 ERROR）
-  if not(node.is_named) && not(node.is_error) {
-    return
-  }
-  let type_name = @query.node_type_name(node, table)
-  if node.children.is_empty() {
-    // 叶节点：显示类型名
-    buf.write_string("(\{type_name})")
-  } else {
-    buf.write_string("(\{type_name}")
-    for child in node.children {
-      if not(child.extra) && (child.is_named || child.is_error) {
-        buf.write_char(' ')
-        write_sexp(buf, child, input, table)
-      }
-    }
-    buf.write_char(')')
-  }
-}
-
-///|
-fn cst_to_sexp(
-  node : @runtime.CstNode,
-  input : String,
-  table : @tablegen.ParseTable,
-) -> String {
-  let buf = StringBuilder::new()
-  write_sexp(buf, node, input, table)
-  buf.to_string()
-}
-
-///|
-// JSON CST 序列化（简化版，用于 --format json）
-
-///|
-fn json_escape(s : String) -> String {
-  let buf = StringBuilder::new()
-  for ch in s.iter() {
-    match ch {
-      '"' => buf.write_string("\\\"")
-      '\\' => buf.write_string("\\\\")
-      '\n' => buf.write_string("\\n")
-      '\r' => buf.write_string("\\r")
-      '\t' => buf.write_string("\\t")
-      c => buf.write_char(c)
-    }
-  }
-  buf.to_string()
 }
 
 ///|
@@ -166,7 +101,8 @@ fn print_tokens(
     let text = node_text(tok, input)
     let row = tok.start_point.row + 1
     let col = tok.start_point.column + 1
-    print_info("  [\{row}:\{col}] \{type_name} \"\{text}\"")
+    // tokens 是调试信息，输出到 stderr
+    print_err("  [\{row}:\{col}] \{type_name} \"\{text}\"")
   }
 }
 
@@ -212,34 +148,6 @@ fn print_error_summary(
 // 解析表加载（--grammar 和 --table 互斥）
 
 ///|
-/// 从 .parse_table 文件（二进制）加载解析表。
-fn load_table_from_file(path : String) -> Result[@tablegen.ParseTable, String] {
-  match read_bytes(path) {
-    Ok(bytes) => @tablegen.deserialize_table(bytes)
-    Err(msg) => Err(msg)
-  }
-}
-
-///|
-/// 从 .grammar DSL 文件编译并生成解析表（不产生文件）。
-fn load_table_from_grammar(
-  path : String,
-) -> Result[@tablegen.ParseTable, String] {
-  let src = match read_file(path) {
-    Ok(s) => s
-    Err(msg) => return Err(msg)
-  }
-  let grammar = match @grammar.parse_grammar(src) {
-    Success(g) => g
-    Error(err) => return Err("parse error in '\{path}': \{err.message}")
-  }
-  match @tablegen.generate_parse_table(grammar) {
-    Ok((table, _reports)) => Ok(table)
-    Err(msg) => Err(msg)
-  }
-}
-
-///|
 /// parse 命令主体。
 pub fn cmd_parse(args : ParseArgs) -> Int {
   // 加载解析表
@@ -279,20 +187,6 @@ pub fn cmd_parse(args : ParseArgs) -> Int {
       }
   }
 
-  // --tokens: 先打印词法流
-  if args.tokens {
-    print_info("--- tokens ---")
-    let tok_tree = match @runtime.parse(table, input) {
-      Ok(root) => root
-      Err(e) => {
-        report_parse_error(e, args.input_file, Some(input))
-        return 2
-      }
-    }
-    print_tokens(tok_tree, input, table)
-    print_info("--- tree ---")
-  }
-
   // 解析
   let root = match @runtime.parse(table, input) {
     Ok(r) => r
@@ -300,6 +194,13 @@ pub fn cmd_parse(args : ParseArgs) -> Int {
       report_parse_error(e, args.input_file, Some(input))
       return 2
     }
+  }
+
+  if args.tokens {
+    // 分隔线和 token 流是调试信息，输出到 stderr，不污染 stdout 结果
+    print_err("--- tokens ---")
+    print_tokens(root, input, table)
+    print_err("--- tree ---")
   }
 
   // 输出

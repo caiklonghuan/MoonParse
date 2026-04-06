@@ -34,21 +34,23 @@ pub fn cmd_fmt(args : FmtArgs) -> Int {
   if args.check {
     // --check：比对原文，不一致时返回退出码 1
     if formatted == src {
-      print_info("\{args.grammar_file}: ok")
+      // 状态报告属于诊断输出，发到 stderr
+      print_err("\{args.grammar_file}: ok")
       0
     } else {
       print_err("\{args.grammar_file}: not formatted")
       1
     }
   } else if args.stdout {
-    // --stdout：输出到 stdout
+    // --stdout：格式化结果是主要输出，发到 stdout
     print_info(formatted)
     0
   } else {
     // 默认：原地覆写
     match write_file(args.grammar_file, formatted) {
       Ok(_) => {
-        print_info("\{args.grammar_file}: formatted")
+        // 状态报告发到 stderr
+        print_err("\{args.grammar_file}: formatted")
         0
       }
       Err(msg) => {

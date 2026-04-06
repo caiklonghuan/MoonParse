@@ -294,6 +294,11 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
       None => break
     }
   }
+  if grammar_file is Some(_) && table_file is Some(_) {
+    return Err(
+      "parse: cannot use --grammar and --table together\n\{parse_usage()}",
+    )
+  }
   if grammar_file.is_empty() && table_file.is_empty() {
     return Err("parse: grammar or table file required\n\{parse_usage()}")
   }
@@ -410,6 +415,11 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
         }
       None => break
     }
+  }
+  if grammar_file is Some(_) && table_file is Some(_) {
+    return Err(
+      "query: cannot use --grammar and --table together\n\{query_usage()}",
+    )
   }
   match pattern {
     None => Err("query: pattern required\n\{query_usage()}")

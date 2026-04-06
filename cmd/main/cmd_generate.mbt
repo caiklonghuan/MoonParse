@@ -44,12 +44,13 @@ pub fn cmd_generate(args : GenerateArgs) -> Int {
     }
   }
 
-  // 语义校验（收集全部，不中止）
+  // 语义校验：有错误则中止（除非 --force）
   let val_errors = @grammar.validate_grammar(grammar)
-  let mut exit_code = 0
   if not(val_errors.is_empty()) {
     report_validation_errors(val_errors, Some(args.grammar_file))
-    exit_code = 1
+    if not(args.force) {
+      return 2
+    }
   }
 
   // 生成 LALR 解析表
@@ -65,9 +66,6 @@ pub fn cmd_generate(args : GenerateArgs) -> Int {
   // 打印冲突报告到 stderr
   if not(conflict_reports.is_empty()) {
     report_conflicts(conflict_reports)
-    if exit_code < 1 {
-      exit_code = 1
-    }
   }
 
   // --diagnostic: 将完整解析表 JSON 打印到 stderr
@@ -117,7 +115,20 @@ pub fn cmd_generate(args : GenerateArgs) -> Int {
     }
   }
 
-  report_summary(0, val_errors.length() + conflict_reports.length())
+  // 统计诊断汇总（按错误/警告分种类计数）
+  let mut summary_errors = val_errors.length()
+  let mut summary_warns = 0
+  for r in conflict_reports {
+    match r.severity {
+      Ambiguous(_) => summary_errors = summary_errors + 1
+      _ => summary_warns = summary_warns + 1
+    }
+  }
+  report_summary(summary_errors, summary_warns)
   print_info("written: " + output_path)
-  exit_code
+  if summary_errors > 0 || summary_warns > 0 {
+    1
+  } else {
+    0
+  }
 }

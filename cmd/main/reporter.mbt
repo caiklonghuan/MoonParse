@@ -18,7 +18,7 @@ pub fn set_color_output(enabled : Bool?) -> Unit {
     Some(e) => e
     None =>
       // 自动检测：检查 stderr (fd=2) 是否为终端
-      isatty_impl(2)
+      isatty(2)
   }
   use_color_cell[0] = should_use_color
 }

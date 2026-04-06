@@ -7,6 +7,21 @@
 // FILE* 在 64 位系统上是 64 位指针，以 Int64 表示。
 
 ///|
+fn str_to_cstr(s : String) -> Bytes {
+  let buf = @buffer.new(size_hint=s.length() + 1)
+  buf.write_string_utf8(s)
+  buf.write_byte(b'\x00')
+  buf.to_bytes()
+}
+
+///|
+fn str_to_utf8(s : String) -> Bytes {
+  let buf = @buffer.new(size_hint=s.length())
+  buf.write_string_utf8(s)
+  buf.to_bytes()
+}
+
+///|
 // C stdio FFI
 
 ///|

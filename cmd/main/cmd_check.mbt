@@ -2,6 +2,7 @@
 // check 命令处理器
 // 只做校验，不产生任何文件输出。
 // 退出码：0=ok，1=warnings，2=errors
+
 ///|
 /// check 命令主体。
 pub fn cmd_check(args : CheckArgs) -> Int {
@@ -41,41 +42,25 @@ pub fn cmd_check(args : CheckArgs) -> Int {
     report_conflicts(conflict_reports)
   }
 
-  // 按严重程度确定退出码
-  let mut has_error = not(val_errors.is_empty())
-  let mut has_warn = false
+  // 按退出码矩阵统计：
+  //   ValidationError  → error  (exit=2)
+  //   Ambiguous        → error  (exit=2)
+  //   Warn / Dynamic   → warning (exit=1)
+  //   无任何诊断       → ok     (exit=0)
+  let mut err_count = val_errors.length()
+  let mut warn_count = 0
   for r in conflict_reports {
     match r.severity {
-      Ambiguous(_) => has_error = true
-      Warn(_) | DynamicConflict(_) => has_warn = true
+      Ambiguous(_) => err_count = err_count + 1
+      _ => warn_count = warn_count + 1
     }
   }
 
-  let err_count = val_errors.length() +
-    conflict_reports
-    .iter()
-    .filter(fn(r) {
-      match r.severity {
-        Ambiguous(_) => true
-        _ => false
-      }
-    })
-    .count()
-  let warn_count = conflict_reports
-    .iter()
-    .filter(fn(r) {
-      match r.severity {
-        Ambiguous(_) => false
-        _ => true
-      }
-    })
-    .count()
-
   report_summary(err_count, warn_count)
 
-  if has_error {
+  if err_count > 0 {
     2
-  } else if has_warn {
+  } else if warn_count > 0 {
     1
   } else {
     0
