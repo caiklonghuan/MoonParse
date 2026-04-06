@@ -12,7 +12,7 @@
 //   Regex(tid)   → 10000 + tid
 //   AnyChar(tid) → 20000 + tid
 //
-// Phase 3 TODO：Hopcroft DFA 最小化。
+// Phase 3：签名迭代 DFA 最小化（等价于 Hopcroft），消除子集构造产生的冗余状态。
 
 // 字符常量
 
@@ -686,7 +686,152 @@ fn subset_construct(
   result
 }
 
-// valid_tokens 计算
+// DFA 最小化
+
+///|
+/// 签名迭代 DFA 最小化（等价于 Hopcroft 分区细化）。
+///
+/// 算法：
+///   1. 初始分区：按接受 token 分组（no-accept 自成一类，各 token 各成一类）
+///   2. 迭代精化：为每个状态计算签名 = (当前类 ID + 按字母表顺序排列的
+///      (字符码, 目标类 ID) 对列表)；同签名的状态合并为新的等价类
+///   3. 若分区稳定（无变化）或退化为每状态一类则终止
+///   4. 重建最小化 DFA：原始起始状态 0 所在类仍映射为新 DFA 的状态 0
+///
+/// 对 `/ab|cb/` 这类共享后缀的 regex：将两个接受同一 token 的末尾状态合并，
+/// 减少状态数目；对具有独立接受 token 的状态不作合并（正确性保证）。
+fn minimize_dfa(
+  dfa : Array[DfaState],
+  alphabet : Array[Char],
+) -> Array[DfaState] {
+  let n = dfa.length()
+  if n <= 1 {
+    return dfa
+  }
+  // 步骤 1：按接受 token 初始分区
+  let class_of : Array[Int] = []
+  for _ in 0..<n {
+    class_of.push(0)
+  }
+  let accept_to_class : Map[Int, Int] = Map::new()
+  let mut num_classes = 0
+  for i in 0..<n {
+    let key = match dfa[i].accept {
+      None => -1
+      Some(tid) => tid
+    }
+    match accept_to_class.get(key) {
+      Some(c) => class_of[i] = c
+      None => {
+        accept_to_class.set(key, num_classes)
+        class_of[i] = num_classes
+        num_classes = num_classes + 1
+      }
+    }
+  }
+  // 步骤 2：迭代签名细化（最多 n 轮，实践中通常 2-3 轮）
+  let mut changed = true
+  while changed && num_classes < n {
+    changed = false
+    let sig_to_class : Map[String, Int] = Map::new()
+    let new_class_of : Array[Int] = []
+    for _ in 0..<n {
+      new_class_of.push(0)
+    }
+    let mut nc = 0
+    for i in 0..<n {
+      // 签名 = 当前类 ID | 字母表顺序枚举 (字符码:目标类 ID)*
+      // 用整数编码避免歧义；'|' 和 ':' 不出现在整数字面中
+      let buf = StringBuilder::new()
+      buf.write_string(class_of[i].to_string())
+      for ch in alphabet {
+        match dfa[i].transitions.get(ch) {
+          Some(t) => {
+            buf.write_char('|')
+            buf.write_string(ch.to_int().to_string())
+            buf.write_char(':')
+            buf.write_string(class_of[t].to_string())
+          }
+          None => ()
+        }
+      }
+      let sig = buf.to_string()
+      match sig_to_class.get(sig) {
+        Some(c) => new_class_of[i] = c
+        None => {
+          sig_to_class.set(sig, nc)
+          new_class_of[i] = nc
+          nc = nc + 1
+        }
+      }
+    }
+    // 检查分区是否改变
+    if nc != num_classes {
+      changed = true
+    } else {
+      let mut i = 0
+      while i < n && not(changed) {
+        if new_class_of[i] != class_of[i] {
+          changed = true
+        }
+        i = i + 1
+      }
+    }
+    for i in 0..<n {
+      class_of[i] = new_class_of[i]
+    }
+    num_classes = nc
+  }
+  // 无法进一步缩减
+  if num_classes == n {
+    return dfa
+  }
+  // 步骤 3：重建最小化 DFA
+  // remap：保证原始起始状态 0 所在类映射为新状态 0
+  let start_class = class_of[0]
+  let remap : Array[Int] = []
+  for _ in 0..<num_classes {
+    remap.push(-1)
+  }
+  remap[start_class] = 0
+  let mut next_id = 1
+  for c in 0..<num_classes {
+    if c != start_class {
+      remap[c] = next_id
+      next_id = next_id + 1
+    }
+  }
+  // 每类选代表（首次遇到的状态）
+  let rep : Array[Int] = []
+  for _ in 0..<num_classes {
+    rep.push(-1)
+  }
+  for i in 0..<n {
+    if rep[class_of[i]] < 0 {
+      rep[class_of[i]] = i
+    }
+  }
+  // 按 new_id 顺序构建新状态数组
+  let sorted_pairs : Array[(Int, Int)] = [] // (new_id, old_class)
+  for c in 0..<num_classes {
+    sorted_pairs.push((remap[c], c))
+  }
+  sorted_pairs.sort_by(fn(a, b) { a.0.compare(b.0) })
+  let result : Array[DfaState] = []
+  for pair in sorted_pairs {
+    let (new_id, old_c) = pair
+    let r = rep[old_c]
+    let orig = dfa[r]
+    let new_trans : Map[Char, DfaStateId] = Map::new()
+    for ch, t in orig.transitions {
+      new_trans.set(ch, remap[class_of[t]])
+    }
+    result.push({ id: new_id, transitions: new_trans, accept: orig.accept })
+  }
+  result
+}
+
+// valid_tokens 计算///|
 
 ///|
 /// valid_tokens[s] = { t | action[(s,t)] ≠ ∅ } ∪ extras_set
@@ -740,7 +885,7 @@ fn terminal_priority(tid : TerminalId, def : TerminalDef) -> Int {
 /// 子集构造（NFA → DFA），字母表从 terminal_patterns 中收集
 /// 计算 valid_tokens：每个解析状态可合法扫描的终结符列表
 ///
-/// Phase 3 TODO：Hopcroft DFA 最小化（当前直接使用子集构造输出）
+/// Phase 3：签名迭代最小化（minimize_dfa）消除 DFA 中等价的冗余状态
 pub fn build_lexer_dfa(
   grammar : AugmentedGrammar,
   table : ParseTable,
@@ -764,7 +909,10 @@ pub fn build_lexer_dfa(
   }
 
   let alphabet = collect_alphabet(grammar)
-  let dfa_states = subset_construct(ctx, super_start, accept_info, alphabet)
+  let dfa_states = minimize_dfa(
+    subset_construct(ctx, super_start, accept_info, alphabet),
+    alphabet,
+  )
   let valid_tokens = build_valid_tokens(grammar, table)
 
   { states: dfa_states, start: 0, valid_tokens }

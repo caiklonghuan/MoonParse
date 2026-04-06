@@ -96,6 +96,27 @@ pub enum Command {
 // 内部解析状态
 
 ///|
+/// 消耗 ArgParser 头部的全局 flag：--no-color、--quiet / -q。
+/// 识别到后直接调用 reporter 设置函数。
+/// 遇到不认识的 flag 或子命令名称时停止扫描。
+fn parse_global_flags(p : ArgParser) -> Unit {
+  let mut cont = true
+  while cont && not(p.at_end()) {
+    match p.peek() {
+      Some("--no-color") => {
+        let _ = p.next()
+        set_color_output(Some(false))
+      }
+      Some("--quiet") | Some("-q") => {
+        let _ = p.next()
+        set_quiet(true)
+      }
+      _ => cont = false
+    }
+  }
+}
+
+///|
 priv struct ArgParser {
   args : Array[String]
   mut pos : Int
@@ -160,6 +181,8 @@ fn ArgParser::require_value(
 /// 错误时返回 Err(usage_hint)，调用方负责打印并以非零退出码退出。
 pub fn parse_args(argv : Array[String]) -> Result[Command, String] {
   let p = ArgParser::new(argv)
+  // 先处理全局 flag：--no-color / --quiet（允许在子命令之前出现）
+  parse_global_flags(p)
   // 无参数：显示全局帮助
   let subcmd = match p.next() {
     None => return Ok(Help(None))
@@ -466,7 +489,7 @@ fn parse_test(p : ArgParser) -> Result[Command, String] {
 ///|
 pub fn global_usage() -> String {
   (
-    #|Usage: moonparse <command> [options]
+    #|Usage: moonparse [global-options] <command> [options]
     #|
     #|Commands:
     #|  generate <file.grammar>   Compile grammar to .parse_table
@@ -475,6 +498,10 @@ pub fn global_usage() -> String {
     #|  fmt      <file.grammar>   Format a .grammar file
     #|  query    <pattern>        Run S-expression query on CST
     #|  test     [dir]            Run corpus test cases
+    #|
+    #|Global options (before <command>):
+    #|  --no-color     Disable ANSI color output
+    #|  -q, --quiet    Suppress informational output (errors/warnings still shown)
     #|
     #|Options:
     #|  -h, --help     Show help

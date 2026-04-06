@@ -67,6 +67,8 @@ pub fn report_validation_errors(Array[@grammar.ValidationError], String?) -> Uni
 
 pub fn set_color_output(Bool?) -> Unit
 
+pub fn set_quiet(Bool) -> Unit
+
 pub fn write_bytes(String, Bytes) -> Result[Unit, String]
 
 pub fn write_file(String, String) -> Result[Unit, String]

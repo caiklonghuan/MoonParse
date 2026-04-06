@@ -250,3 +250,36 @@ test "valid_tokens 条目数等于 ParseTable.states 数" {
   let dfa = build_lexer_dfa(aug, table)
   assert_eq(dfa.valid_tokens.length(), table.states)
 }
+
+// minimize_dfa
+
+///|
+test "最小化后 DFA start 仍为 0，正确性不变" {
+  // "hello" 5 字符直链 DFA：每个状态均可区分，最小化不改变状态数
+  let dfa = lexer_for("start s\nrule s: \"hello\"")
+  assert_eq(dfa.start, 0)
+  assert_true(dfa.states.length() >= 6)
+  let (aug, _, _) = build_resolved("start s\nrule s: \"hello\"")
+  let tid = term_id(aug, "lit:hello")
+  assert_eq(dfa_run(dfa, "hello"), Some(tid))
+  assert_eq(dfa_run(dfa, "hell"), None)
+  assert_eq(dfa_run(dfa, "helloo"), None)
+}
+
+///|
+test "最小化 DFA：/ab|cb/ 合并相同后缀接受状态" {
+  // 子集构造产生 5 个状态（0 = 起始；1 = 读 a 后；2 = 读 c 后；
+  //   3 = 读 ab 接受；4 = 读 cb 接受）
+  // 状态 3 与 4 接受同一 token 且无后向 transition → 可合并为一个状态
+  // 最小化后应得 4 个状态
+  let dfa = lexer_for("start s\nrule s: /ab|cb/")
+  assert_eq(dfa.start, 0)
+  assert_true(dfa.states.length() <= 4)
+  let (aug, _, _) = build_resolved("start s\nrule s: /ab|cb/")
+  let tid = term_id(aug, "re:ab|cb")
+  assert_eq(dfa_run(dfa, "ab"), Some(tid))
+  assert_eq(dfa_run(dfa, "cb"), Some(tid))
+  assert_eq(dfa_run(dfa, "db"), None)
+  assert_eq(dfa_run(dfa, "a"), None)
+  assert_eq(dfa_run(dfa, "c"), None)
+}

@@ -10,6 +10,16 @@
 let use_color_cell : Array[Bool] = [false]
 
 ///|
+/// 是否抑制 print_info 输出（由 --quiet 设置）。
+let use_quiet_cell : Array[Bool] = [false]
+
+///|
+/// 设置静默模式；启用后 `print_info` 不产生任何输出。
+pub fn set_quiet(enabled : Bool) -> Unit {
+  use_quiet_cell[0] = enabled
+}
+
+///|
 /// 设置是否使用 ANSI 颜色输出。
 /// 通常在 main 中检测 NO_COLOR 环境变量或 --no-color flag 后调用。
 /// 如果未显式设置，则自动检测 stderr 是否连接到终端。
@@ -155,8 +165,11 @@ pub fn init_reporter() -> Unit {
 
 ///|
 /// 打印一般信息消息到 stdout。
+/// --quiet 模式下静默（不输出任何内容）。
 pub fn print_info(msg : String) -> Unit {
-  println(msg)
+  if not(use_quiet_cell[0]) {
+    println(msg)
+  }
 }
 
 ///|
@@ -191,6 +204,15 @@ pub fn report_grammar_parse_error(
       )
     _ => ()
   }
+  let help_tag = ansi_cyan("help")
+  let hint = if err.message.contains("EOF") || err.message.contains("eof") {
+    "check for an unclosed rule body or a missing terminal/rule token"
+  } else if err.message.contains("unexpected") {
+    "check that keywords, rule names, and token patterns are correctly formed"
+  } else {
+    "run 'moonparse check <file.grammar>' to view the full diagnostic"
+  }
+  print_err("\{help_tag}: \{hint}")
 }
 
 ///|
@@ -202,6 +224,7 @@ pub fn report_validation_errors(
   file : String?,
 ) -> Unit {
   let tag = ansi_red("error")
+  let help_tag = ansi_cyan("help")
   for e in errors {
     let msg = ansi_bold(e.to_string())
     print_err("\{tag}: \{msg}")
@@ -215,6 +238,19 @@ pub fn report_validation_errors(
         }
       }
     }
+    let hint = if e.to_string().contains("undefined") ||
+      e.to_string().contains("undefin") {
+      "check that rule '\{e.rule}' is defined before it is referenced"
+    } else if e.to_string().contains("recursi") {
+      "add a non-recursive base case to rule '\{e.rule}'"
+    } else if e.to_string().contains("unused") {
+      "remove the unused rule '\{e.rule}' or reference it from another rule"
+    } else if e.to_string().contains("duplicate") {
+      "remove the duplicate definition in rule '\{e.rule}'"
+    } else {
+      "run 'moonparse check <file.grammar>' to review all validation errors"
+    }
+    print_err("\{help_tag}: \{hint}")
   }
 }
 
