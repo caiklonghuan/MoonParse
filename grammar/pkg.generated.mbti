@@ -48,6 +48,7 @@ pub(all) enum Pattern {
   Field(String, Pattern)
   RepeatRange(Pattern, Int, Int)
   Prec(Int, PrecKind, Pattern)
+  Alias(String, Pattern)
 }
 pub fn Pattern::to_string(Self) -> String
 

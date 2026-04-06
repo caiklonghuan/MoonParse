@@ -260,3 +260,33 @@ test "generate_parse_table: no start declared returns Err" {
     Ok(_) => fail("expected Err for no start")
   }
 }
+
+///|
+test "alias_name in productions" {
+  // alias("foo", rule) 应使部分产生式的 alias_name == Some("foo")
+  let dsl =
+    #|start s
+    #|rule s: alias("foo", item)
+    #|rule item: /[a-z]+/
+  let (table, _) = gen_ok(dsl)
+  let mut found = false
+  for prod in table.productions {
+    if prod.alias_name == Some("foo") {
+      found = true
+      break
+    }
+  }
+  assert_true(found)
+}
+
+///|
+test "alias_name serialized in table_to_json" {
+  let dsl =
+    #|start s
+    #|rule s: alias("bar", item)
+    #|rule item: /[a-z]+/
+  let (table, _) = gen_ok(dsl)
+  let json = table_to_json(table)
+  assert_true(json.contains("\"alias_name\""))
+  assert_true(json.contains("\"bar\""))
+}

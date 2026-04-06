@@ -49,6 +49,7 @@ options(
         "query_exec",
         "query_free",
         "query_compile_error_last",
+        "parser_diagnostics_json",
       ],
       "use-js-builtin-string": true,
     },

@@ -239,7 +239,8 @@ fn parse_sequence(state : ParserState) -> ParseResult[Pattern] {
       | Symbol("!")
       | Symbol("&")
       | Symbol(".")
-      | Keyword("prec") =>
+      | Keyword("prec")
+      | Keyword("alias") =>
         match parse_unary(state) {
           Success(p) => seqs.push(p)
           Error(err) => {
@@ -623,6 +624,82 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
               })
           }
         }
+      }
+    }
+    // alias("name", pattern)
+    Keyword("alias") => {
+      state.pos = state.pos + 1
+      if state.pos >= state.tokens.length() {
+        return Error({
+          message: "Expected '(' after 'alias'",
+          location: state.tokens[state.tokens.length() - 1].location,
+        })
+      }
+      match state.tokens[state.pos].token {
+        Symbol("(") => {
+          state.pos = state.pos + 1
+          // Read alias name (string literal or identifier)
+          if state.pos >= state.tokens.length() {
+            return Error({
+              message: "Expected alias name after 'alias('",
+              location: state.tokens[state.tokens.length() - 1].location,
+            })
+          }
+          let alias_name = match state.tokens[state.pos].token {
+            StringLiteral(s) => s
+            Identifier(name) => name
+            _ =>
+              return Error({
+                message: "Expected string or identifier as alias name",
+                location: state.tokens[state.pos].location,
+              })
+          }
+          state.pos = state.pos + 1
+          // Read ','
+          if state.pos >= state.tokens.length() {
+            return Error({
+              message: "Expected ',' after alias name",
+              location: state.tokens[state.tokens.length() - 1].location,
+            })
+          }
+          match state.tokens[state.pos].token {
+            Symbol(",") => state.pos = state.pos + 1
+            _ =>
+              return Error({
+                message: "Expected ',' after alias name",
+                location: state.tokens[state.pos].location,
+              })
+          }
+          // Read inner pattern
+          match parse_pattern(state) {
+            Error(err) => Error(err)
+            Success(inner) => {
+              // Read ')'
+              if state.pos >= state.tokens.length() {
+                return Error({
+                  message: "Expected ')' to close alias()",
+                  location: state.tokens[state.tokens.length() - 1].location,
+                })
+              }
+              match state.tokens[state.pos].token {
+                Symbol(")") => {
+                  state.pos = state.pos + 1
+                  Success(Alias(alias_name, inner))
+                }
+                _ =>
+                  Error({
+                    message: "Expected ')' to close alias()",
+                    location: state.tokens[state.pos].location,
+                  })
+              }
+            }
+          }
+        }
+        _ =>
+          Error({
+            message: "Expected '(' after 'alias'",
+            location: state.tokens[state.pos].location,
+          })
       }
     }
     _ =>

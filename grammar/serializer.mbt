@@ -164,6 +164,12 @@ fn pattern_to_json(p : Pattern) -> String {
       let arr = patterns.map(pattern_to_json).join(", ")
       "{\"type\": \"Seq\", \"patterns\": [" + arr + "]}"
     }
+    Alias(name, inner) =>
+      "{\"type\": \"Alias\", \"name\": " +
+      json_string(name) +
+      ", \"pattern\": " +
+      pattern_to_json(inner) +
+      "}"
   }
 }
 

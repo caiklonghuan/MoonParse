@@ -61,6 +61,8 @@ pub(all) struct Production {
   rule_name : String
   /// Reduce 前瞻约束（由 Not/And 断言提取；None = 无约束）
   lookahead : LookaheadConstraint?
+  /// 别名（来自 Pattern::Alias；None = 无别名，使用规则名）
+  mut alias_name : String?
 } derive(Show)
 
 ///|

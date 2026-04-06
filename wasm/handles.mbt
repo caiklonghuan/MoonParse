@@ -52,10 +52,11 @@ fn[T] Registry::remove(self : Registry[T], id : Int) -> Bool {
 // 条目类型
 
 ///|
-/// 解析器条目：已编译的解析表 + 原始 DSL（调试用）
+/// 解析器条目：已编译的解析表 + 原始 DSL（调试用）+ 编译诊断信息
 priv struct ParserEntry {
   table : @tablegen.ParseTable
   dsl : String
+  diagnostics : Array[String]
 }
 
 ///|

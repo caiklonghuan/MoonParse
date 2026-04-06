@@ -134,6 +134,7 @@ pub(all) struct Production {
   assoc : @grammar.PrecKind?
   rule_name : String
   lookahead : LookaheadConstraint?
+  mut alias_name : String?
 }
 pub impl Show for Production
 

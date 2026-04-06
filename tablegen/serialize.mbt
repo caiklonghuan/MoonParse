@@ -141,6 +141,10 @@ fn production_to_json(prod : Production) -> String {
     }
     None => ()
   }
+  match prod.alias_name {
+    Some(name) => fields.push(("alias_name", jstr(name)))
+    None => ()
+  }
   jobj(fields)
 }
 
@@ -660,7 +664,7 @@ fn read_production(r : BinReader) -> Production raise BinError {
     }
     _ => raise InvalidData("lookahead tag=\{la_tag}")
   }
-  { id, head, body, prec, assoc, rule_name, lookahead }
+  { id, head, body, prec, assoc, rule_name, lookahead, alias_name: None }
 }
 
 // ── SymbolMeta ───────────────────────────────────────────────────────────────
@@ -1140,7 +1144,11 @@ fn json_to_production(j : Json) -> Production raise JsonTableError {
     Some(String("dynamic")) => Some(@grammar.PrecKind::Dynamic)
     _ => None
   }
-  { id, head, body, rule_name, prec, assoc, lookahead: None }
+  let alias_name : String? = match o.get("alias_name") {
+    Some(String(s)) => Some(s)
+    _ => None
+  }
+  { id, head, body, rule_name, prec, assoc, lookahead: None, alias_name }
 }
 
 ///|

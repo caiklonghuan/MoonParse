@@ -40,6 +40,7 @@ pub impl Show for PatternChild
 
 pub(all) enum Predicate {
   Eq(String, String)
+  Match(String, String)
 }
 pub impl Show for Predicate
 

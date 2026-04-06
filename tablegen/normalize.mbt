@@ -84,6 +84,7 @@ fn add_production(
     assoc,
     rule_name,
     lookahead: None,
+    alias_name: None,
   })
 }
 
@@ -108,6 +109,7 @@ fn add_production_with_lookahead(
     assoc,
     rule_name,
     lookahead: Some(lookahead),
+    alias_name: None,
   })
 }
 
@@ -134,6 +136,7 @@ fn pattern_suffix(p : @grammar.Pattern) -> String {
     Plus(_) => "plus"
     Optional(_) => "opt"
     RepeatRange(_, n, m) => "r\{n}to\{m}"
+    Alias(_, _) => "alias"
     _ => "aux"
   }
 }
@@ -188,6 +191,20 @@ fn to_symbol(
     And(inner) =>
       // Phase 1：忽略正向前瞻，直接透传
       to_symbol(ctx, inner, rule_name, field_name, prec, assoc)
+    Alias(alias_name, inner) => {
+      // 创建新 NT，展开内层 pattern，并对所有直接产生式标记 alias_name
+      let fresh_id = fresh_helper(ctx, rule_name, "alias")
+      let start_prod_id = ctx.prod_next
+      expand_into(ctx, fresh_id, inner, rule_name, prec, assoc)
+      let mut i = start_prod_id
+      while i < ctx.productions.length() {
+        if ctx.productions[i].head == fresh_id {
+          ctx.productions[i].alias_name = Some(alias_name)
+        }
+        i = i + 1
+      }
+      { symbol: Symbol::NonTerminal(fresh_id), field_name }
+    }
     _ => {
       // 复杂 Pattern：创建辅助 NT，展开后返回对它的引用
       let fresh_id = fresh_helper(ctx, rule_name, pattern_suffix(p))
@@ -373,6 +390,18 @@ fn expand_into(
         expand_into(ctx, head, q, rule_name, prec, assoc)
       }
     }
+    Alias(alias_name, inner) => {
+      // 展开内层 pattern 到 head，并对所有直接产生式标记 alias_name
+      let start_prod_id = ctx.prod_next
+      expand_into(ctx, head, inner, rule_name, prec, assoc)
+      let mut i = start_prod_id
+      while i < ctx.productions.length() {
+        if ctx.productions[i].head == head {
+          ctx.productions[i].alias_name = Some(alias_name)
+        }
+        i = i + 1
+      }
+    }
     Seq(elems) => {
       // 检测 Seq 尾部零宽断言，提取为前瞻约束
       let mut body_count = elems.length()
@@ -530,6 +559,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
               assoc: rk,
               rule_name: prod.rule_name,
               lookahead: prod.lookahead,
+              alias_name: prod.alias_name,
             }
           None => ()
         }

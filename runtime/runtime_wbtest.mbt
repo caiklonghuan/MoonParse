@@ -1073,6 +1073,66 @@ test "nonassoc — 单次合法使用不触发错误" {
   }
 }
 
+// parse GLR — dynamic_precedence
+//
+// prec.dynamic(N, ...) 使归约产生式携带正整数优先级。
+// condense_stack 按 (cost ASC, dynamic_precedence DESC) 排序，
+// 动态优先级高的路径被保留，低的路径在截尾时被丢弃。
+// 行为验证：带 prec.dynamic 的文法能成功解析（無崩溃）且返回 Ok。
+
+///|
+test "dynamic_precedence — 带 prec.dynamic 文法解析不崩溃" {
+  // prec.dynamic(1, ...) 标注单个产生式体
+  let dsl =
+    #|start e
+    #|rule e: prec.dynamic(1, e "+" e) | "n"
+  match parse_from_dsl(dsl, "n+n") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => {
+      assert_eq(root.start_byte, 0)
+      assert_eq(root.end_byte, 3)
+    }
+  }
+}
+
+///|
+test "dynamic_precedence — 根节点 dynamic_precedence > 0" {
+  // 带 prec.dynamic 的产生式归约后，内部节点应有 dynamic_precedence > 0
+  let dsl =
+    #|start e
+    #|rule e: prec.dynamic(5, e "+" e) | "n"
+  match parse_from_dsl(dsl, "n+n") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) =>
+      // 根节点由 prec.dynamic(5, ...) 产生式归约而来，dynamic_precedence >= 5
+      assert_true(root.dynamic_precedence >= 5)
+  }
+}
+
+///|
+test "dynamic_precedence — 子节点累积到父节点" {
+  // 三元输入 n+n+n：外层归约节点的 dynamic_precedence 包含两次 prec.dynamic 累积
+  let dsl =
+    #|start e
+    #|rule e: prec.dynamic(3, e "+" e) | "n"
+  match parse_from_dsl(dsl, "n+n+n") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) =>
+      // 外层归约 = 内层(dp≥3) + 外层prod_dp(3) ≥ 6
+      assert_true(root.dynamic_precedence >= 6)
+  }
+}
+
+///|
+test "dynamic_precedence — 无 prec.dynamic 节点 dynamic_precedence 为 0" {
+  // 普通左递归文法，没有 prec.dynamic，所有节点 dynamic_precedence = 0
+  let dsl = "start e\nrule e: e \"+\" t | t\nrule t: \"n\""
+  match parse_from_dsl(dsl, "n+n") {
+    Err(e) => fail("expected Ok but got Err: \{e.message}")
+    Ok(root) => assert_eq(root.dynamic_precedence, 0)
+  }
+}
+
 // 场景 3：extras — 空字符串输入（extras 已声明）
 //
 // 输入长度为 0，词法器立即返回 EOF。extras DFA 不会被调用。

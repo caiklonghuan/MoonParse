@@ -93,11 +93,29 @@ pub fn parser_create_from_dsl(dsl : String) -> Int {
     Success(g) => g
     Error(_) => return -1
   }
-  let table = match @tablegen.generate_parse_table(g) {
-    Ok((t, _)) => t
+  let (table, conflict_reports) = match @tablegen.generate_parse_table(g) {
+    Ok(r) => r
     Err(_) => return -1
   }
-  parser_registry.register({ table, dsl })
+  let diagnostics : Array[String] = []
+  for report in conflict_reports {
+    let buf = StringBuilder::new()
+    buf.write_char('{')
+    let severity_str = match report.severity {
+      @tablegen.ConflictSeverity::Warn(desc) => "warn: " + desc
+      @tablegen.ConflictSeverity::Ambiguous(desc) => "ambiguous: " + desc
+      @tablegen.ConflictSeverity::DynamicConflict(id) =>
+        "dynamic_conflict(id=" + id.to_string() + ")"
+    }
+    write_kvs(buf, "severity", severity_str)
+    buf.write_char(',')
+    write_kvi(buf, "state", report.state)
+    buf.write_char(',')
+    write_kvi(buf, "terminal", report.terminal)
+    buf.write_char('}')
+    diagnostics.push(buf.to_string())
+  }
+  parser_registry.register({ table, dsl, diagnostics })
 }
 
 ///|
@@ -108,11 +126,6 @@ pub fn parser_free(parser_id : Int) -> Unit {
 
 ///|
 /// 返回该解析器创建时使用的 DSL 字符串。
-///
-/// 返回值语义：
-/// - DSL 编译（parser_create_from_dsl）：返回原始 DSL 字符串。
-/// - JSON 加载（parser_create_from_json）：返回 ""（DSL 信息未随 JSON 保存）。
-/// - parser_id 无效：返回 ""。
 pub fn parser_get_dsl(parser_id : Int) -> String {
   match parser_registry.get(parser_id) {
     Some(e) => e.dsl
@@ -122,14 +135,9 @@ pub fn parser_get_dsl(parser_id : Int) -> String {
 
 ///|
 /// 从预编译 JSON 字符串（由 `parser_table_to_json` 导出）快速还原解析器。
-///   1. 调用 `parser_create_from_dsl(dsl)` → parser_id（一次性编译，慢）
-///   2. 调用 `parser_table_to_json(parser_id)` → json（保存到 JS 代码中）
-///   3. 之后用 `parser_create_from_json(json)` 直接加载（无需重新编译，快）
-///
-/// 失败时返回 -1。
 pub fn parser_create_from_json(json : String) -> Int {
   match @tablegen.table_from_json(json) {
-    Ok(table) => parser_registry.register({ table, dsl: "" })
+    Ok(table) => parser_registry.register({ table, dsl: "", diagnostics: [] })
     Err(_) => -1
   }
 }
@@ -186,14 +194,6 @@ pub fn tree_free(tree_id : Int) -> Unit {
 
 ///|
 /// 增量解析：在旧树基础上应用一次文本编辑，复用未受影响的子树。
-///
-/// edit 参数（9 个 Int，对应 @runtime.InputEdit 的 6 个字段，Point 展开）：
-///   start_byte, old_end_byte, new_end_byte,
-///   start_row, start_col,
-///   old_end_row, old_end_col,
-///   new_end_row, new_end_col
-///
-/// 返回新的 tree_id；失败返回 -1。
 pub fn parse_incremental(
   parser_id : Int,
   old_tree_id : Int,
@@ -276,6 +276,31 @@ pub fn tree_error_summary(tree_id : Int) -> String {
 /// 返回 MoonParse 版本字符串，供 JS 端判断 API 兼容性。
 pub fn moonparse_version() -> String {
   "0.1.0"
+}
+
+///|
+/// 返回解析器编译时产生的诊断条目（冲突报告）JSON 数组字符串。
+pub fn parser_diagnostics_json(parser_id : Int) -> String {
+  match parser_registry.get(parser_id) {
+    None => "[]"
+    Some(entry) =>
+      if entry.diagnostics.is_empty() {
+        "[]"
+      } else {
+        let buf = StringBuilder::new()
+        buf.write_char('[')
+        let mut first = true
+        for d in entry.diagnostics {
+          if not(first) {
+            buf.write_char(',')
+          }
+          buf.write_string(d)
+          first = false
+        }
+        buf.write_char(']')
+        buf.to_string()
+      }
+  }
 }
 
 ///|

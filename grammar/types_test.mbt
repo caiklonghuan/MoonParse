@@ -44,3 +44,29 @@ test "pattern_to_string" {
     }
   }
 }
+
+///|
+test "pattern_to_string/alias" {
+  let cases = [
+    (
+      "alias 字符串名称", "rule r: alias(\"bar\", a)", "r", "alias(\"bar\", a)",
+    ),
+    (
+      "alias 标识符名称", "rule r: alias(myname, a b)", "r", "alias(\"myname\", a b)",
+    ),
+  ]
+  for c in cases {
+    let (description, dsl, rule_name, expected) = c
+    match parse_grammar(dsl) {
+      Success(grammar) =>
+        match grammar.rules.get(rule_name) {
+          Some(rule) => {
+            let actual = rule.pattern.to_string()
+            assert_eq(actual, expected)
+          }
+          None => abort("规则 \{rule_name} 不存在 [\{description}]")
+        }
+      Error(err) => abort("解析失败 [\{description}]: \{err.message}")
+    }
+  }
+}

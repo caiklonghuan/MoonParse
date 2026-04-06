@@ -27,6 +27,7 @@ fn pattern_variant(p : Pattern) -> String {
     Pattern::Field(_, _) => "Field"
     Pattern::RepeatRange(_, _, _) => "RepeatRange"
     Pattern::Prec(_, _, _) => "Prec"
+    Pattern::Alias(_, _) => "Alias"
   }
 }
 

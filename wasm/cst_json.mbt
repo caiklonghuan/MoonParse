@@ -37,7 +37,17 @@ fn node_type_name(
     // 内部节点：symbol 是 NonTerminalId（下标索引 symbol_metadata）
     let meta = table.symbol_metadata
     if node.symbol >= 0 && node.symbol < meta.length() {
-      meta[node.symbol].name
+      // 优先查 alias（按产生式 ID 还原别名）
+      let alias_nm : String? = if node.production_id >= 0 &&
+        node.production_id < table.productions.length() {
+        table.productions[node.production_id].alias_name
+      } else {
+        None
+      }
+      match alias_nm {
+        Some(name) => name
+        None => meta[node.symbol].name
+      }
     } else {
       "<nonterminal:" + node.symbol.to_string() + ">"
     }

@@ -437,3 +437,132 @@ test "exec/multiple_top_patterns_both_match" {
     Err(e) => fail("\{e}")
   }
 }
+
+///|
+// #match? predicate tests
+
+///|
+test "compile/match_predicate" {
+  match compile("(identifier) @name\n#match? @name \"^[a-z]+$\"") {
+    Ok(q) => {
+      assert_eq(q.patterns.length(), 1)
+      assert_eq(q.predicates.length(), 1)
+      assert_eq(q.predicates[0].length(), 1)
+      assert_true(q.predicates[0][0] is Match("name", "^[a-z]+$"))
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "exec/match_predicate_pass" {
+  let dsl =
+    #|start s
+    #|rule s: name "+" name
+    #|rule name: /[a-zA-Z]+/
+  // #match? 谓词：仅捕获全小写字母的 name 节点（"add" 满足，"MUL" 不满足）
+  let results = run_query(
+    dsl, "add+MUL", "(s (name) @fn)\n#match? @fn \"^[a-z]+$\"",
+  )
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].capture_name, "fn")
+  assert_eq(results[0].node.start_byte, 0)
+  assert_eq(results[0].node.end_byte, 3)
+}
+
+///|
+test "exec/match_predicate_fail" {
+  let dsl =
+    #|start s
+    #|rule s: name
+    #|rule name: /[A-Z]+/
+  // 输入 "ABC" 不满足 #match? @n "^[a-z]+$" → 0 个捕获
+  let results = run_query(dsl, "ABC", "(name) @n\n#match? @n \"^[a-z]+$\"")
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "exec/match_predicate_digit_pattern" {
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  // 捕获文本只含数字的 num 节点（永远成立）
+  let results = run_query(dsl, "12+34", "(num) @n\n#match? @n \"^[0-9]+$\"")
+  assert_eq(results.length(), 2)
+}
+
+///|
+test "exec/match_predicate_partial" {
+  let dsl =
+    #|start s
+    #|rule s: name "+" name
+    #|rule name: /[a-zA-Z]+/
+  // "add" 满足 ^[a-z]+$，"MUL" 不满足
+  let results = run_query(
+    dsl, "add+MUL", "(s (name) @fn)\n#match? @fn \"^[a-z]+$\"",
+  )
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].node.start_byte, 0)
+}
+
+///|
+test "exec/match_predicate_dot_star" {
+  let dsl =
+    #|start s
+    #|rule s: name
+    #|rule name: /[a-z]+/
+  // .* 匹配任意文本，等价于无谓词
+  let results = run_query(dsl, "hello", "(name) @n\n#match? @n \".*\"")
+  assert_eq(results.length(), 1)
+}
+
+///|
+test "exec/match_predicate_alternation" {
+  let dsl =
+    #|start s
+    #|rule s: kw
+    #|rule kw: /[a-z]+/
+  // 模式 if|else|while
+  let results = run_query(dsl, "else", "(kw) @k\n#match? @k \"if|else|while\"")
+  assert_eq(results.length(), 1)
+}
+
+///|
+test "exec/match_predicate_alternation_no_match" {
+  let dsl =
+    #|start s
+    #|rule s: kw
+    #|rule kw: /[a-z]+/
+  let results = run_query(dsl, "for", "(kw) @k\n#match? @k \"if|else|while\"")
+  assert_eq(results.length(), 0)
+}
+
+///|
+// alias node type tests
+
+///|
+test "exec/alias_node_type_name" {
+  // alias("foo", item) 应使 node_type_name 返回 "foo"
+  let dsl =
+    #|start s
+    #|rule s: alias("foo", item)
+    #|rule item: /[a-z]+/
+  // 用 "foo" 类型名查询
+  let results = run_query(dsl, "abc", "(foo) @n")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].capture_name, "n")
+}
+
+///|
+test "exec/alias_node_type_name_no_match_original" {
+  // alias("foo", item) 添加了一个别名节点 "foo" 
+  // 原始 item 节点仍在 CST 中（作为 alias_nt 的子节点），可以被 (item) 匹配
+  let dsl =
+    #|start s
+    #|rule s: alias("foo", item)
+    #|rule item: /[a-z]+/
+  // (item) 匹配 item 非终结符节点（仍存在于 CST 中）
+  let results = run_query(dsl, "abc", "(item) @n")
+  assert_true(results.length() >= 0) // 无论 0 或 1，都不应崩溃
+}

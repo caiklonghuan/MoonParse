@@ -1,18 +1,5 @@
 ///|
 // Query 模式编译器
-// 公开 API：
-//   compile(src) -> Result[CompiledQuery, QueryError]
-//
-// 支持的 S-表达式语法：
-//   query        = ws top_item*
-//   top_item     = pattern | predicate
-//   pattern      = node_pattern | anon_pattern | wildcard
-//   node_pattern = '(' ident child* ')'
-//   anon_pattern = '"' chars '"'
-//   wildcard     = '_'
-//   child        = [ident ':'] pattern ['@' capture_name]
-//   predicate    = '#eq?' '@' capture_name '"' literal '"'
-//
 // 行注释以 ';' 开头
 
 ///|
@@ -243,6 +230,13 @@ fn Parser::parse_predicate(self : Parser) -> Predicate raise ParseErr {
       self.skip_ws()
       let literal = self.read_string()
       Eq(capture_name, literal)
+    }
+    "match?" => {
+      self.expect('@')
+      let capture_name = self.read_capture_name()
+      self.skip_ws()
+      let pattern_str = self.read_string()
+      Match(capture_name, pattern_str)
     }
     _ => raise PE(self.pos, "unknown predicate '#\{pred_name}'")
   }

@@ -38,11 +38,14 @@ pub(all) struct PatternChild {
 ///|
 /// 谓词（对捕获结果的后置过滤条件）
 ///
-/// v1 仅支持 `#eq?`，后续可扩展 `#match?` 正则谓词等。
+/// 支持 `#eq?` 字面量匹配和 `#match?` 正则匹配。
 pub(all) enum Predicate {
   /// `#eq? @capture_name "expected_text"`
   /// 要求命名捕获的节点文本等于给定字面量
   Eq(String, String)
+  /// `#match? @capture_name "regex"`
+  /// 要求命名捕获的节点文本匹配给定正则表达式（部分匹配，`^` `$` 可指定全文匹配）
+  Match(String, String)
 } derive(Show)
 
 ///|
@@ -118,7 +121,17 @@ pub fn node_type_name(
   } else {
     let meta = table.symbol_metadata
     if node.symbol >= 0 && node.symbol < meta.length() {
-      meta[node.symbol].name
+      // 优先查 alias（按产生式 ID 还原别名）
+      let alias_nm : String? = if node.production_id >= 0 &&
+        node.production_id < table.productions.length() {
+        table.productions[node.production_id].alias_name
+      } else {
+        None
+      }
+      match alias_nm {
+        Some(name) => name
+        None => meta[node.symbol].name
+      }
     } else {
       "<nonterminal:\{node.symbol}>"
     }

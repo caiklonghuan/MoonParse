@@ -133,8 +133,11 @@ fn collect_rule_refs_into(pattern : Pattern, out : Set[String]) -> Unit {
       }
     Repeat(p) | Plus(p) | Optional(p) | Not(p) | And(p) =>
       collect_rule_refs_into(p, out)
-    Tagged(_, p) | Field(_, p) | RepeatRange(p, _, _) | Prec(_, _, p) =>
-      collect_rule_refs_into(p, out)
+    Tagged(_, p)
+    | Field(_, p)
+    | RepeatRange(p, _, _)
+    | Prec(_, _, p)
+    | Alias(_, p) => collect_rule_refs_into(p, out)
     Literal(_) | Regex(_) | AnyChar => ()
   }
 }
@@ -165,8 +168,11 @@ fn first_rule_refs_into(pattern : Pattern, out : Set[String]) -> Unit {
     Seq(ps) => if ps.length() > 0 { first_rule_refs_into(ps[0], out) }
     // 以下包装层透传
     Repeat(p) | Plus(p) | Optional(p) => first_rule_refs_into(p, out)
-    Tagged(_, p) | Field(_, p) | RepeatRange(p, _, _) | Prec(_, _, p) =>
-      first_rule_refs_into(p, out)
+    Tagged(_, p)
+    | Field(_, p)
+    | RepeatRange(p, _, _)
+    | Prec(_, _, p)
+    | Alias(_, p) => first_rule_refs_into(p, out)
     // 非前缀操作符：前瞻不消耗 token，但展开后才是真正的首位
     Not(p) | And(p) => first_rule_refs_into(p, out)
     Literal(_) | Regex(_) | AnyChar => ()

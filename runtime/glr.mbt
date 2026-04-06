@@ -1251,13 +1251,26 @@ fn GlrEngine::run_reduce_worklist(
           } else {
             children[children.length() - 1].fragile_right
           }
+          // 计算 dynamic_precedence：从子节点累积 + 生产式自身动态优先级
+          let child_dp = children.fold(init=0, fn(acc, c) {
+            acc + c.dynamic_precedence
+          })
+          let prod_dp = match prod.assoc {
+            Some(@grammar.PrecKind::Dynamic) =>
+              match prod.prec {
+                Some(p) => p
+                None => 0
+              }
+            _ => 0
+          }
+          let inner_dp = child_dp + prod_dp
           let inner = CstNode::inner(
             nt,
             meta.is_named,
             children,
             fnames,
             prod.id,
-            0,
+            inner_dp,
             fragile_left,
             fragile_right,
           )
@@ -1271,6 +1284,31 @@ fn GlrEngine::run_reduce_worklist(
             new_link,
             self.active_tops,
           )
+          // 传播 dynamic_precedence 到 error_status（用于 condense_stack 排序）
+          if inner_dp != 0 {
+            let existing_dp = match self.error_status.get(merged_ref) {
+              Some(s) => s.dynamic_precedence
+              None => 0
+            }
+            if inner_dp > existing_dp {
+              let base = match self.error_status.get(merged_ref) {
+                Some(s) => s
+                None =>
+                  {
+                    cost: 0,
+                    node_count: 0,
+                    dynamic_precedence: 0,
+                    is_in_error: false,
+                  }
+              }
+              self.error_status[merged_ref] = {
+                cost: base.cost,
+                node_count: base.node_count,
+                dynamic_precedence: inner_dp,
+                is_in_error: base.is_in_error,
+              }
+            }
+          }
           // 仅当实际新建结点或新增了入边时，才将该结点的 Reduce 入队
           // find_or_merge 返回 false = 重复前驱（已有相同路径），不触发重入队
           if link_added {
@@ -1286,18 +1324,6 @@ fn GlrEngine::run_reduce_worklist(
 
 ///|
 /// 压缩 GSS 结点 Arena，回收从 roots 不可达的结点。
-///
-/// 每次 run_shift 之后，旧 active_tops 被替换为 next_tops，旧的前缀结点（可能有
-/// 数十个）不再被任何活跃栈顶引用，但仍留在 gss_nodes 数组中。对长输入文件，
-/// 这会导致 Arena 线性增长（每 token 增加 O(states) 个死亡结点）。
-///
-/// 算法：
-/// 从 roots 出发 DFS，标记所有可达的 GssRef（包括哨兵结点 0）
-/// 建立 old_ref → new_compact_ref 的重映射表
-/// 用新索引重建 gss_nodes（所有 GssLink.predecessor 用新索引）
-/// 原地更新 roots 数组为新索引
-///
-/// 调用时机：每次 run_shift 完成、active_tops 切换为下一轮栈顶之后。
 fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
   let n = self.gss_nodes.length()
 
@@ -1387,19 +1413,6 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
 ///|
 /// Condense Stack：当 active_tops 超过 max_version_count 时，
 /// 按 ErrorStatus 代价排序并截尾，只保留最优的 max_version_count 条路径。
-///
-/// 排序键（升序优先）：
-///   主键：cost（越小越优先）
-///   次键：dynamic_precedence（越大越优先，即次键降序）
-/// 没有 ErrorStatus 记录的路径视为 cost=0（无错误路径，最优），
-/// 排在所有有代价路径之前。
-///
-/// 截尾后调用 compact 回收已剪掉的路径占用的 GssNode。
-/// 必须在 compact 之后调用（此时 GssRef 已经是紧凑索引）。
-///
-/// 超出阈值时截至 max_version_count（硬上限）；
-/// 仅当超过 max_version_count + max_version_count_overflow 时才触发，
-/// 避免在短暂并行爆发窗口内过早丢弃仍有希望的路径。
 fn GlrEngine::condense_stack(self : GlrEngine) -> Unit {
   let n = self.active_tops.length()
   // 仅当超过 max_version_count + max_version_count_overflow 时才触发，
@@ -1445,7 +1458,7 @@ fn GlrEngine::condense_stack(self : GlrEngine) -> Unit {
 }
 
 ///|
-/// 从 GSS 结点反向收集状态路径（调试用）
+/// 从 GSS 结点反向收集状态路径
 ///
 /// 沿第一条入边回溯，返回从底部到 top 的状态序列。
 fn GlrEngine::state_path(self : GlrEngine, top : GssRef) -> Array[Int] {

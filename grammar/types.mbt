@@ -55,6 +55,8 @@ pub(all) enum Pattern {
   RepeatRange(Pattern, Int, Int)
   /// 内联优先级标注 prec(n,p) / prec.left(n,p) / prec.right(n,p) / prec.dynamic(n,p)
   Prec(Int, PrecKind, Pattern)
+  /// 节点类型别名 alias("name", p)：将产生式的显示名称覆盖为 alias_name
+  Alias(String, Pattern)
 }
 
 ///|
@@ -123,6 +125,7 @@ pub fn pattern_to_string(pattern : Pattern) -> String {
       }
       prefix + "(" + level.to_string() + ", " + pattern_to_string(p) + ")"
     }
+    Alias(name, p) => "alias(\"" + name + "\", " + pattern_to_string(p) + ")"
     Choice(patterns) => {
       let mut result = ""
       for i in 0..<patterns.length() {
