@@ -211,6 +211,7 @@ test "generate_parse_table: empty grammar returns Err" {
     start: None,
     precedences: [],
     extras: [],
+    externals: [],
   }
   match generate_parse_table(empty) {
     Err(msg) => assert_true(msg.length() > 0)
@@ -233,6 +234,7 @@ test "generate_parse_table: missing start rule returns Err" {
     start: Some("missing"),
     precedences: [],
     extras: [],
+    externals: [],
   }
   match generate_parse_table(g) {
     Err(msg) => assert_true(msg.length() > 0)
@@ -254,6 +256,7 @@ test "generate_parse_table: no start declared returns Err" {
     start: None,
     precedences: [],
     extras: [],
+    externals: [],
   }
   match generate_parse_table(g) {
     Err(msg) => assert_true(msg.length() > 0)

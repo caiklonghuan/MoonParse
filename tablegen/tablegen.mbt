@@ -68,6 +68,7 @@ pub fn generate_parse_table(
     terminal_patterns: resolved_table.terminal_patterns,
     terminal_names,
     extras: aug.extras,
+    external_token_ids: aug.external_ids,
   }
   Ok((final_table, reports))
 }

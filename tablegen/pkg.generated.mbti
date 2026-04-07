@@ -63,6 +63,7 @@ pub(all) struct AugmentedGrammar {
   extras : Array[Int]
   prec_table : Map[Int, (Int, @grammar.PrecKind)]
   nt_metas : Array[SymbolMeta]
+  external_ids : Array[Int]
 }
 
 pub(all) struct BodySymbol {
@@ -124,6 +125,7 @@ pub(all) struct ParseTable {
   terminal_patterns : Map[Int, TerminalDef]
   terminal_names : Map[Int, String]
   extras : Array[Int]
+  external_token_ids : Array[Int]
 }
 
 pub(all) struct Production {
@@ -157,6 +159,7 @@ pub(all) enum TerminalDef {
   Literal(String)
   Regex(String)
   AnyChar
+  External(String)
 }
 pub impl Eq for TerminalDef
 pub impl Show for TerminalDef

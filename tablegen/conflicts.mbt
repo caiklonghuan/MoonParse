@@ -248,6 +248,7 @@ pub fn resolve_conflicts(
     terminal_patterns: table.terminal_patterns,
     terminal_names: table.terminal_names,
     extras: table.extras,
+    external_token_ids: table.external_token_ids,
   }
   (new_table, reports)
 }

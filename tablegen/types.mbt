@@ -71,6 +71,8 @@ pub(all) enum TerminalDef {
   Literal(String)
   Regex(String)
   AnyChar
+  /// 由外部词法器（external scanner）处理的 token，不进入 DFA
+  External(String)
 } derive(Eq, Show)
 
 ///|
@@ -92,6 +94,8 @@ pub(all) struct AugmentedGrammar {
   prec_table : Map[TerminalId, (Int, @grammar.PrecKind)]
   /// 非终结符元数据，下标即 NonTerminalId（从 normalize 的 NormCtx.nt_metas 填入）
   nt_metas : Array[SymbolMeta]
+  /// 外部词法器 token 的 TerminalId 列表（对应 DSL externals 声明）
+  external_ids : Array[TerminalId]
 }
 
 ///|
@@ -179,6 +183,8 @@ pub(all) struct ParseTable {
   /// Extras token 列表（空白、注释等），runtime 识别后直接跳过不推 LR 栈
   /// 与 LexerDfa.valid_tokens 里的 extras union 对应，语义层的权威来源
   extras : Array[TerminalId]
+  /// 外部词法器 token 的 TerminalId 列表（来自 externals 声明），runtime 调用外部扫描器用
+  external_token_ids : Array[TerminalId]
 }
 
 ///|

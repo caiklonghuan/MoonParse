@@ -519,6 +519,7 @@ fn collect_alphabet(grammar : AugmentedGrammar) -> Array[Char] {
         for c in range_chars {
           set.add(c)
         }
+      External(_) => () // 外部 token 不进入 DFA，跳过
     }
   }
   set.to_array()
@@ -871,6 +872,7 @@ fn terminal_priority(tid : TerminalId, def : TerminalDef) -> Int {
     Literal(_) => tid
     Regex(_) => 10000 + tid
     AnyChar => 20000 + tid
+    External(_) => 30000 + tid // 外部 token 不参与 DFA 优先级，但需要穷举
   }
 }
 
@@ -901,6 +903,7 @@ pub fn build_lexer_dfa(
       Literal(s) => nfa_from_literal(ctx, s)
       Regex(re) => nfa_from_regex(ctx, re)
       AnyChar => nfa_from_any(ctx)
+      External(_) => continue // 外部 token 不进入 DFA，跳过
     }
     NfaCtx::edge(ctx, super_start, Eps, ns)
     let pri = terminal_priority(tid, def)

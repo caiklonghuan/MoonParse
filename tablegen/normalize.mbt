@@ -594,6 +594,13 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     extras.push(tid)
   }
 
+  // 处理 externals：将每个外部 token 名注册为 External terminal，收集 TerminalId
+  let external_ids : Array[TerminalId] = []
+  for name in grammar.externals {
+    let tid = alloc_terminal(ctx, "ext:\{name}", TerminalDef::External(name))
+    external_ids.push(tid)
+  }
+
   // 返回增广文法
   {
     start: accept_id,
@@ -604,5 +611,6 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     extras,
     prec_table,
     nt_metas: ctx.nt_metas,
+    external_ids,
   }
 }

@@ -164,6 +164,7 @@ fn terminal_def_to_json(td : TerminalDef) -> String {
     Literal(s) => jobj([("type", jstr("literal")), ("value", jstr(s))])
     Regex(re) => jobj([("type", jstr("regex")), ("value", jstr(re))])
     AnyChar => jobj([("type", jstr("anychar"))])
+    External(name) => jobj([("type", jstr("external")), ("value", jstr(name))])
   }
 }
 
@@ -279,6 +280,9 @@ pub fn table_to_json(table : ParseTable) -> String {
   // extras 数组（runtime 跳过不推栈的 token）
   let extras_json = jarray(table.extras.map(fn(tid) { "\{tid}" }))
 
+  // external_token_ids 数组
+  let ext_json = jarray(table.external_token_ids.map(fn(tid) { "\{tid}" }))
+
   jobj([
     ("states", "\{table.states}"),
     ("productions", prods_json),
@@ -288,6 +292,7 @@ pub fn table_to_json(table : ParseTable) -> String {
     ("terminal_patterns", tp_json),
     ("terminal_names", tn_json),
     ("extras", extras_json),
+    ("external_token_ids", ext_json),
     ("lexer_dfa", lexer_dfa_to_json(table.lexer_dfa)),
   ])
 }
@@ -530,6 +535,10 @@ fn write_terminal_def(w : BinWriter, td : TerminalDef) -> Unit {
       w.write_str(re)
     }
     AnyChar => w.write_u8(2)
+    External(name) => {
+      w.write_u8(3)
+      w.write_str(name)
+    }
   }
 }
 
@@ -540,6 +549,7 @@ fn read_terminal_def(r : BinReader) -> TerminalDef raise BinError {
     0 => Literal(r.read_str())
     1 => Regex(r.read_str())
     2 => AnyChar
+    3 => External(r.read_str())
     _ => raise InvalidData("terminal_def tag=\{tag}")
   }
 }
@@ -924,6 +934,14 @@ pub fn serialize_table(table : ParseTable) -> Bytes {
     w.write_u16_le(tid)
   }
 
+  // [10] external_token_ids
+  let ext_sorted = table.external_token_ids.copy()
+  ext_sorted.sort_by(fn(a, b) { a.compare(b) })
+  w.write_u16_le(ext_sorted.length())
+  for tid in ext_sorted {
+    w.write_u16_le(tid)
+  }
+
   w.to_bytes()
 }
 
@@ -1008,6 +1026,13 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       extras.push(r.read_u16_le())
     }
 
+    // [10] external_token_ids
+    let ext_count = r.read_u16_le()
+    let external_token_ids : Array[TerminalId] = []
+    for _ in 0..<ext_count {
+      external_token_ids.push(r.read_u16_le())
+    }
+
     Ok({
       states,
       action,
@@ -1018,6 +1043,7 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       terminal_patterns,
       terminal_names,
       extras,
+      external_token_ids,
     })
   } catch {
     UnexpectedEof(msg) => Err("deserialize_table: unexpected EOF at \{msg}")
@@ -1158,6 +1184,7 @@ fn json_to_terminal_def(j : Json) -> TerminalDef raise JsonTableError {
     "literal" => Literal(jstr_v(jfield(o, "value")))
     "regex" => Regex(jstr_v(jfield(o, "value")))
     "anychar" => AnyChar
+    "external" => External(jstr_v(jfield(o, "value")))
     t => raise JBadField("unknown terminal_def type: \{t}")
   }
 }
@@ -1266,6 +1293,16 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
       extras.push(jint(e_j))
     }
 
+    // external_token_ids
+    let external_token_ids : Array[TerminalId] = []
+    match root.get("external_token_ids") {
+      Some(arr_j) =>
+        for e_j in jarr(arr_j) {
+          external_token_ids.push(jint(e_j))
+        }
+      None => () // 向后兼容：旧格式无此字段
+    }
+
     // lexer_dfa
     let lexer_dfa = json_to_lexer_dfa(jfield(root, "lexer_dfa"))
 
@@ -1279,6 +1316,7 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
       terminal_patterns,
       terminal_names,
       extras,
+      external_token_ids,
     })
   } catch {
     JBadField(msg) => Err("table_from_json: \{msg}")
