@@ -31,6 +31,7 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
     rules: Map::new(),
     precedences: [],
     extras: [],
+    externals: [],
   }
 
   while state.pos < state.tokens.length() {
@@ -79,6 +80,17 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
           Success(patterns) =>
             for p in patterns {
               grammar.extras.push(p)
+            }
+          Error(err) => return Error(err)
+        }
+      }
+      // externals 声明：externals [name1, name2, ...]
+      Keyword("externals") => {
+        state.pos = state.pos + 1
+        match parse_externals(state) {
+          Success(names) =>
+            for n in names {
+              grammar.externals.push(n)
             }
           Error(err) => return Error(err)
         }
@@ -749,6 +761,53 @@ fn parse_extras(state : ParserState) -> ParseResult[Array[Pattern]] {
   }
   Error({
     message: "Unexpected end of input, expected ']' to close 'extras'",
+    location: state.tokens[state.tokens.length() - 1].location,
+  })
+}
+
+// externals 解析
+
+///|
+/// 解析 `externals [name1, name2, ...]` 声明
+/// 'externals' 关键字已被调用方消费，当前 token 应为 '['
+fn parse_externals(state : ParserState) -> ParseResult[Array[String]] {
+  // 消耗 '['
+  if state.pos >= state.tokens.length() {
+    return Error({
+      message: "Expected '[' after 'externals'",
+      location: state.tokens[state.tokens.length() - 1].location,
+    })
+  }
+  match state.tokens[state.pos].token {
+    Symbol("[") => state.pos = state.pos + 1
+    _ =>
+      return Error({
+        message: "Expected '[' after 'externals'",
+        location: state.tokens[state.pos].location,
+      })
+  }
+  let names : Array[String] = []
+  // 解析逗号分隔的标识符列表直到 ']'
+  while state.pos < state.tokens.length() {
+    match state.tokens[state.pos].token {
+      Symbol("]") => {
+        state.pos = state.pos + 1
+        return Success(names)
+      }
+      Symbol(",") => state.pos = state.pos + 1
+      Identifier(name) => {
+        names.push(name)
+        state.pos = state.pos + 1
+      }
+      _ =>
+        return Error({
+          message: "Expected identifier or ']' in externals declaration",
+          location: state.tokens[state.pos].location,
+        })
+    }
+  }
+  Error({
+    message: "Unexpected end of input, expected ']' to close 'externals'",
     location: state.tokens[state.tokens.length() - 1].location,
   })
 }

@@ -18,6 +18,8 @@ pub fn glr_parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
 
 pub fn glr_parse_with_config(@tablegen.ParseTable, String, ParseConfig) -> Result[CstNode, ParseError]
 
+pub fn glr_parse_with_external_scanner(@tablegen.ParseTable, String, (String, Int, Array[Int]) -> (Int, Int)?) -> Result[CstNode, ParseError]
+
 pub fn is_reusable(CstNode, Int, Int, Int) -> Bool
 
 pub fn parse(@tablegen.ParseTable, String) -> Result[CstNode, ParseError]
@@ -28,11 +30,17 @@ pub fn parse_incremental(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> 
 
 pub fn parse_incremental_with_config(@tablegen.ParseTable, String, OldTree?, InputEdit?, ParseConfig) -> Result[CstNode, ParseError]
 
+pub fn parse_incremental_with_external_scanner(@tablegen.ParseTable, String, OldTree?, InputEdit?, (String, Int, Array[Int]) -> (Int, Int)?) -> Result[CstNode, ParseError]
+
 pub fn parse_with_config(@tablegen.ParseTable, String, ParseConfig) -> Result[CstNode, ParseError]
+
+pub fn parse_with_external_scanner(@tablegen.ParseTable, String, (String, Int, Array[Int]) -> (Int, Int)?) -> Result[CstNode, ParseError]
 
 pub fn parse_with_old_tree(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
 
 pub fn parse_with_old_tree_and_config(@tablegen.ParseTable, String, OldTree?, InputEdit?, ParseConfig) -> Result[CstNode, ParseError]
+
+pub fn parse_with_old_tree_and_external_scanner(@tablegen.ParseTable, String, OldTree?, InputEdit?, (String, Int, Array[Int]) -> (Int, Int)?) -> Result[CstNode, ParseError]
 
 pub let sym_end : Int
 
@@ -96,8 +104,10 @@ pub struct LexerEngine {
   mut cached_pos : Int
   mut cached_valid_hash : Int
   mut cached_result : (Token?, Int)
+  external_scanner : ((String, Int, Array[Int]) -> (Int, Int)?)?
 }
 pub fn LexerEngine::new(@tablegen.LexerDfa) -> Self
+pub fn LexerEngine::new_with_external(@tablegen.LexerDfa, (String, Int, Array[Int]) -> (Int, Int)?) -> Self
 pub fn LexerEngine::next_token(Self, String, Int, @tablegen.ParseTable, Int) -> (Token?, Int)
 
 type LrParser
@@ -140,6 +150,7 @@ type Token
 pub impl Show for Token
 
 // Type aliases
+pub type ExternalScanner = (String, Int, Array[Int]) -> (Int, Int)?
 
 // Traits
 

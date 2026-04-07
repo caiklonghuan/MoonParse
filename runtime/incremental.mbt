@@ -245,6 +245,38 @@ pub fn parse_incremental_with_config(
 }
 
 ///|
+/// 带外部词法器的增量解析入口
+pub fn parse_incremental_with_external_scanner(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree?,
+  edit : InputEdit?,
+  scanner : ExternalScanner,
+) -> Result[CstNode, ParseError] {
+  match (old_tree, edit) {
+    (Some(ot), Some(e)) => {
+      let marked = apply_edit(ot, e)
+      let delta = e.new_end_byte - e.old_end_byte
+      let row_delta = e.new_end_point.row - e.old_end_point.row
+      let col_delta = e.new_end_point.column - e.old_end_point.column
+      let lexer = LexerEngine::new_with_external(table.lexer_dfa, scanner)
+      let engine = {
+        ..GlrEngine::new(lexer, ParseConfig::default()),
+        old_tree: Some(marked),
+        byte_delta: delta,
+        edit_start: e.start_byte,
+        new_end_byte: e.new_end_byte,
+        old_end_point: e.old_end_point,
+        row_delta,
+        col_delta,
+      }
+      engine.run(table, input)
+    }
+    _ => glr_parse_with_external_scanner(table, input, scanner)
+  }
+}
+
+///|
 /// 判断一个节点在新编辑后是否仍然可复用
 ///
 /// 外部调用（Parser 内部在 Shift 前调用）

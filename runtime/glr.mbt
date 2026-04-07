@@ -125,6 +125,18 @@ pub fn glr_parse_with_config(
 }
 
 ///|
+/// 带外部词法器回调的 GLR 解析入口
+pub fn glr_parse_with_external_scanner(
+  table : @tablegen.ParseTable,
+  input : String,
+  scanner : ExternalScanner,
+) -> Result[CstNode, ParseError] {
+  let lexer = LexerEngine::new_with_external(table.lexer_dfa, scanner)
+  let engine = GlrEngine::new(lexer, ParseConfig::default())
+  engine.run(table, input)
+}
+
+///|
 /// GLR 主循环
 ///
 /// 每轮：

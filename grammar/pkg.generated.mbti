@@ -20,6 +20,7 @@ pub(all) struct Grammar {
   rules : Map[String, Rule]
   precedences : Array[PrecDecl]
   extras : Array[Pattern]
+  externals : Array[String]
 }
 
 pub(all) struct ParseError {

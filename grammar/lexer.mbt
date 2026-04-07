@@ -217,6 +217,7 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           word == "right" ||
           word == "prec" ||
           word == "extras" ||
+          word == "externals" ||
           word == "alias" {
           tokens.push({
             token: Token::Keyword(word),

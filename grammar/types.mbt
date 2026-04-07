@@ -84,6 +84,9 @@ pub(all) struct Grammar {
   /// extras：可出现在任意位置的 token 模式（空白、注释等）
   /// 对应 DSL 中的 `extras [pattern, ...]` 声明
   extras : Array[Pattern]
+  /// externals：由外部词法器处理的 token 名称列表
+  /// 对应 DSL 中的 `externals [name1, name2, ...]` 声明
+  externals : Array[String]
 }
 
 ///|

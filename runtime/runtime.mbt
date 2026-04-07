@@ -104,3 +104,38 @@ pub fn parse_from_dsl(
     Ok((table, _)) => parse(table, input)
   }
 }
+
+///|
+/// 解析 input，使用外部词法器回调。
+/// 语法错误以带 ERROR/MISSING 节点的 CST 形式返回 Ok。
+///
+/// # 参数
+/// - table   : 由 tablegen 生成的 LALR 解析表（含词法 DFA）
+/// - input   : 待解析的 UTF-8 字符串
+/// - scanner : 外部词法器回调（处理 externals 中声明的 token）
+pub fn parse_with_external_scanner(
+  table : @tablegen.ParseTable,
+  input : String,
+  scanner : ExternalScanner,
+) -> Result[CstNode, ParseError] {
+  glr_parse_with_external_scanner(table, input, scanner)
+}
+
+///|
+/// 增量解析 + 外部词法器回调
+///
+/// # 参数
+/// - table    : LALR 解析表
+/// - input    : 新的完整输入字符串（编辑后）
+/// - old_tree : 上一次解析结果（None = 全量重解析）
+/// - edit     : 描述本次编辑的 InputEdit（None = 全量重解析）
+/// - scanner  : 外部词法器回调
+pub fn parse_with_old_tree_and_external_scanner(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree?,
+  edit : InputEdit?,
+  scanner : ExternalScanner,
+) -> Result[CstNode, ParseError] {
+  parse_incremental_with_external_scanner(table, input, old_tree, edit, scanner)
+}

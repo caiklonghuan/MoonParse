@@ -8,9 +8,14 @@
 //   · 单槽 token 缓存，GLR 多版本同位置复用
 //   · 两阶段 keyword 检查：Regex/AnyChar 匹配后，在 valid 集合中查是否有同内容的 Literal，
 //     若有则升级 terminal_id 并标记 is_keyword=true
-//
-// 暂不实现：
-//   · 外部词法器（external scanner，不做）
+//   · 外部词法器（external scanner）：若有回调，则在 DFA 之后对 ext_valid 中的
+//     外部 token 尝试匹配；取 DFA 与外部结果中的较长者（外部优先等长时）
+
+///|
+/// 外部词法器回调类型
+/// fn(input, pos, valid_external_tids) -> (matched_tid, end_pos)?
+/// - 返回 None 表示未匹配；返回 Some((tid, end)) 表示从 pos 到 end 匹配了 tid
+pub type ExternalScanner = (String, Int, Array[Int]) -> (Int, Int)?
 
 ///|
 /// 词法引擎
@@ -20,11 +25,34 @@ pub struct LexerEngine {
   mut cached_pos : Int
   mut cached_valid_hash : Int
   mut cached_result : (Token?, Int)
+  /// 外部词法器回调（可选）
+  external_scanner : ExternalScanner?
 }
 
 ///|
 pub fn LexerEngine::new(dfa : @tablegen.LexerDfa) -> LexerEngine {
-  { dfa, cached_pos: -1, cached_valid_hash: 0, cached_result: (None, 0) }
+  {
+    dfa,
+    cached_pos: -1,
+    cached_valid_hash: 0,
+    cached_result: (None, 0),
+    external_scanner: None,
+  }
+}
+
+///|
+/// 创建携带外部词法器回调的 LexerEngine
+pub fn LexerEngine::new_with_external(
+  dfa : @tablegen.LexerDfa,
+  scanner : ExternalScanner,
+) -> LexerEngine {
+  {
+    dfa,
+    cached_pos: -1,
+    cached_valid_hash: 0,
+    cached_result: (None, 0),
+    external_scanner: Some(scanner),
+  }
 }
 
 ///|
@@ -61,10 +89,54 @@ pub fn LexerEngine::next_token(
     valid.add(t)
   }
 
+  // 分离 DFA valid 和外部 token valid
+  let ext_tids : Array[Int] = []
+  for tid in table.external_token_ids {
+    if valid.contains(tid) {
+      ext_tids.push(tid)
+    }
+  }
+
   // DFA 最长匹配
-  // 在 valid 集合内尝试匹配，取最长匹配的候选
-  let (tok, new_pos) = self.run_dfa(input, pos, valid, table)
-  (tok, new_pos)
+  let (dfa_tok, dfa_pos) = self.run_dfa(input, pos, valid, table)
+
+  // 外部词法器尝试（仅当有回调且有合法的外部 token）
+  match self.external_scanner {
+    None => (dfa_tok, dfa_pos)
+    Some(scanner) =>
+      if ext_tids.is_empty() {
+        (dfa_tok, dfa_pos)
+      } else {
+        match scanner(input, pos, ext_tids) {
+          None => (dfa_tok, dfa_pos) // 外部未匹配，使用 DFA 结果
+          Some((ext_tid, ext_end)) => {
+            // 外部匹配成功：与 DFA 结果比较，取较长者（等长时外部优先）
+            let dfa_len = dfa_pos - pos
+            let ext_len = ext_end - pos
+            if ext_len >= dfa_len {
+              let mut is_extra = false
+              for t in table.extras {
+                if t == ext_tid {
+                  is_extra = true
+                  break
+                }
+              }
+              let ext_tok : Token = {
+                terminal_id: ext_tid,
+                start_byte: pos,
+                end_byte: ext_end,
+                lookahead_bytes: ext_end,
+                is_keyword: false,
+                is_extra,
+              }
+              (Some(ext_tok), ext_end)
+            } else {
+              (dfa_tok, dfa_pos)
+            }
+          }
+        }
+      }
+  }
 }
 
 ///|
