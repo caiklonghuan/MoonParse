@@ -318,3 +318,135 @@ fn parser_registry_for_tree(tree_id : Int) -> @tablegen.ParseTable? {
       }
   }
 }
+
+///|
+/// 从 JSON 对象字符串中读取指定字段的整数值。
+/// 格式：`{"field": 123, ...}`（字段值必须为不带引号的整数）。
+/// 字段不存在或值非整数时返回 0。
+fn extract_int_field(json : String, field : String) -> Int {
+  let needle = "\"" + field + "\":"
+  let n = needle.length()
+  let l = json.length()
+  let mut i = 0
+  while i + n <= l {
+    // 检查 json[i..i+n] 是否等于 needle
+    let mut matched = true
+    let mut j = 0
+    while j < n {
+      if json[i + j] != needle[j] {
+        matched = false
+        j = n // break
+      } else {
+        j = j + 1
+      }
+    }
+    if matched {
+      // 跳过空白
+      let mut k = i + n
+      while k < l && (json[k] == ' ' || json[k] == '\t') {
+        k = k + 1
+      }
+      // 解析可选的负号
+      let neg = k < l && json[k] == '-'
+      if neg {
+        k = k + 1
+      }
+      // 解析数字序列
+      let mut val = 0
+      while k < l && json[k] >= '0' && json[k] <= '9' {
+        val = val * 10 + (json[k].to_int() - 48)
+        k = k + 1
+      }
+      return if neg { -val } else { val }
+    }
+    i = i + 1
+  }
+  0
+}
+
+///|
+// 对外接口与 web-tree-sitter 保持相同命名约定，便于工具生态复用。
+// 所有函数均为薄封装，不含业务逻辑。
+
+///|
+/// 从 Grammar DSL 字符串创建解析器，返回句柄 ID（失败返回 -1）。
+pub fn wasm_create_parser(dsl : String) -> Int {
+  parser_create_from_dsl(dsl)
+}
+
+///|
+/// 从预编译 JSON 表快速还原解析器（失败返回 -1）。
+pub fn wasm_create_parser_from_json(table_json : String) -> Int {
+  parser_create_from_json(table_json)
+}
+
+///|
+/// 全量解析源代码，直接返回语法树 JSON 字符串。
+pub fn wasm_parse(parser_id : Int, source : String) -> String {
+  let tid = parse_full(parser_id, source)
+  if tid < 0 {
+    return ""
+  }
+  let result = tree_to_json(tid)
+  tree_free(tid)
+  result
+}
+
+///|
+/// 增量解析：在旧树基础上应用一次文本编辑，返回新语法树 JSON 字符串。
+pub fn wasm_parse_incremental(
+  parser_id : Int,
+  source : String,
+  old_tree_id : Int,
+  changes_json : String,
+) -> String {
+  let start_byte = extract_int_field(changes_json, "start_byte")
+  let old_end_byte = extract_int_field(changes_json, "old_end_byte")
+  let new_end_byte = extract_int_field(changes_json, "new_end_byte")
+  let start_row = extract_int_field(changes_json, "start_row")
+  let start_col = extract_int_field(changes_json, "start_col")
+  let old_end_row = extract_int_field(changes_json, "old_end_row")
+  let old_end_col = extract_int_field(changes_json, "old_end_col")
+  let new_end_row = extract_int_field(changes_json, "new_end_row")
+  let new_end_col = extract_int_field(changes_json, "new_end_col")
+  let tid = parse_incremental(
+    parser_id, old_tree_id, source, start_byte, old_end_byte, new_end_byte, start_row,
+    start_col, old_end_row, old_end_col, new_end_row, new_end_col,
+  )
+  if tid < 0 {
+    return ""
+  }
+  let result = tree_to_json(tid)
+  tree_free(tid)
+  result
+}
+
+///|
+/// 返回语法树根节点的 S-表达式字符串（Tree-Sitter 兼容格式）。
+pub fn wasm_node_sexp(tree_id : Int) -> String {
+  tree_root_sexp(tree_id)
+}
+
+///|
+/// 一次性编译并执行结构化查询，返回捕获结果 JSON 数组字符串。
+pub fn wasm_query(tree_id : Int, pattern : String) -> String {
+  let qid = query_compile(pattern)
+  if qid < 0 {
+    return "[]"
+  }
+  let result = query_exec(qid, tree_id)
+  query_free(qid)
+  result
+}
+
+///|
+/// 释放语法树句柄。
+pub fn wasm_free_tree(tree_id : Int) -> Unit {
+  tree_free(tree_id)
+}
+
+///|
+/// 释放解析器句柄。
+pub fn wasm_free_parser(parser_id : Int) -> Unit {
+  parser_free(parser_id)
+}

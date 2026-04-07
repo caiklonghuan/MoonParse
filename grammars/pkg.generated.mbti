@@ -6,7 +6,47 @@ import {
 }
 
 // Values
+pub let ascii_identifier_pattern : String
+
+pub let backtick_string_pattern : String
+
+pub let binary_int_pattern : String
+
+pub let c_block_comment_pattern : String
+
 pub let c_grammar : String
+
+pub let c_line_comment_pattern : String
+
+pub let c_number_pattern : String
+
+pub fn c_style_extras() -> String
+
+pub fn dash_comment_extras() -> String
+
+pub let dash_line_comment_pattern : String
+
+pub let decimal_int_pattern : String
+
+pub let dq_string_pattern : String
+
+pub let expression_grammar : String
+
+pub let float_pattern : String
+
+pub fn hash_comment_extras() -> String
+
+pub let hash_line_comment_pattern : String
+
+pub let haskell_block_comment_pattern : String
+
+pub let hex_int_pattern : String
+
+pub fn horizontal_whitespace_extras() -> String
+
+pub let horizontal_ws_pattern : String
+
+pub let js_identifier_pattern : String
 
 pub let json5_grammar : String
 
@@ -14,7 +54,15 @@ pub let json_grammar : String
 
 pub let moonbit_grammar : String
 
+pub let moonparse_grammar_dsl : String
+
+pub let newline_pattern : String
+
+pub let octal_int_pattern : String
+
 pub fn parse_c(String) -> Result[@runtime.CstNode, @runtime.ParseError]
+
+pub fn parse_expression(String) -> Result[@runtime.CstNode, @runtime.ParseError]
 
 pub fn parse_json(String) -> Result[@runtime.CstNode, @runtime.ParseError]
 
@@ -22,9 +70,17 @@ pub fn parse_json5(String) -> Result[@runtime.CstNode, @runtime.ParseError]
 
 pub fn parse_moonbit(String) -> Result[@runtime.CstNode, @runtime.ParseError]
 
+pub fn parse_moonparse_dsl(String) -> Result[@runtime.CstNode, @runtime.ParseError]
+
 pub fn parse_python(String) -> Result[@runtime.CstNode, @runtime.ParseError]
 
 pub let python_grammar : String
+
+pub let signed_number_pattern : String
+
+pub let sq_string_pattern : String
+
+pub let whitespace_pattern : String
 
 // Errors
 

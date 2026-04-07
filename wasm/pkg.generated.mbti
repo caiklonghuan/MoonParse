@@ -83,6 +83,22 @@ pub fn tree_root_sexp(Int) -> String
 
 pub fn tree_to_json(Int) -> String
 
+pub fn wasm_create_parser(String) -> Int
+
+pub fn wasm_create_parser_from_json(String) -> Int
+
+pub fn wasm_free_parser(Int) -> Unit
+
+pub fn wasm_free_tree(Int) -> Unit
+
+pub fn wasm_node_sexp(Int) -> String
+
+pub fn wasm_parse(Int, String) -> String
+
+pub fn wasm_parse_incremental(Int, String, Int, String) -> String
+
+pub fn wasm_query(Int, String) -> String
+
 // Errors
 
 // Types and methods
