@@ -6,7 +6,15 @@ pub fn generate(String) -> String
 
 pub fn parse(String, String) -> String
 
+pub fn parse_c(String) -> String
+
 pub fn parse_json(String) -> String
+
+pub fn parse_json5(String) -> String
+
+pub fn parse_moonbit(String) -> String
+
+pub fn parse_python(String) -> String
 
 // Errors
 

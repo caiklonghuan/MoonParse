@@ -45,3 +45,39 @@ pub fn parse_json(source : String) -> String {
     Err(err) => "Error: " + err.to_string()
   }
 }
+
+///|
+/// 用内置 JSON5 语法解析 source，返回 CST 的文本表示。
+pub fn parse_json5(source : String) -> String {
+  match @grammars.parse_json5(source) {
+    Ok(node) => node.to_string()
+    Err(err) => "Error: " + err.to_string()
+  }
+}
+
+///|
+/// 用内置 MoonBit 语法解析 source，返回 CST 的文本表示。
+pub fn parse_moonbit(source : String) -> String {
+  match @grammars.parse_moonbit(source) {
+    Ok(node) => node.to_string()
+    Err(err) => "Error: " + err.to_string()
+  }
+}
+
+///|
+/// 用内置 Python 语法解析 source，返回 CST 的文本表示。
+pub fn parse_python(source : String) -> String {
+  match @grammars.parse_python(source) {
+    Ok(node) => node.to_string()
+    Err(err) => "Error: " + err.to_string()
+  }
+}
+
+///|
+/// 用内置 C 语法解析 source，返回 CST 的文本表示。
+pub fn parse_c(source : String) -> String {
+  match @grammars.parse_c(source) {
+    Ok(node) => node.to_string()
+    Err(err) => "Error: " + err.to_string()
+  }
+}

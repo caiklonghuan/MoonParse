@@ -140,8 +140,8 @@ pub fn glr_parse_with_external_scanner(
 /// GLR 主循环
 ///
 /// 每轮：
-/// EOF → run_reduce(eoi_id) → collect_root_glr
-/// 合并所有活跃栈顶的 valid_tokens，调用 DFA 词法
+/// 若当前位置可产生 external token，则先词法；否则 EOF → run_reduce(eoi_id) → collect_root_glr
+/// 合并所有活跃栈顶的 valid_tokens，调用 DFA + external scanner 联合词法
 /// extras token → 创建叶节点累积到 pending_extras，active_tops 不变
 /// 普通 token → run_reduce_worklist → run_shift → 替换 active_tops → compact Arena
 fn GlrEngine::run(
@@ -155,12 +155,6 @@ fn GlrEngine::run(
   // extras 不改变 LR 状态，故不影响 active_tops，但需出现在最终 CST 中。
   let pending_extras : Array[CstNode] = []
   while true {
-    // EOF 检查
-    if pos >= input.length() {
-      self.run_reduce_worklist(table, @tablegen.eoi_id)
-      return self.collect_root_glr(table, pos, cur_point)
-    }
-
     // 计算所有活跃状态的合法 token 并集
     // GLR 中多条路径处于同一位置，词法器需对所有路径的合法符号取并集，
     // 确保任意路径在当前位置认为合法的 token 都能被识别。
@@ -179,11 +173,13 @@ fn GlrEngine::run(
       valid.add(t)
     }
 
-    // 词法（直接调用 run_dfa，使用并集 valid 集合）
-    let (maybe_tok, new_pos) = self.lexer.run_dfa(input, pos, valid, table)
+    // 词法（使用并集 valid 集合；支持 external scanner 与 EOF 零宽 token）
+    let (maybe_tok, new_pos) = self.lexer.scan_with_valid(
+      input, pos, valid, table,
+    )
     match maybe_tok {
       None => {
-        // pos < input.length() 但 DFA 无匹配：当做 EOF 处理
+        // 无可识别 token：视为 EOF，执行最终归约。
         self.run_reduce_worklist(table, @tablegen.eoi_id)
         return self.collect_root_glr(table, pos, cur_point)
       }
@@ -907,7 +903,7 @@ fn GlrEngine::insert_missing_and_relex(
                     for t in table.extras {
                       new_valid.add(t)
                     }
-                    let (maybe_retok, new_pos2) = self.lexer.run_dfa(
+                    let (maybe_retok, new_pos2) = self.lexer.scan_with_valid(
                       input, pos, new_valid, table,
                     )
                     match maybe_retok {

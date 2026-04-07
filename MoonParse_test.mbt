@@ -91,6 +91,42 @@ test "parse_json/invalid_input_contains_error_node" {
 }
 
 ///|
+// ── built-in stdlib grammars ───────────────────────────────────
+
+///|
+test "parse_json5/object_with_comments" {
+  let result = @MoonParse.parse_json5("{name: 'moon', list: [1, 2,],}")
+  assert_true(not(result.contains("ERROR")))
+}
+
+///|
+test "parse_moonbit/type_alias" {
+  let source =
+    #|pub type IntList = Array[Int]
+  let result = @MoonParse.parse_moonbit(source)
+  assert_true(not(result.contains("ERROR")))
+}
+
+///|
+test "parse_python/indented_function" {
+  let source =
+    #|def identity(x):
+    #|    return x
+  let result = @MoonParse.parse_python(source)
+  assert_true(not(result.contains("ERROR")))
+}
+
+///|
+test "parse_c/function" {
+  let source =
+    #|int add(int a, int b) {
+    #|  return a + b;
+    #|}
+  let result = @MoonParse.parse_c(source)
+  assert_true(not(result.contains("ERROR")))
+}
+
+///|
 // ── table_from_json round-trip（通过 generate + parse 验证）────────
 
 ///|

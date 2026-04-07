@@ -70,11 +70,6 @@ pub fn LexerEngine::next_token(
   table : @tablegen.ParseTable,
   state : Int,
 ) -> (Token?, Int) {
-  // EOF
-  if pos >= input.length() {
-    return (None, pos)
-  }
-
   // 计算本状态下合法的终结符集合
   // valid_tokens[state] + extras
   let valid : Set[Int] = Set::new()
@@ -89,6 +84,23 @@ pub fn LexerEngine::next_token(
     valid.add(t)
   }
 
+  self.scan_with_valid(input, pos, valid, table)
+}
+
+///|
+/// 以调用方提供的 valid 集合作为上下文，执行 DFA + 外部词法器联合扫描。
+///
+/// 该入口用于：
+/// - 线性 LR 路径（单状态 valid 集合）
+/// - GLR 路径（多状态 valid 集合并集）
+/// - EOF 位置的零宽 external token（如布局 dedent）
+fn LexerEngine::scan_with_valid(
+  self : LexerEngine,
+  input : String,
+  pos : Int,
+  valid : Set[Int],
+  table : @tablegen.ParseTable,
+) -> (Token?, Int) {
   // 分离 DFA valid 和外部 token valid
   let ext_tids : Array[Int] = []
   for tid in table.external_token_ids {
@@ -97,8 +109,12 @@ pub fn LexerEngine::next_token(
     }
   }
 
-  // DFA 最长匹配
-  let (dfa_tok, dfa_pos) = self.run_dfa(input, pos, valid, table)
+  // EOF 时允许 external scanner 产生零宽 token；只有在非 EOF 时才运行 DFA。
+  let (dfa_tok, dfa_pos) = if pos >= input.length() {
+    (None, pos)
+  } else {
+    self.run_dfa(input, pos, valid, table)
+  }
 
   // 外部词法器尝试（仅当有回调且有合法的外部 token）
   match self.external_scanner {
@@ -110,10 +126,14 @@ pub fn LexerEngine::next_token(
         match scanner(input, pos, ext_tids) {
           None => (dfa_tok, dfa_pos) // 外部未匹配，使用 DFA 结果
           Some((ext_tid, ext_end)) => {
+            if ext_end < pos {
+              return (dfa_tok, dfa_pos)
+            }
             // 外部匹配成功：与 DFA 结果比较，取较长者（等长时外部优先）
             let dfa_len = dfa_pos - pos
             let ext_len = ext_end - pos
-            if ext_len >= dfa_len {
+            let prefer_external = ext_len == 0 || ext_len >= dfa_len
+            if prefer_external {
               let mut is_extra = false
               for t in table.extras {
                 if t == ext_tid {

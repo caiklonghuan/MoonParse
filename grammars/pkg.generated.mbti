@@ -6,9 +6,25 @@ import {
 }
 
 // Values
+pub let c_grammar : String
+
+pub let json5_grammar : String
+
 pub let json_grammar : String
 
+pub let moonbit_grammar : String
+
+pub fn parse_c(String) -> Result[@runtime.CstNode, @runtime.ParseError]
+
 pub fn parse_json(String) -> Result[@runtime.CstNode, @runtime.ParseError]
+
+pub fn parse_json5(String) -> Result[@runtime.CstNode, @runtime.ParseError]
+
+pub fn parse_moonbit(String) -> Result[@runtime.CstNode, @runtime.ParseError]
+
+pub fn parse_python(String) -> Result[@runtime.CstNode, @runtime.ParseError]
+
+pub let python_grammar : String
 
 // Errors
 
