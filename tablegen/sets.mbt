@@ -1,14 +1,5 @@
 ///|
 // 符号属性集合计算
-//
-// 实现公开函数：
-//   nullable(grammar, seq)     -> Bool
-//   first_set(grammar, sym)    -> Set[TerminalId]
-//   first_seq(grammar, seq)    -> Set[TerminalId]
-//   follow_set(grammar, nt)    -> Set[TerminalId]
-//
-// 约定：EndOfInput 在 Set[TerminalId] 中用哨兵 eoi_id = -1 表示。
-// 终结符 ID 由 normalize.mbt 从 0 起分配，-1 不会与任何真实 ID 冲突。
 
 ///|
 /// EndOfInput（"$"）在 TerminalId 集合中的哨兵值
@@ -64,11 +55,7 @@ fn compute_nullable(grammar : AugmentedGrammar) -> Map[NonTerminalId, Bool] {
 }
 
 ///|
-/// 不动点迭代：在已知 nullable 表下计算每个非终结符的 FIRST 集合。
-///
-/// - Terminal(t) 贡献 {t}；EndOfInput 贡献 {eoi_id}
-/// - 若 body[i] 可 nullable，继续向右累积 body[i+1] 的 FIRST
-/// - 快照后再合并，避免自环产生式（left-recursive）边读边改同一集合
+/// 不动点迭代：在已知 nullable 表下计算每个非终结符的 FIRST 集合
 fn compute_first(
   grammar : AugmentedGrammar,
   nm : Map[NonTerminalId, Bool],
@@ -133,11 +120,7 @@ fn compute_first(
 }
 
 ///|
-/// 不动点迭代：在已知 nullable / FIRST 表下计算每个非终结符的 FOLLOW 集合。
-///
-/// 对每条产生式 A → α B β：
-/// 将 FIRST(β) 加入 FOLLOW(B)
-/// 若 β 全部可 nullable（含 β 为空），将 FOLLOW(A) 加入 FOLLOW(B)
+/// 不动点迭代：在已知 nullable / FIRST 表下计算每个非终结符的 FOLLOW 集合
 fn compute_follow(
   grammar : AugmentedGrammar,
   nm : Map[NonTerminalId, Bool],
@@ -227,9 +210,7 @@ fn compute_follow(
 // 公开 API
 
 ///|
-/// 判断符号序列是否可推导出 ε。
-/// - 空序列返回 true（等同于 ε 产生式）
-/// - 含任意终结符 / EndOfInput 的序列返回 false
+/// 判断符号序列是否可推导出 ε
 pub fn nullable(grammar : AugmentedGrammar, seq : Array[Symbol]) -> Bool {
   let nm = compute_nullable(grammar)
   let mut all = true
@@ -249,10 +230,7 @@ pub fn nullable(grammar : AugmentedGrammar, seq : Array[Symbol]) -> Bool {
 }
 
 ///|
-/// 计算单个符号的 FIRST 集合。
-/// - Terminal(t)  → {t}
-/// - EndOfInput   → {eoi_id}
-/// - NonTerminal  → 不动点迭代结果（所有通过该 NT 可最左推导出的终结符）
+/// 计算单个符号的 FIRST 集合
 pub fn first_set(grammar : AugmentedGrammar, sym : Symbol) -> Set[TerminalId] {
   match sym {
     Terminal(t) => {
@@ -277,8 +255,7 @@ pub fn first_set(grammar : AugmentedGrammar, sym : Symbol) -> Set[TerminalId] {
 }
 
 ///|
-/// 计算符号序列 α 的 FIRST 集合。
-/// 不含 ε 标记——可 nullable 性由 nullable() 函数单独查询。
+/// 计算符号序列 α 的 FIRST 集合
 pub fn first_seq(
   grammar : AugmentedGrammar,
   seq : Array[Symbol],
@@ -318,8 +295,7 @@ pub fn first_seq(
 }
 
 ///|
-/// 计算非终结符 nt 的 FOLLOW 集合。
-/// EndOfInput 以哨兵 eoi_id = -1 表示（与 normalize.mbt 分配的终结符 ID 不重叠）。
+/// 计算非终结符 nt 的 FOLLOW 集合
 pub fn follow_set(
   grammar : AugmentedGrammar,
   nt : NonTerminalId,

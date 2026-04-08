@@ -1,20 +1,5 @@
 ///|
 // JSON 序列化
-//
-// Phase 1 只需 JSON，便于调试和与外部工具交互。
-// 二进制格式（serialize_table / deserialize_table）留待 Phase 2。
-//
-// 输出 JSON 结构总览：
-// {
-//   "states": <int>,
-//   "productions": [...],
-//   "action": [...],
-//   "goto": [...],
-//   "symbol_metadata": [...]
-// }
-
-// 辅助：基础 JSON 构造
-
 ///|
 /// 转义 JSON 字符串中的特殊字符
 fn json_escape(s : String) -> String {

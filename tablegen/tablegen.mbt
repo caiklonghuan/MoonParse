@@ -1,38 +1,5 @@
 ///|
-// 一键入口
-//
-// 将各阶段流水线封装为单一公开函数：
-//   generate_parse_table(grammar) -> Result[(ParseTable, Array[ConflictReport]), String]
-//
-// 流水线：
-//   Grammar
-//     │ augment_grammar()
-//     ▼
-//   AugmentedGrammar
-//     │ build_item_sets()
-//     ▼
-//   Array[Set[LRItem]]
-//     │ build_goto_map()
-//     ▼
-//   Map[(StateId, Symbol), StateId]
-//     │ build_lalr_table()
-//     ▼
-//   ParseTable (含冲突)
-//     │ resolve_conflicts()
-//     ▼
-//   (ParseTable, Array[ConflictReport])
-//     │ build_lexer_dfa()
-//     ▼
-//   ParseTable (含词法 DFA)
-
-///|
-/// 将用户 Grammar 一步生成 LALR(1) 解析表（含词法器 DFA）。
-///
-/// 返回 `Ok((table, reports))`：
-/// - `table`   — 完成冲突解决、词法 DFA 已接入的解析表
-/// - `reports` — 所有冲突报告（Warn / Ambiguous / DynamicConflict）
-///
-/// 输入校验：空文法（无规则）或 start 指向不存在的规则时返回 Err。
+/// 将用户 Grammar 一步生成 LALR(1) 解析表（含词法器 DFA）
 pub fn generate_parse_table(
   grammar : @grammar.Grammar,
 ) -> Result[(ParseTable, Array[ConflictReport]), String] {

@@ -1,15 +1,5 @@
 // serialize_test.mbt — table_to_json() / serialize_table / deserialize_table 黑盒测试
-//
-// gen_ok() 复用自 tablegen_test.mbt（同一测试包，共享辅助函数）。
-//
-// 四个表格驱动测试块：
-// 顶层结构     — 必要键存在、states 值正确、格式合法
-// productions  — 增广产生式与用户规则名出现在 JSON 中
-// action 条目  — shift / reduce / accept 字符串存在
-// symbol_metadata — $accept 条目及 is_named 值
 
-// 表 1：顶层结构
-// (_label, dsl, exp_states)
 
 ///|
 test "table_to_json 顶层结构" {

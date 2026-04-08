@@ -1,32 +1,9 @@
 ///|
 // 冲突处理
-//
-// 实现公开函数：
-//   resolve_conflicts(table, grammar) -> (ParseTable, Array[ConflictReport])
-//
-// 算法概览：
-//   对每个 action[(state, t)] 含多个动作的格：
-// 若为 Reduce-Reduce → 无法消解，报 Ambiguous（GLR 保留全部）
-// 若为 Shift-Reduce  → 对比 shift_prec 与 reduce_prec：
-//        shift_prec  = grammar 中 body 含 Terminal(t) 的产生式 .prec 最大值
-//        reduce_prec = 被规约产生式的 .prec
-//      - shift_prec > reduce_prec : 删除 Reduce（Shift 胜）
-//      - shift_prec < reduce_prec : 删除 Shift（Reduce 胜）
-//      - shift_prec == reduce_prec :
-//          Left  → 删除 Shift（Reduce 胜）
-//          Right → 删除 Reduce（Shift 胜）
-//          Nonassoc → 两者均删除（该输入为语法错误）
-//          Dynamic  → 编译期无法消解，报 DynamicConflict
-//      - 无 prec 信息 → 报 Ambiguous（GLR 保留全部）
-
-// 辅助：终结符 t 对应的 Shift 优先级
-
 ///|
 /// 预构建 Map[TerminalId, Int]：扫描全部产生式（O(P×B)）各做一次，
 /// 返回每个终结符作为 Shift 目标时的最高优先级。
-/// 已有 prec_table 的条目作为回落（顶层优先级声明）。
-///
-/// 调用方应在 resolve_conflicts 入口调用一次，之后 O(1) 查询。
+/// 已有 prec_table 的条目作为回落（顶层优先级声明）
 fn build_shift_prec_map(grammar : AugmentedGrammar) -> Map[TerminalId, Int] {
   let m : Map[TerminalId, Int] = Map::new()
   // 产生式内联 prec
@@ -66,11 +43,7 @@ fn shift_prec_lookup(shift_map : Map[TerminalId, Int], t : TerminalId) -> Int? {
 // 辅助：单格冲突消解
 
 ///|
-/// 对单个含多个动作的 action 格进行优先级/结合性消解。
-///
-/// 返回 (过滤后动作列表, 冲突报告?)。
-/// - 过滤后列表为空 → Nonassoc 同优先级冲突，该位置输入为语法错误
-/// - 报告为 None    → 动作只有一个，理论上不会进入此函数
+/// 对单个含多个动作的 action 格进行优先级/结合性消解
 fn resolve_cell(
   state : StateId,
   terminal : TerminalId,
@@ -208,11 +181,7 @@ fn resolve_cell(
 // 公开 API
 
 ///|
-/// 用优先级/结合性过滤 ParseTable 中的冲突；无法消解的冲突保留并生成报告。
-///
-/// - 消解成功（prec/assoc 充分）    → ConflictReport.severity = Warn
-/// - 无 prec 信息                    → severity = Ambiguous（GLR 保留全部动作）
-/// - dynamic assoc                   → severity = DynamicConflict（运行时处理）
+/// 用优先级/结合性过滤 ParseTable 中的冲突；无法消解的冲突保留并生成报告
 pub fn resolve_conflicts(
   table : ParseTable,
   grammar : AugmentedGrammar,

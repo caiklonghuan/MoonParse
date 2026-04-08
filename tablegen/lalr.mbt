@@ -1,21 +1,5 @@
 ///|
 // LALR(1) 解析表构建
-//
-// 实现公开函数：
-//   build_lalr_table(grammar, item_sets, goto_map) -> ParseTable
-//
-// 算法概览：
-// 遍历 goto_map →
-//             Terminal(t)     : action[(state, t)]  += Shift(target)
-//             EndOfInput      : action[(state, -1)] += Shift(target)  (-1 = eoi_id)
-//             NonTerminal(nt) : goto_table[(state, nt)] = target
-// 遍历每个状态的 reduce 项 [A → α •] →
-//             若 A == grammar.start ($accept) : action[(state, eoi_id)] += Accept
-//             否则 : 对 FOLLOW(A) 中每个 t    : action[(state, t)]     += Reduce(id)
-// 整理 symbol_metadata（下标 = NonTerminalId）
-// 组装 ParseTable (词法 DFA 在 Phase 1 置为桩实现)
-
-// 辅助：向 action 表插入去重动作
 
 ///|
 /// 向 action 表的 (state, terminal) 格加入动作；已存在相同动作时跳过。
@@ -46,12 +30,7 @@ fn add_action(
 // 公开 API
 
 ///|
-/// 构建 LALR(1) 解析表。
-///
-/// - `item_sets`：所有 LR(0) 项目集，下标即 StateId（由 build_item_sets 生成）
-/// - `goto_map`  ：(state, symbol) → target state（由 build_goto_map 生成）
-///
-/// 返回的 ParseTable.lexer_dfa 为桩实现（Phase 1 不生成词法 DFA）。
+/// 构建 LALR(1) 解析表
 pub fn build_lalr_table(
   grammar : AugmentedGrammar,
   item_sets : Array[Set[LRItem]],

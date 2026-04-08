@@ -145,11 +145,6 @@ pub(all) struct DfaState {
 
 ///|
 /// 上下文敏感词法器 DFA
-///
-/// ID 空间说明：
-///   · states / start / DfaState.id  — 词法 DFA 内部状态，类型为 DfaStateId
-///   · valid_tokens 的 key            — LR 解析器状态，类型为 StateId
-/// 两个 ID 空间在底层都是 Int，但语义完全不同，不可混用。
 pub(all) struct LexerDfa {
   /// 词法 DFA 的全部状态（按 DfaStateId 索引）
   states : Array[DfaState]

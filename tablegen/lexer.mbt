@@ -1,25 +1,9 @@
 ///|
 // 词法器编译器
-//
-// Literal / Regex / AnyChar  →  Thompson NFA  →  DFA（子集构造）
-// → LexerDfa + valid_tokens 映射。
-//
-// 字母表策略：从 terminal_patterns 中扫描，显式字符与区间均展开为个体字符。
-// AnyChar / `.` 展开为 range_chars（覆盖 ASCII 可打印字符 + 常用控制字符）。
-//
-// 优先级规则（值越小越优先）：
-//   Literal(tid) → tid          (0…9999)
-//   Regex(tid)   → 10000 + tid
-//   AnyChar(tid) → 20000 + tid
-//
-// Phase 3：签名迭代 DFA 最小化（等价于 Hopcroft），消除子集构造产生的冗余状态。
 
-// 字符常量
 
 ///|
-/// 仅用于 AnyChar / `.` 展开的字符集（ASCII 可打印字符 + 常用控制字符）。
-/// 字符区间 `[lo-hi]` 的展开由 `add_range_chars` 直接按码点枚举，不依赖此字符串，
-/// 因此 `[α-ω]`、`[中-龥]` 等 Unicode 区间均可正确处理。
+/// 仅用于 AnyChar / `.` 展开的字符集（ASCII 可打印字符 + 常用控制字符）
 let range_chars : String = "\t\n\r !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
 // NFA 内部类型

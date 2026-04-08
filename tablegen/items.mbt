@@ -1,23 +1,9 @@
 ///|
 // LR(0) 项目集构建
-//
-// 实现公开函数：
-//   closure(grammar, items)              -> Set[LRItem]
-//   goto_set(grammar, items, sym)        -> Set[LRItem]
-//   build_item_sets(grammar)             -> Array[Set[LRItem]]
-//   build_goto_map(grammar, item_sets)   -> Map[(StateId, Symbol), StateId]
-//
-// 项目集去重键：将 Set[LRItem] 中的元素排序后转为 Array，作为 Map key 的字符串。
-// LRItem 已 derive(Compare)，因此可以排序。
 
-// 辅助：项目集规范化键
 
 ///|
-/// 将项目集转为确定性字符串 key，用于 Map 去重。
-///
-/// 格式：`prod:dot` 对按 LRItem 自然序排序后以 `,` 拼接。
-/// 编码无歧义：prod 与 dot 均为非负整数，不含 `:` / `,`，分隔符唯一确定边界。
-/// 使用 StringBuilder 避免 O(n²) 字符串拼接。
+/// 将项目集转为确定性字符串 key，用于 Map 去重
 fn item_set_key(items : Set[LRItem]) -> String {
   let arr = items.to_array()
   arr.sort_by(fn(a, b) { a.compare(b) })
@@ -36,8 +22,7 @@ fn item_set_key(items : Set[LRItem]) -> String {
 // 内部加速辅助
 
 ///|
-/// 预构建 NonTerminalId → [ProductionId] 索引。
-/// build_item_sets / build_goto_map 各构建一次，closure_fast 用它替代 O(P) 全量扫描。
+/// 预构建 NonTerminalId → [ProductionId] 索引
 fn build_head_prods_index(grammar : AugmentedGrammar) -> Map[Int, Array[Int]] {
   let idx : Map[Int, Array[Int]] = Map::new()
   for p in grammar.productions {
@@ -50,7 +35,7 @@ fn build_head_prods_index(grammar : AugmentedGrammar) -> Map[Int, Array[Int]] {
 }
 
 ///|
-/// 使用预构建索引的 closure（O(1) 查 head→prods，省去每次 O(P) 扫描）。
+/// 使用预构建索引的 closure（O(1) 查 head→prods，省去每次 O(P) 扫描）
 fn closure_fast(
   grammar : AugmentedGrammar,
   items : Set[LRItem],
@@ -89,7 +74,7 @@ fn closure_fast(
 }
 
 ///|
-/// 使用预构建索引的 GOTO(I, X)。
+/// 使用预构建索引的 GOTO(I, X)
 fn goto_set_fast(
   grammar : AugmentedGrammar,
   items : Set[LRItem],
@@ -113,10 +98,7 @@ fn goto_set_fast(
 // 公开 API
 
 ///|
-/// 项目集闭包：closure(I)。
-///
-/// 对 I 中所有形如 [A → α • B β] 的项目，将 B 的全部产生式的起始项
-/// [B → • γ] 加入集合；重复直至不动点。
+/// 项目集闭包：closure(I)
 pub fn closure(grammar : AugmentedGrammar, items : Set[LRItem]) -> Set[LRItem] {
   let result : Set[LRItem] = Set::new()
   // 工作队列：记录待处理的新增项目
