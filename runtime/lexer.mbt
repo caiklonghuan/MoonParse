@@ -1,15 +1,5 @@
 ///|
-// 词法引擎（LexerEngine）
-//
-// 职责：
-//   · 从 input[pos..] 用 DFA 最长匹配扫描下一个 token
-//   · context-aware：只匹配 valid_tokens[lr_state] ∪ extras 中的 terminal
-//   · extras 识别后标记 is_extra=true（parser 决定如何处理）
-//   · 单槽 token 缓存，GLR 多版本同位置复用
-//   · 两阶段 keyword 检查：Regex/AnyChar 匹配后，在 valid 集合中查是否有同内容的 Literal，
-//     若有则升级 terminal_id 并标记 is_keyword=true
-//   · 外部词法器（external scanner）：若有回调，则在 DFA 之后对 ext_valid 中的
-//     外部 token 尝试匹配；取 DFA 与外部结果中的较长者（外部优先等长时）
+// 词法引擎
 
 ///|
 /// 外部词法器回调类型

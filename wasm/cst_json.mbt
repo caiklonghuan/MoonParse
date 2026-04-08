@@ -1,18 +1,11 @@
 ///|
 // CstNode → JSON 序列化
-//
-// 职责：将 @runtime.CstNode 树递归序列化为 JSON 字符串，供 JS 侧消费。
-// 使用 StringBuilder 直写，避免 O(n²) 字符串拼接。
 
 ///|
 // 节点类型名查表
 
 ///|
 /// 从 ParseTable 反查节点的类型名称字符串
-///
-/// - is_error = true → "ERROR"
-/// - 叶节点（children 为空）：symbol 是 TerminalId，从 terminal_names 查
-/// - 内部节点：symbol 是 NonTerminalId，从 symbol_metadata 查
 fn node_type_name(
   node : @runtime.CstNode,
   table : @tablegen.ParseTable,
@@ -154,15 +147,7 @@ fn write_node(
 }
 
 ///|
-// 公开入口
-
-///|
-/// 将 CST 树序列化为 JSON 字符串
-///
-/// # 参数
-/// - node  : CST 根节点（来自 @runtime.parse）
-/// - input : 解析时使用的原始输入字符串（用于叶节点 text 字段）
-/// - table : 对应的 ParseTable（用于符号名称反查）
+// 入口
 pub fn cst_to_json(
   node : @runtime.CstNode,
   input : String,

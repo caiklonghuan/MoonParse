@@ -1,14 +1,5 @@
-/// WASM 导出接口
+﻿/// WASM 导出接口
 /// 将 MoonParse 解析能力暴露给 JS/浏览器/Node.js 调用
-///
-/// 所有跨边界的复合对象通过整数句柄引用（见 handles.mbt）。
-/// JS 侧调用规则：
-///   - 返回值 >= 1  → 有效句柄
-///   - 返回值 == -1 → 操作失败
-///   - 返回空串 ""  → 无效 ID
-
-///|
-// ── S-表达式辅助（tree_root_sexp 用）────────────────────────────
 
 ///|
 /// 递归将 CstNode 序列化为 Tree-Sitter 兼容的 S-表达式写入 buf
@@ -65,8 +56,7 @@ fn write_sexp(
 }
 
 ///|
-// ── 错误扫描辅助（tree_error_summary 用）────────────────────────
-
+// 错误扫描辅助（tree_error_summary 用）
 ///|
 /// 深度优先扫描，找到第一个 is_error=true 或 is_missing=true 的节点
 fn find_first_error(node : @runtime.CstNode) -> @runtime.CstNode? {
@@ -83,7 +73,7 @@ fn find_first_error(node : @runtime.CstNode) -> @runtime.CstNode? {
 }
 
 ///|
-// ── 解析器生命周期 ───────────────────────────────────────────────
+// 解析器生命周期
 
 ///|
 /// 从 Grammar DSL 字符串编译解析器，返回解析器句柄 ID。
@@ -134,7 +124,7 @@ pub fn parser_get_dsl(parser_id : Int) -> String {
 }
 
 ///|
-/// 从预编译 JSON 字符串（由 `parser_table_to_json` 导出）快速还原解析器。
+/// 从预编译 JSON 字符串（由 `parser_table_to_json` 导出）快速还原解析器
 pub fn parser_create_from_json(json : String) -> Int {
   match @tablegen.table_from_json(json) {
     Ok(table) => parser_registry.register({ table, dsl: "", diagnostics: [] })
@@ -143,7 +133,7 @@ pub fn parser_create_from_json(json : String) -> Int {
 }
 
 ///|
-/// 将解析器的 ParseTable 序列化为 JSON 字符串，供 `parser_create_from_json` 加载。
+/// 将解析器的 ParseTable 序列化为 JSON 字符串，供 `parser_create_from_json` 加载
 /// parser_id 无效时返回空串 ""。
 pub fn parser_table_to_json(parser_id : Int) -> String {
   match parser_registry.get(parser_id) {
@@ -153,7 +143,7 @@ pub fn parser_table_to_json(parser_id : Int) -> String {
 }
 
 ///|
-// ── 全量解析 ────────────────────────────────────────────────────
+// 全量解析
 
 ///|
 /// 全量解析，返回语法树句柄 ID。
@@ -189,8 +179,6 @@ pub fn tree_free(tree_id : Int) -> Unit {
   let _ = tree_registry.remove(tree_id)
 }
 
-///|
-// ── 增量解析 ────────────────────────────────────────────────────
 
 ///|
 /// 增量解析：在旧树基础上应用一次文本编辑，复用未受影响的子树。
@@ -231,7 +219,7 @@ pub fn parse_incremental(
 }
 
 ///|
-// ── 节点查询 ─────────────────────────────────────────────────────
+// 节点查询
 
 ///|
 /// 返回语法树根节点的 S-表达式（Tree-Sitter 兼容格式）。
@@ -270,7 +258,7 @@ pub fn tree_error_summary(tree_id : Int) -> String {
 }
 
 ///|
-// ── 工具函数 ──────────────────────────────────────────────────────
+// 工具函数
 
 ///|
 /// 返回 MoonParse 版本字符串，供 JS 端判断 API 兼容性。
@@ -303,8 +291,6 @@ pub fn parser_diagnostics_json(parser_id : Int) -> String {
   }
 }
 
-///|
-// ── 内部辅助 ─────────────────────────────────────────────────────
 
 ///|
 /// 通过 tree_id 找到对应的 ParseTable（直接经由 TreeEntry.parser_id 反查）。

@@ -1,32 +1,12 @@
-///|
+﻿///|
 // GLR 解析引擎
-//
-// GLR（广义 LR）允许在 LALR 冲突点并行维护多个解析路径，
-// 通过 Graph-Structured Stack（GSS）共享公共前缀，避免指数爆炸。
-//
-// 核心数据结构设计：
-//   · GssLink  — GSS 边，携带跨越该边时产生的 CstNode（而非挂在结点上）
-//   · GssNode  — GSS 结点，持有 LR 状态 + 入边列表（links）
-//   · GlrEngine — 持有全部 GSS 结点 + 当前活跃栈顶集合（active_tops）
-//
-// 为什么节点不挂 CstNode，而由边来携带：
-//   同一个 LR 状态可以通过不同的前驱（即不同的归约路径）到达，
-//   每条路径产生的子树不同。把 CstNode 放在边上，才能正确区分局部歧义。
 
 ///|
 /// GSS 结点引用（Arena 下标，避免循环引用）
 type GssRef = Int
 
 ///|
-/// GSS 边（Graph-Structured Stack edge）
-///
-/// predecessor    : 前驱结点的 GssRef
-/// node           : 跨越该边时产生的 CST 节点
-///                    · Shift  边：叶节点（token）
-///                    · Reduce 边：内部节点（产生式归约结果）
-///                    · 底部哨兵边：None（初始结点无前驱）
-/// leading_extras : Shift 前积累的 extras 节点（空白/注释）；Reduce 边为空。
-///                  extras 不占 LR body slot，由 enum_paths 将其插入产生式子节点序列。
+/// GSS 边
 struct GssLink {
   predecessor : GssRef
   node : CstNode?
@@ -34,11 +14,7 @@ struct GssLink {
 } derive(Show)
 
 ///|
-/// GSS 结点（Graph-Structured Stack node）
-///
-/// 一个结点代表 "在某个 LR 状态下，存在至少一条活跃解析路径到达此处"。
-/// 同一 state 只保留一个结点（find_or_merge 负责合并），
-/// 局部歧义体现为同一结点拥有多条入边（links.length() > 1）。
+/// GSS 结点
 struct GssNode {
   /// 当前 LR 状态（ParseTable.action 的 key 之一）
   state : Int
@@ -48,11 +24,6 @@ struct GssNode {
 
 ///|
 /// GLR 解析引擎
-///
-/// gss_nodes   : GSS Arena，所有结点按 GssRef（下标）访问
-/// active_tops : 本轮 token 位置下的活跃栈顶集合（每个元素是一个 GssRef）
-///               每消费一个 token 后，active_tops 被替换为新的 Shift 目标集
-/// lexer       : 词法引擎，context-aware，所有路径共享
 struct GlrEngine {
   gss_nodes : Array[GssNode]
   active_tops : Array[GssRef]
@@ -97,10 +68,6 @@ fn GlrEngine::new(lexer : LexerEngine, config : ParseConfig) -> GlrEngine {
 
 ///|
 /// GLR 解析入口
-///
-/// 构造 GlrEngine，调用主循环 run，返回解析结果。
-/// 当解析表不含冲突时，等价于 parse_linear；
-/// 含冲突时并行展开所有 Shift / Reduce 路径。
 pub fn glr_parse(
   table : @tablegen.ParseTable,
   input : String,
@@ -138,12 +105,6 @@ pub fn glr_parse_with_external_scanner(
 
 ///|
 /// GLR 主循环
-///
-/// 每轮：
-/// 若当前位置可产生 external token，则先词法；否则 EOF → run_reduce(eoi_id) → collect_root_glr
-/// 合并所有活跃栈顶的 valid_tokens，调用 DFA + external scanner 联合词法
-/// extras token → 创建叶节点累积到 pending_extras，active_tops 不变
-/// 普通 token → run_reduce_worklist → run_shift → 替换 active_tops → compact Arena
 fn GlrEngine::run(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -314,19 +275,6 @@ fn GlrEngine::run(
 
 ///|
 /// Accept 时从活跃集中寻找根节点
-///
-/// 算法：
-///   遍历 active_tops，对每个结点检查 action[(state, eoi_id)]：
-///     · Shift(s_acc) 且 s_acc 有 Accept（即 $accept → start • $ 状态）
-///                            → 根节点在该结点的入边（links）上
-///
-///   为什么只处理 Shift(s_acc) 而不直接检查 Accept：
-///     LALR 增广文法结构为 $accept → start $。run_reduce_worklist(eoi_id)
-///     产生 [$accept → start • $] 状态的 active_top，该状态对 eoi 的动作是
-///     Shift(s_acc)，只有 s_acc 才有 Accept。当前 active_top 自身永远不持有
-///     Accept，Case 1（直接 Accept）是死代码，故已删除。
-///
-///   多路径（歧义）：当前返回第一条可接受路径。
 fn GlrEngine::collect_root_glr(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -375,16 +323,6 @@ fn GlrEngine::collect_root_glr(
 }
 
 ///|
-/// 在 candidate_tops 中查找 state 相同的结点；
-/// 找到则尝试追加 new_link（歧义合并），返回 (已有 GssRef, link_added)；
-/// 找不到则新建结点，推入 candidate_tops，返回 (新 GssRef, true)。
-///
-/// link_added：true = 实际发生了新建结点或新增了入边（调用方据此决定是否重入队）
-///             false = same predecessor 已存在，跳过（防止无限循环）
-///
-/// 重复前驱检测：若 candidate_tops 中已有 state 相同的结点，且该结点已有一条
-/// predecessor == new_link.predecessor 的入边，则不再追加（保留首条）。
-/// 这防止了同一路径被反复归约、worklist 无限增长的问题。
 fn GlrEngine::find_or_merge(
   self : GlrEngine,
   state : Int,
@@ -418,19 +356,7 @@ fn GlrEngine::find_or_merge(
 }
 
 ///|
-/// 从 from 结点沿入边向前回溯，枚举所有长度恰好为 len 的路径。
-///
-/// 返回值：每个元素是 (base_ref, path)：
-///   · base_ref：沿该路径走完 len 步后所在的 GSS 结点（用于查 goto 表）
-///   · path：CstNode? 序列，第 0 项对应最靠近底部的边节点，
-///           最后一项对应最靠近 from 的边节点（左→右顺序，与产生式 body 对应）
-///
-/// · len = 0 → 返回 [(from, [])]（ε 产生式，base 就是 from 自身）
-/// · len = k → 对 from 的每条入边 link，递归 enum_paths(link.predecessor, k-1)，
-///             将 link.node 追加到每条子路径末尾，base_ref 继承自子路径
-///
-/// 注意：结果可能为多条（同一结点有多条入边时），这正是 GLR 并行性的体现。
-/// 每条路径携带各自的 base_ref，替代原来单独调用的 walk_base。
+/// 从 from 结点沿入边向前回溯，枚举所有长度恰好为 len 的路径
 fn GlrEngine::enum_paths(
   self : GlrEngine,
   from : GssRef,
@@ -460,18 +386,7 @@ fn GlrEngine::enum_paths(
 }
 
 ///|
-/// Shift 阶段：Reduce 到不动点后，对当前活跃栈顶执行所有 Shift 动作。
-///
-/// 算法：
-/// 对 active_tops 中每个结点，查 action[(state, tok.terminal_id)] 中的 Shift(s)
-/// 用同一个叶节点 leaf（所有路径共享同一 token，不必复制）
-/// find_or_merge(s, {predecessor: top, node: leaf}) 写入 next_tops
-/// 返回 next_tops（主循环替换 active_tops）和新的 pos / cur_point
-///
-/// extras token 不走本函数，由主循环在 Shift 前单独处理：
-///   extras 创建叶节点后存入 pending_extras，随本次 Shift 的 GssLink 一起传入。
-///
-/// 返回 next_tops：若为空则表示当前 token 无任何 Shift 动作（潜在语法错误）。
+/// Reduce 到不动点后，对当前活跃栈顶执行所有 Shift 动作
 fn GlrEngine::run_shift(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -578,12 +493,6 @@ fn GlrEngine::run_shift(
 }
 
 ///|
-/// Skip 恢复策略：把无法 Shift 的当前 token 包进 ERROR 节点，
-/// 为每个活跃栈顶创建「停留路径」（目标 state = 来源 state），令解析继续推进。
-///
-/// · 首次进入恢复时追加固定惩罚 error_cost_per_recovery（防频繁触发恢复）
-/// · 本次跳过的 token 代价由 error_cost_for_skipped_node 计算
-/// · 多条路径合并到同一 GssRef 时，保留代价更低的 ErrorStatus
 fn GlrEngine::skip_token(
   self : GlrEngine,
   tok : Token,
@@ -661,24 +570,6 @@ fn GlrEngine::skip_token(
 }
 
 ///|
-/// Insert-Missing 恢复策略：为无法 Shift 的当前 token，
-/// 在各活跃路径的合法 terminal 位置插入虚拟 MISSING 节点，
-/// 使解析能够继续推进并消费当前 token。
-///
-/// 算法：
-///   对 active_tops 中每个 top_ref：
-///     · 枚举 valid_tokens[state] 中所有可 Shift 的 terminal tid（跳过 extras/eoi/error）
-///     · 对每个 Shift(next_state) 动作：
-///         1. 构造 missing_leaf(tid, byte_pos, cur_point)（零宽，is_missing=true）
-///         2. 以 missing_leaf 为边节点新建 GssNode(next_state)
-///         3. 以该节点为临时 active_top，对 actual_tok 做 Reduce→Shift 模拟
-///         4. 若 Shift 成功 → 收集 result_tops，记录代价
-///   result_tops 非空 → 更新 active_tops → 返回 true
-///   全部失败   → 还原 active_tops → 返回 false
-///
-/// 代价 = base_cost
-///        + error_cost_per_recovery(500)（首次进入恢复）
-///        + error_cost_per_missing_tree(110)
 fn GlrEngine::insert_missing(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -819,15 +710,6 @@ fn GlrEngine::insert_missing(
 }
 
 ///|
-/// Insert-Missing + 重词法策略：用于 sym_error 情形（词法层失败）。
-///
-/// 与 insert_missing 的区别：
-///   insert_missing 使用**已知 actual_tok** 做内部 Reduce→Shift 模拟；
-///   本函数在插入 MISSING 后重新计算 valid 集合并重新 lex，
-///   用于当前字符无法匹配当前 valid set（但可能匹配 missing_after 状态的 valid set）。
-///
-/// 返回 (succeeded, new_pos, new_cur_point)。
-/// succeeded=true 时 active_tops 已更新为 post-shift 状态。
 fn GlrEngine::insert_missing_and_relex(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -994,25 +876,6 @@ fn GlrEngine::insert_missing_and_relex(
 }
 
 ///|
-/// Recover-to-State 恢复策略：沿 GSS 入边回溯，找到可以接受当前 token 的祖先状态，
-/// 将路径上收集到的内容包进 ERROR 节点后从祖先状态继续解析。
-///
-/// 三种恢复策略中第三级：当 insert_missing 无法推进时（没有单个缺失 token 能让当前
-/// 实际 token 通过），退回到更早的解析状态，把错误区间全部丢进 ERROR 节点重新开始。
-///
-/// 算法（对每个 active top 做深度优先 BFS，上限 20 层）：
-///   1. 从 top_ref 的直接前驱开始，沿 GSS 入边向下遍历
-///   2. 先扩展 BFS 前沿（读原始入边），再对当前层执行试验，避免 trial 修改 gss_nodes
-///      后污染前沿枚举
-///   3. 每一层（anc_ref, collected, path_cost）：
-///      a. 将 collected（GSS 遍历顺序 = 逆解析序）反转为左→右顺序，包成 ERROR 节点
-///      b. 创建新 GssNode at anc_state 持有 error_node 作为入边
-///      c. 设 active_tops = [new_node]，跑 run_reduce_worklist + run_shift(tok)
-///      d. Shift 成功 → 记录结果 & 代价；失败 → 该层跳过
-///   4. 全部 BFS 结束 → 去重结果填入 active_tops，更新 error_status
-///   若无任何祖先可恢复 → 还原 active_tops → 返回 false
-///
-/// 代价模型：base_cost + error_cost_per_recovery（首次入错误模式）+ path_cost
 fn GlrEngine::recover_to_state(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -1157,27 +1020,6 @@ fn GlrEngine::recover_to_state(
 }
 
 ///|
-/// Reduce worklist 阶段：对活跃栈顶集合执行所有可能的 Reduce 动作至不动点。
-///
-/// 算法（Tomita 风格 worklist）：
-/// 将 active_tops 中每个结点对 (top, prod_id) 放入 worklist
-/// 每次取出一个 (top, prod_id)：
-///      a. enum_paths(top, |body|) 得到所有子节点列表
-///      b. 对每条路径，取路径起点（base）的前驱结点作为 base_state 来源
-///      c. 查 goto[base_state, head] 得目标状态
-///      d. 构造 CstNode::inner，find_or_merge 合入 active_tops
-///      e. 若是新结点或新加了边 → 该新 top 的 Reduce 也须入队
-/// worklist 空 → Reduce 到不动点
-///
-/// tok_id  : 当前前瞻 token 的 TerminalId（用于查 action 表，EOF 传 eoi_id）
-/// active_tops 原地扩展（新 Reduce 结果追加到同一集合中）
-///
-/// fragile 标记策略：
-///   · 仅当存在真正的并行路径时才标 fragile，避免过度标记阻塞增量复用
-///   · 判据（任意一条为 true → fragile = true）：
-/// active_tops.length() > 1：本轮存在多个并行活跃前缀（S/R 或 R/R 冲突）
-/// enum_paths 返回 > 1 条路径：同一 top 通过多条 GSS 前缀归约（局部歧义）
-///   · 两者均为 false 时（单路径无歧义），inner 节点标 fragile=false，可增量复用
 fn GlrEngine::run_reduce_worklist(
   self : GlrEngine,
   table : @tablegen.ParseTable,
@@ -1389,7 +1231,7 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
     oi = oi + 1
   }
 
-  // 原地替换 Arena ─────────────────────────────────────────────────────────────
+  // 原地替换 Arena
   while not(self.gss_nodes.is_empty()) {
     let _ = self.gss_nodes.pop()
   }
@@ -1419,8 +1261,7 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
 }
 
 ///|
-/// Condense Stack：当 active_tops 超过 max_version_count 时，
-/// 按 ErrorStatus 代价排序并截尾，只保留最优的 max_version_count 条路径。
+/// Condense Stack
 fn GlrEngine::condense_stack(self : GlrEngine) -> Unit {
   let n = self.active_tops.length()
   // 仅当超过 max_version_count + max_version_count_overflow 时才触发，

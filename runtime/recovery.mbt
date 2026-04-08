@@ -1,9 +1,5 @@
 ///|
 // 错误恢复辅助函数
-//
-// 错误恢复三策略（recover_to_state / insert_missing / skip_token）
-// 已在 glr.mbt 中作为 GlrEngine 方法实现。
-// 代价常量在 types.mbt 中定义（error_cost_per_* 系列）。
 
 ///|
 /// 计算跳过一个 CstNode 的错误代价

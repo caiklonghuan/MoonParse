@@ -22,10 +22,6 @@ pub(all) enum QueryPattern {
 
 ///|
 /// 子节点位置的包装：携带可选字段约束和捕获标注
-///
-/// 对应语法成分：`field: pattern @capture`
-/// - `field`   = Some("name") 时要求该子节点来自父节点 field_names 中的对应字段
-/// - `capture` = Some("func.name") 时命中后记录捕获
 pub(all) struct PatternChild {
   /// 字段约束（`name:` 前缀），无字段时为 None
   field : String?

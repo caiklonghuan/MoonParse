@@ -10,19 +10,7 @@ pub(all) struct Point {
 } derive(Eq, Show)
 
 ///|
-/// 将 UTF-8 字节偏移列号转换为 Unicode 代码点列号（LSP UTF-8 位置编码集成用）。
-///
-/// LSP 客户端在"utf-8 position encoding"模式下传入的 `character` 是该行的
-/// UTF-8 字节偏移，而 MoonParse 内部 `Point.column` 存储的是代码点偏移。
-/// 本函数完成从"外部字节偏移"到"内部代码点偏移"的转换。
-///
-/// 参数：
-///   `source`    — 完整的 UTF-8 输入字符串（MoonBit String，按代码点索引）
-///   `line`      — 目标行（0-based，以 '\n' 为分隔符）
-///   `col_bytes` — 该行内的 UTF-8 字节偏移
-///
-/// 返回值：UTF-8 字节偏移 `col_bytes` 对应的代码点数（0-based）。
-/// 若 `line` 超出范围或 `col_bytes` 超出行长度，安全退化为返回 `col_bytes`。
+/// 将 UTF-8 字节偏移列号转换为 Unicode 代码点列号（LSP UTF-8 位置编码集成用）
 pub fn byte_offset_to_char_col(
   source : String,
   line : Int,
@@ -98,9 +86,6 @@ pub let sym_error_repeat : Int = -2 // 错误恢复中间节点（内部用）
 
 ///|
 /// CST 节点（叶节点和内部节点共用同一结构体）
-///
-/// 叶节点：children 为空，symbol 是 TerminalId
-/// 内部节点：children 非空，symbol 是 NonTerminalId
 pub(all) struct CstNode {
   // 标识
   /// TerminalId（叶）或 NonTerminalId（内部节点）
@@ -268,11 +253,6 @@ pub fn CstNode::error_node(
 
 ///|
 /// 构造缺失叶节点（内部用）
-///
-/// 错误恢复策略 2（insert_missing）使用：在解析器期望某个 token 但未找到时，
-/// 插入一个虚拟的零宽节点，使解析可以继续推进。
-/// · start_byte == end_byte（零宽，不消费任何输入）
-/// · is_missing = true，is_named 与真实 token 保持一致
 pub fn CstNode::missing_leaf(
   symbol : Int,
   is_named : Bool,
@@ -340,13 +320,6 @@ struct StackFrame {
 
 ///|
 /// GLR 并行版本的代价描述（condense_stack 用）
-///
-/// 代价存在版本级 ErrorStatus 而不是 CstNode 上，原因：
-///   condense_stack 比较的是每条 GssRef（版本）的累积代价，
-///   与子树结构无关，GlrEngine 维护 Map[GssRef, ErrorStatus] 即可。
-///   tree-sitter 把 error_cost 放在 SubtreeHeapData 是为了后解析阶段
-///   O(1) 查询子树代价，MoonParse 目前无此 API 需求，故 CstNode 不加该字段。
-///   增量复用所需的"是否含错误"判断由 is_error / fragile_left / fragile_right 覆盖。
 struct ErrorStatus {
   cost : Int
   node_count : Int // 自上次错误以来推入的节点数
@@ -356,9 +329,6 @@ struct ErrorStatus {
 
 ///|
 /// 错误恢复与 GLR 并发版本数的可配置参数
-///
-/// 通过 `parse_with_config` / `parse_with_old_tree_and_config` 传入；
-/// `ParseConfig::default()` 返回与内置常量等价的默认配置。
 pub(all) struct ParseConfig {
   /// 跳过一棵子树的错误代价（默认 100）
   error_cost_per_skipped_tree : Int
