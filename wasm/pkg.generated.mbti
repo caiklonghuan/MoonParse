@@ -49,6 +49,12 @@ pub fn cursor_node_text(Int) -> String
 
 pub fn cursor_node_type(Int) -> String
 
+pub fn highlight_exec(Int, Int) -> String
+
+pub fn highlight_exec_with_locals(Int, Int, Int) -> String
+
+pub fn highlight_names_json() -> String
+
 pub fn moonparse_version() -> String
 
 pub fn parse_full(Int, String) -> Int

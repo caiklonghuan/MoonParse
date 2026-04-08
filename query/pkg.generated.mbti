@@ -7,13 +7,21 @@ import {
 }
 
 // Values
+pub fn apply_highlights(@runtime.CstNode, String, @tablegen.ParseTable, CompiledQuery) -> Array[HighlightRange]
+
+pub fn apply_highlights_with_locals(@runtime.CstNode, String, @tablegen.ParseTable, CompiledQuery, CompiledQuery) -> Array[HighlightRange]
+
 pub fn compile(String) -> Result[CompiledQuery, QueryError]
 
 pub fn exec(CompiledQuery, @runtime.CstNode, String, @tablegen.ParseTable) -> Array[CaptureResult]
 
+pub let highlight_names : Array[String]
+
 pub fn node_text(@runtime.CstNode, String) -> String
 
 pub fn node_type_name(@runtime.CstNode, @tablegen.ParseTable) -> String
+
+pub fn resolve_locals(@runtime.CstNode, String, @tablegen.ParseTable, CompiledQuery) -> LocalResolution
 
 // Errors
 
@@ -30,6 +38,21 @@ pub(all) struct CompiledQuery {
   predicates : Array[Array[Predicate]]
 }
 pub impl Show for CompiledQuery
+
+pub(all) struct HighlightRange {
+  start_byte : Int
+  end_byte : Int
+  start_point : @runtime.Point
+  end_point : @runtime.Point
+  highlight_name : String
+}
+pub impl Show for HighlightRange
+
+pub(all) struct LocalResolution {
+  local_refs : Map[Int, Bool]
+}
+pub fn LocalResolution::is_local_ref(Self, Int) -> Bool
+pub impl Show for LocalResolution
 
 pub(all) struct PatternChild {
   field : String?

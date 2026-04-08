@@ -12,7 +12,6 @@ pub let whitespace_pattern : String =
 pub let horizontal_ws_pattern : String =
   #|/[ \t\f]+/
 
-
 ///|
 /// C / C++ / Java / Rust 风格行注释 `// …`，消耗至行尾（含换行符）。
 pub let c_line_comment_pattern : String =
@@ -42,7 +41,6 @@ pub let haskell_block_comment_pattern : String =
 /// 换行符（`\r\n | \n | \r`），用于换行敏感语言的 rule 或 extras。
 pub let newline_pattern : String =
   #|/(\r\n|\n|\r)/
-
 
 ///|
 /// 标准 ASCII 标识符：字母或下划线开头，后接字母 / 数字 / 下划线。
@@ -113,6 +111,7 @@ pub let sq_string_pattern : String =
 /// JS 反引号模板字符串（不支持嵌套 `${...}` 表达式，仅匹配 \` … \` 文本）。
 pub let backtick_string_pattern : String =
   #|/`([^`\\]|\\.)*`/
+
 ///|
 /// 生成 C 风格 extras 行（空白 + 行注释 + 块注释）：
 pub fn c_style_extras() -> String {
@@ -142,7 +141,6 @@ pub fn horizontal_whitespace_extras() -> String {
 pub fn dash_comment_extras() -> String {
   "extras [" + whitespace_pattern + ", " + dash_line_comment_pattern + "]"
 }
-
 
 ///|
 /// 支持四则运算、函数调用、圆括号分组的通用表达式语法 DSL 字符串。

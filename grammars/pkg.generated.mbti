@@ -16,6 +16,8 @@ pub let c_block_comment_pattern : String
 
 pub let c_grammar : String
 
+pub let c_highlight_query : String
+
 pub let c_line_comment_pattern : String
 
 pub let c_number_pattern : String
@@ -50,9 +52,17 @@ pub let js_identifier_pattern : String
 
 pub let json5_grammar : String
 
+pub let json5_highlight_query : String
+
 pub let json_grammar : String
 
+pub let json_highlight_query : String
+
 pub let moonbit_grammar : String
+
+pub let moonbit_highlight_query : String
+
+pub let moonbit_locals_query : String
 
 pub let moonparse_grammar_dsl : String
 
