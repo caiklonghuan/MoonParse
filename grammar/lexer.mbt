@@ -276,10 +276,15 @@ fn parse_int_str(s : String) -> Int? {
   if s.length() == 0 {
     return None
   }
+  let max_val = 2147483647
   let mut result = 0
   for i in 0..<s.length() {
     let d = s[i].to_int() - '0'.to_int()
     if d < 0 || d > 9 {
+      return None
+    }
+    // 溢出检测：若继续乘 10 加 d 会超出 Int 最大值则返回 None
+    if result > (max_val - d) / 10 {
       return None
     }
     result = result * 10 + d

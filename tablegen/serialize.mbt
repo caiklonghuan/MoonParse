@@ -145,6 +145,29 @@ fn production_to_json(prod : Production) -> String {
     Some(name) => fields.push(("alias_name", jstr(name)))
     None => ()
   }
+  match prod.lookahead {
+    Some(NotFollowedBy(tids)) =>
+      fields.push(
+        (
+          "lookahead",
+          jobj([
+            ("type", jstr("not")),
+            ("tids", jarray(tids.map(fn(t) { "\{t}" }))),
+          ]),
+        ),
+      )
+    Some(FollowedBy(tids)) =>
+      fields.push(
+        (
+          "lookahead",
+          jobj([
+            ("type", jstr("yes")),
+            ("tids", jarray(tids.map(fn(t) { "\{t}" }))),
+          ]),
+        ),
+      )
+    None => ()
+  }
   jobj(fields)
 }
 
@@ -229,53 +252,81 @@ pub fn table_to_json(table : ParseTable) -> String {
   // productions 数组
   let prods_json = jarray(table.productions.map(production_to_json))
 
-  // action 表 → 数组形式
-  let action_entries : Array[String] = []
+  // action 表 → 数组形式（按 state, terminal 排序保证确定性输出）
+  let action_pairs : Array[((Int, Int), String)] = []
   for key, actions in table.action {
     let (state, terminal) = key
     let acts_json = jarray(actions.map(action_to_json))
-    action_entries.push(
-      jobj([
-        ("state", "\{state}"),
-        ("terminal", "\{terminal}"),
-        ("actions", acts_json),
-      ]),
+    action_pairs.push(
+      (
+        (state, terminal),
+        jobj([
+          ("state", "\{state}"),
+          ("terminal", "\{terminal}"),
+          ("actions", acts_json),
+        ]),
+      ),
     )
   }
-  let action_json = jarray(action_entries)
+  action_pairs.sort_by(fn(a, b) {
+    let ((as_, at_), _) = a
+    let ((bs_, bt_), _) = b
+    let cmp_s = as_.compare(bs_)
+    if cmp_s != 0 {
+      cmp_s
+    } else {
+      at_.compare(bt_)
+    }
+  })
+  let action_json = jarray(action_pairs.map(fn(p) { p.1 }))
 
-  // goto 表 → 数组形式
-  let goto_entries : Array[String] = []
+  // goto 表 → 数组形式（按 state, nonterminal 排序）
+  let goto_pairs : Array[((Int, Int), String)] = []
   for key, target in table.goto_table {
     let (state, nt) = key
-    goto_entries.push(
-      jobj([
-        ("state", "\{state}"),
-        ("nonterminal", "\{nt}"),
-        ("target", "\{target}"),
-      ]),
+    goto_pairs.push(
+      (
+        (state, nt),
+        jobj([
+          ("state", "\{state}"),
+          ("nonterminal", "\{nt}"),
+          ("target", "\{target}"),
+        ]),
+      ),
     )
   }
-  let goto_json = jarray(goto_entries)
+  goto_pairs.sort_by(fn(a, b) {
+    let ((as_, ant_), _) = a
+    let ((bs_, bnt_), _) = b
+    let cmp_s = as_.compare(bs_)
+    if cmp_s != 0 {
+      cmp_s
+    } else {
+      ant_.compare(bnt_)
+    }
+  })
+  let goto_json = jarray(goto_pairs.map(fn(p) { p.1 }))
 
   // symbol_metadata 数组
   let meta_json = jarray(table.symbol_metadata.map(symbol_meta_to_json))
 
-  // terminal_patterns 数组
-  let tp_entries : Array[String] = []
+  // terminal_patterns 数组（按 id 排序）
+  let tp_pairs : Array[(Int, String)] = []
   for id, def in table.terminal_patterns {
-    tp_entries.push(
-      jobj([("id", "\{id}"), ("pattern", terminal_def_to_json(def))]),
+    tp_pairs.push(
+      (id, jobj([("id", "\{id}"), ("pattern", terminal_def_to_json(def))])),
     )
   }
-  let tp_json = jarray(tp_entries)
+  tp_pairs.sort_by(fn(a, b) { a.0.compare(b.0) })
+  let tp_json = jarray(tp_pairs.map(fn(p) { p.1 }))
 
-  // terminal_names 数组（TerminalId → 名称，runtime 错误信息用）
-  let tn_entries : Array[String] = []
+  // terminal_names 数组（按 id 排序）
+  let tn_pairs : Array[(Int, String)] = []
   for id, name in table.terminal_names {
-    tn_entries.push(jobj([("id", "\{id}"), ("name", jstr(name))]))
+    tn_pairs.push((id, jobj([("id", "\{id}"), ("name", jstr(name))])))
   }
-  let tn_json = jarray(tn_entries)
+  tn_pairs.sort_by(fn(a, b) { a.0.compare(b.0) })
+  let tn_json = jarray(tn_pairs.map(fn(p) { p.1 }))
 
   // extras 数组（runtime 跳过不推栈的 token）
   let extras_json = jarray(table.extras.map(fn(tid) { "\{tid}" }))
@@ -1174,7 +1225,19 @@ fn json_to_production(j : Json) -> Production raise JsonTableError {
     Some(String(s)) => Some(s)
     _ => None
   }
-  { id, head, body, rule_name, prec, assoc, lookahead: None, alias_name }
+  let lookahead : LookaheadConstraint? = match o.get("lookahead") {
+    Some(la_j) => {
+      let la_o = jobj_v(la_j)
+      let tids = jarr(jfield(la_o, "tids")).map(jint)
+      match jstr_v(jfield(la_o, "type")) {
+        "not" => Some(NotFollowedBy(tids))
+        "yes" => Some(FollowedBy(tids))
+        _ => None
+      }
+    }
+    None => None
+  }
+  { id, head, body, rule_name, prec, assoc, lookahead, alias_name }
 }
 
 ///|
@@ -1226,8 +1289,6 @@ fn json_to_lexer_dfa(j : Json) -> LexerDfa raise JsonTableError {
 
 ///|
 /// 从 `table_to_json` 的输出还原 ParseTable。
-///
-/// 注意：`Production.lookahead` 不做往返，重建后均为 `None`（运行时不需要）。
 pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
   let j = @json.parse(json_str) catch {
     err => return Err("table_from_json: JSON parse error: \{err}")

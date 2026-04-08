@@ -58,16 +58,26 @@ pub fn grammar_to_json(grammar : Grammar) -> String {
     None => parts.push("\"start\": null")
   }
 
-  // "rules"
-  let rule_parts : Array[String] = []
+  // "rules" — sort by name for deterministic output
+  let rule_pairs : Array[(String, String)] = []
   for name, rule in grammar.rules {
-    rule_parts.push(json_string(name) + ": " + rule_to_json(rule))
+    rule_pairs.push((name, rule_to_json(rule)))
   }
+  rule_pairs.sort_by(fn(a, b) { a.0.compare(b.0) })
+  let rule_parts = rule_pairs.map(fn(kv) { json_string(kv.0) + ": " + kv.1 })
   parts.push("\"rules\": {" + rule_parts.join(", ") + "}")
 
   // "precedences"
   let prec_parts = grammar.precedences.map(prec_decl_to_json)
   parts.push("\"precedences\": [" + prec_parts.join(", ") + "]")
+
+  // "extras"
+  let extras_parts = grammar.extras.map(pattern_to_json)
+  parts.push("\"extras\": [" + extras_parts.join(", ") + "]")
+
+  // "externals"
+  let ext_parts = grammar.externals.map(json_string)
+  parts.push("\"externals\": [" + ext_parts.join(", ") + "]")
 
   "{\n  " + parts.join(",\n  ") + "\n}"
 }

@@ -100,6 +100,7 @@ pub(all) enum ValidationErrorKind {
   DirectLeftRecursion(String)
   IndirectLeftRecursion(Array[String])
   UnreachableRule(String)
+  InvalidRegex(String, String)
 }
 
 // Type aliases

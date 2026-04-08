@@ -19,6 +19,7 @@ fn kinds(errors : Array[ValidationError]) -> Array[String] {
       ValidationErrorKind::DirectLeftRecursion(r) => "DirectLeft:\{r}"
       ValidationErrorKind::IndirectLeftRecursion(_) => "IndirectLeft"
       ValidationErrorKind::UnreachableRule(r) => "Unreachable:\{r}"
+      ValidationErrorKind::InvalidRegex(re, _) => "InvalidRegex:\{re}"
     }
   })
 }

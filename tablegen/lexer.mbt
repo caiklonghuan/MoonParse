@@ -249,9 +249,29 @@ fn parse_char_class_trans(p : RexParse) -> Array[NfaTrans] {
     }
     _ => ()
   }
-  // 否定类：Phase 2 近似为 Any
+  // 否定类：计算 range_chars 上的补集
   if negated {
-    [Any]
+    let pos_set : Set[Char] = Set::new()
+    for t in result {
+      match t {
+        Ch(c) => pos_set.add(c)
+        Range(lo, hi) => {
+          let lo_code = lo.to_int()
+          let hi_code = hi.to_int()
+          for code in lo_code..<(hi_code + 1) {
+            pos_set.add(code.unsafe_to_char())
+          }
+        }
+        Any | Eps => () // 不应出现在字符类内，忽略
+      }
+    }
+    let complement : Array[NfaTrans] = []
+    for c in range_chars {
+      if not(pos_set.contains(c)) {
+        complement.push(Ch(c))
+      }
+    }
+    complement
   } else {
     result
   }
