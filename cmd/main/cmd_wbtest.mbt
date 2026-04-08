@@ -1,9 +1,5 @@
 ///|
 // cmd_wbtest.mbt — whitebox tests for cmd/main package
-// 仅测试纯函数（不依赖文件 IO 的部分）
-
-///|
-// ── derive_output_path ───────────────────────────────────────────
 
 ///|
 test "derive_output_path/grammar_suffix_replaced" {

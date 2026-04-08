@@ -14,10 +14,6 @@ pub struct GenerateArgs {
   json : Bool
   /// 是否打印 LR 项目集和 GOTO 表到 stderr
   diagnostic : Bool
-  /// --force：以下两类情况日均继续生成，不中止：
-  ///   1. 语义校验错误（ValidationError，如未定义规则引用、重复 rule 定义等）
-  ///   2. 歧义冲突（ConflictSeverity::Ambiguous）
-  /// 优先级冲突（Warn / DynamicConflict）不受此 flag 影响，始终继续生成。
   force : Bool
 } derive(Show)
 
@@ -101,9 +97,7 @@ pub enum Command {
 // 内部解析状态
 
 ///|
-/// 消耗 ArgParser 头部的全局 flag：--no-color、--quiet / -q。
-/// 识别到后直接调用 reporter 设置函数。
-/// 遇到不认识的 flag 或子命令名称时停止扫描。
+/// 消耗 ArgParser 头部的全局 flag：--no-color、--quiet / -q
 fn parse_global_flags(p : ArgParser) -> Unit {
   let mut cont = true
   while cont && not(p.at_end()) {
@@ -178,12 +172,7 @@ fn ArgParser::require_value(
 // 公开 API
 
 ///|
-/// 解析命令行参数数组，返回强类型的 Command。
-///
-/// argv 应为去掉程序名后的参数列表，例如：
-///   ["generate", "json.grammar", "--output", "json.parse_table"]
-///
-/// 错误时返回 Err(usage_hint)，调用方负责打印并以非零退出码退出。
+/// 解析命令行参数数组，返回强类型的 Command
 pub fn parse_args(argv : Array[String]) -> Result[Command, String] {
   let p = ArgParser::new(argv)
   // 先处理全局 flag：--no-color / --quiet（允许在子命令之前出现）

@@ -1,28 +1,22 @@
 ///|
 // 错误 / 诊断格式化输出
-//
-// 将各层错误（Grammar 解析错误、校验错误、冲突报告、ParseError、QueryError）
-// 格式化为可读的终端输出，支持 ANSI 颜色高亮（可选）。
 
 ///|
-/// 是否启用 ANSI 颜色码。默认关闭，由 main 根据终端检测结果调用 set_color_output 启用。
-/// 用 Array[Bool] 模拟可变全局（MoonBit 顶层不允许 let mut 原始类型）。
+/// 是否启用 ANSI 颜色码。默认关闭，由 main 根据终端检测结果调用 set_color_output 启用
 let use_color_cell : Array[Bool] = [false]
 
 ///|
-/// 是否抑制 print_info 输出（由 --quiet 设置）。
+/// 是否抑制 print_info 输出（由 --quiet 设置）
 let use_quiet_cell : Array[Bool] = [false]
 
 ///|
-/// 设置静默模式；启用后 `print_info` 不产生任何输出。
+/// 设置静默模式；启用后 `print_info` 不产生任何输出
 pub fn set_quiet(enabled : Bool) -> Unit {
   use_quiet_cell[0] = enabled
 }
 
 ///|
-/// 设置是否使用 ANSI 颜色输出。
-/// 通常在 main 中检测 NO_COLOR 环境变量或 --no-color flag 后调用。
-/// 如果未显式设置，则自动检测 stderr 是否连接到终端。
+/// 设置是否使用 ANSI 颜色输出
 pub fn set_color_output(enabled : Bool?) -> Unit {
   let should_use_color = match enabled {
     Some(e) => e
@@ -32,9 +26,6 @@ pub fn set_color_output(enabled : Bool?) -> Unit {
   }
   use_color_cell[0] = should_use_color
 }
-
-///|
-// ANSI 颜色辅助
 
 ///|
 fn ansi_red(s : String) -> String {
@@ -119,9 +110,7 @@ fn get_source_line(source : String, line_no : Int) -> String? {
 }
 
 ///|
-/// 生成带行号槽和 `^` 插入符的源码上下文块（三行：空槽 / 代码行 / 指针行）。
-/// line_no: 1-indexed，col: 1-indexed。
-/// label: （可选）显示在 `^` 旁边的错误消息。
+/// 生成带行号槽和 `^` 插入符的源码上下文块（三行：空槽 / 代码行 / 指针行）
 fn render_source_snippet(
   source : String,
   line_no : Int,
@@ -180,10 +169,7 @@ pub fn print_warning(msg : String) -> Unit {
 }
 
 ///|
-/// 打印 Grammar DSL 解析错误到 stderr。
-///
-/// - `file`：（可选）语法文件路径，用于显示位置箭头行
-/// - `source`：（可选）文件全文，用于显示源码行高亮；需同时提供 `file` 才显示
+/// 打印 Grammar DSL 解析错误到 stderr
 pub fn report_grammar_parse_error(
   err : @grammar.ParseError,
   file : String?,
@@ -216,9 +202,7 @@ pub fn report_grammar_parse_error(
 }
 
 ///|
-/// 打印 Grammar 语义校验错误列表到 stderr。
-///
-/// `file`：（可选）语法文件路径，用于显示位置行。
+/// 打印 Grammar 语义校验错误列表到 stderr
 pub fn report_validation_errors(
   errors : Array[@grammar.ValidationError],
   file : String?,
@@ -255,8 +239,7 @@ pub fn report_validation_errors(
 }
 
 ///|
-/// 打印解析表冲突报告到 stderr。
-/// `Warn` 以黄色显示，`Ambiguous` 以红色显示。
+/// 打印解析表冲突报告到 stderr
 pub fn report_conflicts(reports : Array[@tablegen.ConflictReport]) -> Unit {
   if reports.is_empty() {
     return
@@ -292,11 +275,7 @@ pub fn report_conflicts(reports : Array[@tablegen.ConflictReport]) -> Unit {
 }
 
 ///|
-/// 打印运行时解析错误到 stderr。
-///
-/// `runtime.Point` 是 0-indexed，显示时自动 +1 转为 1-indexed。
-/// - `file`：（可选）输入文件路径
-/// - `source`：（可选）文件全文，用于显示源码行高亮
+/// 打印运行时解析错误到 stderr
 pub fn report_parse_error(
   err : @runtime.ParseError,
   file : String?,
@@ -321,9 +300,7 @@ pub fn report_parse_error(
 }
 
 ///|
-/// 打印 Query 编译错误到 stderr。
-///
-/// `pattern`：（可选）原始查询模式字符串，用于显示错误位置插入符。
+/// 打印 Query 编译错误到 stderr
 pub fn report_query_error(err : @query.QueryError, pattern : String?) -> Unit {
   match err {
     ParseError(offset, msg) => {
@@ -350,8 +327,7 @@ pub fn report_query_error(err : @query.QueryError, pattern : String?) -> Unit {
 }
 
 ///|
-/// 打印诊断汇总行到 stderr，例如 `"2 errors, 1 warning"`。
-/// 若 errors 和 warnings 均为 0 则不输出任何内容。
+/// 打印诊断汇总行到 stderr，例如 `"2 errors, 1 warning"`
 pub fn report_summary(errors : Int, warnings : Int) -> Unit {
   if errors == 0 && warnings == 0 {
     return

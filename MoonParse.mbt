@@ -1,6 +1,6 @@
 // 公共 API：grammar DSL → ParseTable → CST
-// generate : DSL 字符串 → 解析表 JSON（用于持久化 / 调试）
-// parse    : DSL 字符串 + 源码 → CST 文本（快速端到端解析）
+// generate : DSL 字符串 → 解析表 JSON
+// parse    : DSL 字符串 + 源码 → CST 文本
 
 ///|
 /// 将 Grammar DSL 编译为 LALR(1) 解析表，以 JSON 字符串返回。

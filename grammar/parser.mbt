@@ -19,8 +19,6 @@ priv struct ParserState {
   mut pos : Int
 }
 
-// 公开入口
-
 ///|
 /// 解析 Grammar DSL 字符串，返回完整的 Grammar 对象
 pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
@@ -519,7 +517,6 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
       state.pos = state.pos + 1
       Success(AnyChar)
     }
-    // 内联优先级标注 prec(...) / prec.left(...) / prec.right(...) / prec.dynamic(...)
     Keyword("prec") => {
       state.pos = state.pos + 1
       // 检查是否有 .kind 修饰
@@ -722,7 +719,6 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
   }
 }
 
-// extras 解析
 
 ///|
 /// 解析 `extras [pattern, pattern, ...]` 声明
@@ -764,8 +760,6 @@ fn parse_extras(state : ParserState) -> ParseResult[Array[Pattern]] {
     location: state.tokens[state.tokens.length() - 1].location,
   })
 }
-
-// externals 解析
 
 ///|
 /// 解析 `externals [name1, name2, ...]` 声明

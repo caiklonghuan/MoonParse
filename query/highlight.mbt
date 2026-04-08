@@ -1,20 +1,8 @@
 ///|
 // Highlight Query 引擎
-//
-// 将 CompiledQuery 的执行结果转换为 HighlightRange 列表；
-// 按 start_byte 稳定排序输出，便于编辑器直接使用。
-//
-// Tree-Sitter 高亮约定：
-//   - 捕获名即高亮类型，如 "keyword"  "string"  "comment" 等
-//   - 同一字节范围若有多个捕获，DFS 先出现（模式编号较小）者优先级更高
-//   - 注入语言和局部变量解析见 locals.mbt（独立 phase）
 
 ///|
-/// 标准高亮名称集合（对应 LSP SemanticTokenType + Neovim/Helix + VS Code 惯例）。
-///
-/// 用途：
-///   1. 向用户展示可用的捕获名列表
-///   2. WASM 层过滤非标准捕获（如 @local.* 捕获名）
+/// 标准高亮名称集合（对应 LSP SemanticTokenType + Neovim/Helix + VS Code 惯例）
 pub let highlight_names : Array[String] = [
   "attribute", "comment", "constant", "constant.builtin", "constructor", "embedded",
   "escape", "function", "function.builtin", "function.macro", "function.method",
@@ -64,17 +52,7 @@ fn sort_ranges(ranges : Array[HighlightRange]) -> Unit {
 }
 
 ///|
-/// 执行高亮查询，返回按 start_byte 排序的 `Array[HighlightRange]`。
-///
-/// # 参数
-/// - root            : CST 根节点（由 `@runtime.parse` 返回）
-/// - input           : 被解析的原始 UTF-8 字符串
-/// - table           : 对应语言的 ParseTable
-/// - highlight_query : 已编译的高亮查询（包含 `@keyword`、`@string` 等捕获）
-///
-/// # 返回值
-/// 所有命中的 HighlightRange，按 start_byte 升序排序。
-/// 若同一字节范围有多个捕获命中，保留所有（调用方按需去重）。
+/// 执行高亮查询，返回按 start_byte 排序的 `Array[HighlightRange]`
 pub fn apply_highlights(
   root : @runtime.CstNode,
   input : String,
@@ -106,17 +84,7 @@ pub fn apply_highlights(
 }
 
 ///|
-/// 执行高亮查询 + 局部变量解析，返回语义感知的 HighlightRange 列表。
-///
-/// locals_query 应包含特殊捕获名：
-///   - `@local.scope`      : 作用域边界（如函数体、块）
-///   - `@local.definition` : 局部变量定义（绑定到最近的 scope）
-///   - `@local.reference`  : 局部变量引用
-///
-/// 处理逻辑：
-///   对每个 `@local.reference` 节点，在祖先 scope 中查找同名 `@local.definition`；
-///   找到时，将对应 HighlightRange 的 `highlight_name` 追加 `.local` 后缀；
-///   未找到时保持不变（视为全局变量）。
+/// 执行高亮查询 + 局部变量解析，返回语义感知的 HighlightRange 列表
 pub fn apply_highlights_with_locals(
   root : @runtime.CstNode,
   input : String,

@@ -2,8 +2,6 @@
 // Prefer high-level behaviors over implementation details.
 // Run `moon test` to execute and `moon test --update` to refresh snapshots.
 
-///|
-// ── generate() ──────────────────────────────────────────────────
 
 ///|
 test "generate/valid_grammar_returns_json" {
@@ -31,8 +29,6 @@ test "generate/output_contains_states_key" {
   assert_true(result.contains("states"))
 }
 
-///|
-// ── parse() ─────────────────────────────────────────────────────
 
 ///|
 test "parse/number_grammar" {
@@ -62,8 +58,6 @@ test "parse/invalid_dsl_returns_error_prefix" {
   assert_true(result.has_prefix("Error:"))
 }
 
-///|
-// ── parse_json() ─────────────────────────────────────────────────
 
 ///|
 test "parse_json/object" {
@@ -91,7 +85,6 @@ test "parse_json/invalid_input_contains_error_node" {
 }
 
 ///|
-// ── built-in stdlib grammars ───────────────────────────────────
 
 ///|
 test "parse_json5/object_with_comments" {
@@ -127,7 +120,6 @@ test "parse_c/function" {
 }
 
 ///|
-// ── table_from_json round-trip（通过 generate + parse 验证）────────
 
 ///|
 test "generate_then_reload/json_round_trip_can_parse" {

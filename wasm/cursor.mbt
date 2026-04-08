@@ -1,18 +1,5 @@
 ///|
 // 游标 API
-//
-//
-// 用法示例（JS 伪代码）：
-//   const cid = cursor_new(tree_id);
-//   cursor_goto_first_child(cid);         // 进入根的第一个子节点
-//   while (cursor_goto_next_sibling(cid)) { ... }  // 遍历兄弟
-//   cursor_goto_parent(cid);              // 返回父节点
-//   cursor_free(cid);
-//
-// 约定：
-//   - 导航函数（goto_*）返回 Int：1 = 成功移动，0 = 已到边界或游标无效
-//   - 查询函数（node_*）游标无效时返回空串 "" / 0 / -1
-
 ///|
 // 生命周期
 

@@ -50,14 +50,7 @@ pub fn ValidationError::to_string(self : ValidationError) -> String {
 // 公开入口
 
 ///|
-/// 对已解析的 Grammar 进行语义校验，返回所有错误（不提前中止）
-///
-/// 检查项：
-/// 1. start 规则是否存在
-/// 2. 规则体内的 RuleRef 是否都有对应定义
-/// 3. 直接左递归（A 的第一个可能 token 是 A 本身）
-/// 4. 间接左递归（通过 DFS 环检测）
-/// 5. 从 start 出发的可达性（仅在声明了 start 时执行）
+/// 对已解析的 Grammar 进行语义校验，返回所有错误
 pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
   let errors : Array[ValidationError] = []
 
@@ -178,13 +171,6 @@ fn is_trivially_nullable(pattern : Pattern) -> Bool {
   }
 }
 
-// 辅助：收集一个 Pattern「序列首位」能直接展开到的规则名
-// 用于左递归检测：只关心「在消耗任何 token 之前就必须先展开的规则」
-
-///|
-/// 返回 pattern 在「不消耗任何 token」的前提下，可能首先展开到的规则名集合
-/// Optional / Repeat / Not / And 因为可以空匹配，需要继续往后看，
-/// 但对左递归检测来说只需要知道「第一步是否能直接跳到 RuleRef」
 fn first_rule_refs(pattern : Pattern) -> Array[String] {
   let out : Set[String] = Set::new()
   first_rule_refs_into(pattern, out)
@@ -228,9 +214,6 @@ fn detect_left_recursion(
   grammar : Grammar,
   errors : Array[ValidationError],
 ) -> Unit {
-  // visited: Set — 全局已完成检测（O(1) 查找）
-  // on_path_set: Set — 当前 DFS 路径上的节点（O(1) 环检测）
-  // path_list: Array — 当前路径有序列表，用于报错时还原环
   let visited : Set[String] = Set::new()
   let on_path_set : Set[String] = Set::new()
   let path_list : Array[String] = []

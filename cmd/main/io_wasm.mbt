@@ -1,8 +1,5 @@
 ///|
 // 文件 I/O 的 wasm / wasm-gc 目标存根
-//
-// WASM 在浏览器或 Node.js 环境中运行时，文件系统访问依赖宿主提供。
-// 当前 CLI 不支持 wasm 目标的文件 I/O；所有操作返回 Err 或退化为 stdout。
 
 ///|
 fn read_file_impl(path : String) -> Result[String, String] {

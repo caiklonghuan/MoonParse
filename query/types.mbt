@@ -135,14 +135,7 @@ pub fn node_type_name(
 }
 
 ///|
-/// 从原始输入字符串中切取节点对应的文本（UTF-8 字节切片）。
-///
-/// 底层使用 `input[node.start_byte:node.end_byte]`。
-///
-/// 边界检查：若 `start_byte > end_byte` 或 `end_byte > input.length()`，
-/// 则返回空字符串 `""`，而非 panic。这在以下情况会出现：
-/// - 错误恢复插入的虚拟缺失节点（`is_missing == true`，长度为 0）
-/// - ERROR 节点的首末字节与实际输入不对齐时
+/// 从原始输入字符串中切取节点对应的文本（UTF-8 字节切片）
 pub fn node_text(node : @runtime.CstNode, input : String) -> String {
   if node.start_byte <= node.end_byte && node.end_byte <= input.length() {
     input[node.start_byte:node.end_byte].to_string()

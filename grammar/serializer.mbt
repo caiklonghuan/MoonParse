@@ -1,9 +1,4 @@
 // Grammar 序列化层
-// 对应 DESIGN.md .6
-// 提供两种序列化目标：
-// grammar_to_string()  → DSL 文本（可被 parse_grammar 重新解析）
-// grammar_to_json()    → JSON 字符串
-
 // DSL 文本序列化
 
 ///|
