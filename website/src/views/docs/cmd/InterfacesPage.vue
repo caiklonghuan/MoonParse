@@ -1,17 +1,22 @@
 <template>
   <article>
     <h1>公共接口</h1>
-    <p>虽然 <code>cmd/main</code> 主要是 CLI 入口包，但它对外暴露的接口并不只有一个 <code>main</code>。如果你要在别的 MoonBit 包里复用参数解析、命令处理器或 reporter，这一页是最直接的索引。</p>
+    <p>这一页对应的是 <code>cmd/main/pkg.generated.mbti</code> 当前真正导出的包接口，而不是单纯的 CLI 概念说明。换句话说，它描述的是“别的 MoonBit 包可以直接调用什么”。</p>
 
-    <h2>命令处理器</h2>
-    <pre><code>cmd_generate(GenerateArgs) -> Int
+    <h2>当前公开的命令处理器</h2>
+    <pre><code>cmd_build(BuildArgs) -> Int
+cmd_check(CheckArgs) -> Int
+cmd_clean(CleanArgs) -> Int
+cmd_dump(DumpArgs) -> Int
+cmd_fmt(FmtArgs) -> Int
+cmd_generate(GenerateArgs) -> Int
 cmd_parse(ParseArgs) -> Int
 cmd_query(QueryArgs) -> Int
-cmd_check(CheckArgs) -> Int
-cmd_fmt(FmtArgs) -> Int
-cmd_run_tests(TestArgs) -> Int</code></pre>
+cmd_run_tests(TestArgs) -> Int
+cmd_wasm(WasmArgs) -> Int</code></pre>
+    <p>这些函数都返回整型退出码，因此它们既能被 <code>main</code> 调度，也能被上层封装到你自己的命令行外壳或测试驱动里。</p>
 
-    <h2>参数与命令模型</h2>
+    <h2>参数解析与命令 AST</h2>
     <pre><code>parse_args(Array[String]) -> Result[Command, String]
 
 enum Command {
@@ -21,30 +26,44 @@ enum Command {
   Fmt(FmtArgs)
   Query(QueryArgs)
   Test(TestArgs)
+  Build(BuildArgs)
+  Wasm(WasmArgs)
+  Dump(DumpArgs)
+  Clean(CleanArgs)
   Help(String?)
   Version
-}
-
-enum OutputFormat {
-  Sexp
-  Json
-  Dot
 }</code></pre>
+    <p><code>parse_args</code> 会先消费全局 flag，再把命令行转换为强类型的 <code>Command</code>。这意味着如果你要复用 CLI 语法，可以直接消费命令 AST，而不必自己再写一层字符串分发。</p>
 
-    <h2>参数结构体</h2>
+    <h2>关键类型</h2>
     <table>
-      <thead><tr><th>类型</th><th>关键字段</th></tr></thead>
+      <thead><tr><th>类型</th><th>关键字段</th><th>用途</th></tr></thead>
       <tbody>
-        <tr><td><code>GenerateArgs</code></td><td><code>grammar_file</code>、<code>output</code>、<code>json</code>、<code>diagnostic</code>、<code>force</code></td></tr>
-        <tr><td><code>ParseArgs</code></td><td><code>grammar_file</code>、<code>table_file</code>、<code>input_file</code>、<code>format</code>、<code>tokens</code>、<code>error_summary</code></td></tr>
-        <tr><td><code>QueryArgs</code></td><td><code>pattern</code>、<code>input_file</code>、<code>grammar_file</code>、<code>table_file</code>、<code>json</code>、<code>count</code></td></tr>
-        <tr><td><code>CheckArgs</code></td><td><code>grammar_file</code></td></tr>
-        <tr><td><code>FmtArgs</code></td><td><code>grammar_file</code>、<code>check</code>、<code>stdout</code></td></tr>
-        <tr><td><code>TestArgs</code></td><td><code>test_dir</code>，当前语义其实更接近单个 test spec</td></tr>
+        <tr><td><code>GenerateArgs</code></td><td><code>grammar_file</code>、<code>output</code>、<code>json</code>、<code>diagnostic</code>、<code>force</code></td><td>生成单文件 parse table 或 JSON 表。</td></tr>
+        <tr><td><code>BuildArgs</code></td><td><code>input</code>、<code>outdir</code>、<code>wasm</code></td><td>构建标准 build 目录。</td></tr>
+        <tr><td><code>WasmArgs</code></td><td><code>grammar_file</code>、<code>table_file</code>、<code>outdir</code></td><td>构建 JS 胶水 + parse table 的 dist 目录。</td></tr>
+        <tr><td><code>ParseArgs</code></td><td><code>grammar_file</code>、<code>table_file</code>、<code>input_file</code>、<code>format</code>、<code>tokens</code>、<code>error_summary</code></td><td>控制解析输入和 CST 输出格式。</td></tr>
+        <tr><td><code>QueryArgs</code></td><td><code>pattern</code>、<code>input_file</code>、<code>grammar_file</code>、<code>table_file</code>、<code>json</code>、<code>count</code></td><td>执行结构化查询并决定输出形式。</td></tr>
+        <tr><td><code>FmtArgs</code> / <code>CheckArgs</code> / <code>TestArgs</code></td><td>grammar 路径、模式标志、spec</td><td>分别对应格式化、校验和 corpus 回归。</td></tr>
+        <tr><td><code>DumpArgs</code></td><td><code>target</code>、<code>input</code></td><td>选择 IR、table 或 automaton 调试视图。</td></tr>
+        <tr><td><code>CleanArgs</code></td><td><code>force</code></td><td>目前是保留字段，当前实现总是直接执行清理。</td></tr>
       </tbody>
     </table>
 
-    <h2>Reporter 与 I/O 辅助</h2>
+    <h2>辅助枚举</h2>
+    <pre><code>enum OutputFormat {
+  Sexp
+  Json
+  Dot
+}
+
+enum DumpTarget {
+  Ir
+  Table
+  Automaton
+}</code></pre>
+
+    <h2>Reporter 与 I/O 公共面</h2>
     <pre><code>init_reporter() -> Unit
 set_color_output(Bool?) -> Unit
 set_quiet(Bool) -> Unit
@@ -66,10 +85,15 @@ read_bytes(String) -> Result[Bytes, String]
 read_stdin() -> String
 write_file(String, String) -> Result[Unit, String]
 write_bytes(String, Bytes) -> Result[Unit, String]
+make_dir(String) -> Result[Unit, String]
+remove_dir_all(String) -> Result[Unit, String]
 process_exit(Int) -> Unit
 isatty(Int) -> Bool</code></pre>
 
-    <h2>入口选择</h2>
-    <p>如果你只是想做“命令行参数转结构化命令”的前处理，可以复用 <code>parse_args</code>；如果你已经有自己的 shell 外壳，但希望沿用 MoonParse 的诊断风格，也可以直接复用 reporter 和各个 <code>report_*</code> 函数。</p>
+    <h2>当前没有公开的部分</h2>
+    <ul>
+      <li><code>main()</code> 是可执行入口，不属于包公开接口。</li>
+      <li><code>cmd_util</code> 里的 <code>load_table_from_grammar</code>、<code>cst_to_sexp</code>、<code>cst_to_dot</code> 等工具函数都保持为包内私有。</li>
+    </ul>
   </article>
 </template>

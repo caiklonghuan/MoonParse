@@ -163,11 +163,11 @@ pub(all) struct SymbolMeta {
   /// false = 匿名节点，运行时 AST 不暴露给用户
   is_named : Bool
   /// true = normalize 阶段生成的辅助非终结符（_rulename_suffix_n / _ra_xxx 等），
-  /// 不对应用户声明的规则。
+  /// 不对应用户声明的规则，应被上层代码生成或分析工具跳过。
   is_synthetic : Bool
   /// 该非终结符的产生式中出现的字段名列表（有序、去重）。
   /// 来自 Pattern::Field / Pattern::Tagged；Token 和无字段规则为空。
-  /// 供运行时按名定位子节点。
+  /// 供运行时按名定位子节点，也供其他上层工具读取字段布局。
   field_slots : Array[String]
 } derive(Debug)
 

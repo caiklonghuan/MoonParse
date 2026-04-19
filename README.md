@@ -177,7 +177,7 @@ console.log(tree.root.type)
 
 > **注意事项**
 >
-> - **`.grammar` 文件需要手动创建**：`generate` 命令期望读取独立的 `.grammar` DSL 文本文件，而项目中的语法定义是嵌入在 `.mbt` 源码里的（如 `grammars/json.mbt` 中的 `json_grammar` 字符串）。文档示例里的 `grammars/json.grammar` 路径实际不存在，需要用户自己从 DSL 字符串提取或直接编写。
+> - **内置语法现在提供了对应 `.grammar` 文件**：`grammars/` 下已经包含 `json.grammar`、`json5.grammar`、`c.grammar`、`python.grammar`、`moonbit.grammar` 和 `expression.grammar`，可以直接拿来给 `check`、`generate`、`parse`、`query` 等命令使用。
 >
 > - **Windows 下 `moon run cmd/main` 无法直接使用**：默认 wasm target 缺少 `__moonbit_fs_unstable` 文件系统 API，native target 缺少 `windows.h`。实际可行的方式是先执行 `moon build --target wasm-gc`，再通过 `node run.js` 调用 CLI 命令，例如 `node run.js generate my.grammar -o out/my.parse_table`。
 >
@@ -193,7 +193,6 @@ console.log(tree.root.type)
 - `wasm/`：Parser / Tree / Cursor / Query 句柄、JSON / bytes / base64 restore、宿主桥接。
 - `cmd/`：统一命令行入口，仓库内通过 `moon run cmd/main --` 调用，包括 `check`、`fmt`、`generate`、`parse`、`query`、`test`、`wasm` 等命令。
 - `scripts/`：fuzz、mutation、增量一致性验证、parse / incremental / serialize benchmark。
-- `typegen/`：类型安全 CST 访问器生成相关代码。
 - `website/`：文档站、在线 playground、预编译表和浏览器侧胶水。
 
 ## 设计概览
@@ -251,7 +250,6 @@ Grammar DSL / Builder API
 | `cmd/`      | 命令行编排层     | 文件、stdin、参数                  | 诊断、ParseTable 产物、查询输出     |
 | `scripts/`  | 开发验证层       | 内置语法、随机种子、样本输入       | fuzz / mutation / benchmark 结果    |
 | `website/`  | 文档与在线集成层 | wasm、预编译表、示例 grammar       | docs、playground、浏览器胶水        |
-| `typegen/`  | 类型化访问器生成 | grammar 形状信息                   | 类型安全 CST 访问器代码             |
 
 这套边界的关键点是：
 

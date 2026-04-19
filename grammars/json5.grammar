@@ -1,0 +1,15 @@
+start json5
+extras [/[ \t\n\r]+/, /[ \t]*\/\/[^\n\r]*(\r\n|\n|\r)?/, /\/\*([^*]|\*+[^*/])*\*+\//]
+rule json5: value
+rule value: object | array | string | number | "true" | "false" | "null" | "Infinity" | "NaN" | "+Infinity" | "-Infinity"
+rule object: "{" members? ","? "}"
+rule members: member ("," member)*
+rule member: property_name ":" value
+rule property_name: string | identifier
+rule array: "[" elements? ","? "]"
+rule elements: value ("," value)*
+rule string: dstring | sstring
+rule dstring: /"([^"\\]|\\.)*"/
+rule sstring: /'([^'\\]|\\.)*'/
+rule number: /[-+]?(0[xX][0-9a-fA-F]+|([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?)/
+rule identifier: /[$A-Za-z_][$0-9A-Za-z_]*/

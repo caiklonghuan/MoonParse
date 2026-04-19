@@ -2,14 +2,14 @@
 
 ## 1. 模块定位
 
-`cmd/` 是 MoonParse 的命令行工具链模块，负责把 `grammar/`、`tablegen/`、`runtime/`、`query/` 以及类型代码生成能力组织成统一的命令行入口。
+`cmd/` 是 MoonParse 的命令行工具链模块，负责把 `grammar/`、`tablegen/`、`runtime/`、`query/` 组织成统一的命令行入口。
 
 本模块主要提供以下能力：
 
 - 解析全局参数与子命令参数；
 - 执行 Grammar 校验、格式化、ParseTable 生成与分发产物构建；
 - 执行源码解析、结构化查询、corpus 测试与内部结构 dump；
-- 生成类型安全的 MoonBit CST 访问器代码与 JS/WASM 分发胶水；
+- 生成 JS/WASM 分发胶水；
 - 输出统一的人类可读诊断、彩色错误信息与退出码；
 - 通过平台 I/O 适配层读写文件、目录、标准输入输出和二进制表文件。
 
@@ -31,8 +31,6 @@ argv / stdin / files
         |
         +--> query/     执行结构化查询
         |
-        +--> typegen    生成类型安全访问器
-        |
         v
 stdout / stderr / output files / exit code
 ```
@@ -49,7 +47,6 @@ stdout / stderr / output files / exit code
 | 建表与分发    | `cmd_generate`、`cmd_build`、`cmd_wasm`                                                                                         | 生成`.parse_table`、构建 build/dist 产物与 JS glue  |
 | 解析与查询    | `cmd_parse`、`cmd_query`                                                                                                        | 解析输入、输出 CST、执行 S-表达式查询               |
 | 调试与测试    | `cmd_dump`、`cmd_run_tests`、`cmd_clean`                                                                                        | 调试 IR/表/自动机、运行 corpus 回归、清理构建输出   |
-| 代码生成      | `cmd_generate_types`                                                                                                            | 生成类型安全访问器                                  |
 | 统一诊断输出  | `init_reporter`、`report_*`、`report_summary`                                                                                   | 格式化错误、警告、冲突和源码片段                    |
 | 平台 I/O 适配 | `read_file`、`write_file`、`read_bytes`、`write_bytes`、`make_dir`、`remove_dir_all`、`read_stdin`、`print_err`、`process_exit` | 屏蔽 native / wasm 环境差异并处理目录级构建产物输出 |
 
@@ -68,7 +65,6 @@ stdout / stderr / output files / exit code
 - `fmt`
 - `query`
 - `test`
-- `generate-types`
 - `clean`
 
 全局参数目前有两类：
@@ -94,8 +90,7 @@ moon run cmd/main -- --quiet parse -g grammars/json.grammar sample.json
 5. 用 `build` 或 `wasm` 产出可分发目录；
 6. 用 `parse` 或 `query` 消费真实输入；
 7. 用 `test` 跑 corpus 回归；
-8. 若需要上层 MoonBit API，再用 `generate-types` 输出类型访问器；
-9. 在 CI 或重构建前，可用 `clean` 清理旧产物。
+8. 在 CI 或重构建前，可用 `clean` 清理旧产物。
 
 ### 4.3 `check` 只做诊断，不写文件
 
@@ -273,19 +268,7 @@ moon run cmd/main -- test corpus/json.txt
 
 当前实现会读取单个 corpus 文件，把每个测试样例解析成期望 S-expression，并与实际输出逐条比较。
 
-### 4.12 `generate-types` 用于生成类型安全访问器
-
-```sh
-moon run cmd/main -- generate-types grammars/json.grammar
-moon run cmd/main -- generate-types grammars/json.grammar -o json_types.mbt
-moon run cmd/main -- generate-types grammars/json.grammar -o json_types.mbt -m JsonCst
-```
-
-该命令会从 Grammar 直接生成 MoonBit 源码，用来提供类型安全的 CST 访问 API。
-
-若未传 `-o` / `--output`，结果会输出到 `stdout`；模块名默认取 Grammar 文件的基名，也可通过 `-m` / `--module` 显式指定。
-
-### 4.13 `clean` 用于清理构建目录
+### 4.12 `clean` 用于清理构建目录
 
 ```sh
 moon run cmd/main -- clean
@@ -314,7 +297,6 @@ moon run cmd/main -- clean
 - `Fmt(FmtArgs)`
 - `Query(QueryArgs)`
 - `Test(TestArgs)`
-- `GenerateTypes(GenerateTypesArgs)`
 - `Clean(CleanArgs)`
 - `Help(String?)`
 - `Version`
@@ -375,7 +357,6 @@ moon run cmd/main -- clean
 | `main/cmd_parse.mbt`                      | 输入解析、CST 输出、token 与错误摘要        |
 | `main/cmd_query.mbt`                      | 查询编译、执行与结果格式化                  |
 | `main/cmd_run_tests.mbt`                  | corpus 文件解析与回归测试执行               |
-| `main/cmd_generate_types.mbt`             | 类型安全访问器代码生成                      |
 | `main/cmd_clean.mbt`                      | 清理 generated/、build/、dist/              |
 | `main/cmd_util.mbt`                       | 共享 JSON/S-expression/DOT 导出与表加载工具 |
 | `main/reporter.mbt`                       | 统一错误、警告、源码片段和彩色输出          |
@@ -392,7 +373,6 @@ moon run cmd/main -- clean
 - 在 CI 中做语法校验、格式检查、建表与 corpus 回归；
 - 快速验证查询模式、树结构和错误恢复行为；
 - 在冲突、自动机状态或规约行为异常时查看 `dump` 输出；
-- 为 MoonBit 上层代码生成类型安全的 CST 访问器；
 - 为文档、示例和脚本提供稳定的命令行入口。
 
 如果你的目标是“把 MoonParse 嵌入编辑器、浏览器或长期运行服务”，则更适合直接使用库模块或 `wasm/`，而不是把 `cmd/` 当作嵌入式 API。

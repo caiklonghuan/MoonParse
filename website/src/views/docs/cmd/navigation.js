@@ -5,11 +5,10 @@ export const CMD_NAV = [
   { id: 'examples', label: '示例' },
   { id: 'interfaces', label: '公共接口' },
   { id: 'commands', label: '命令总览' },
-  { id: 'generate', label: 'generate' },
+  { id: 'generate', label: '生成与分发' },
   { id: 'parse-query', label: 'parse 与 query' },
   { id: 'check-fmt-test', label: 'check / fmt / test' },
   { id: 'io-reporter', label: 'I/O 与报告' },
-  { id: 'best-practices', label: '最佳实践' },
 ]
 
 const CMD_PAGE_IDS = new Set(CMD_NAV.map((item) => item.id))

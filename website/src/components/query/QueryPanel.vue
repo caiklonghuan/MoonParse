@@ -91,11 +91,19 @@ onMounted(() => {
 
 onUnmounted(() => queryView?.destroy())
 
+function clearResults() {
+  results.value = []
+  queryError.value = null
+}
+
 watch(() => props.modelValue, (val) => {
   if (!queryView) return
   const cur = queryView.state.doc.toString()
   if (cur !== val) {
     queryView.dispatch({ changes: { from: 0, to: cur.length, insert: val } })
+  }
+  if (!val?.trim()) {
+    clearResults()
   }
 })
 
@@ -124,6 +132,10 @@ function runQuery() {
 }
 
 watch(() => props.tree, () => {
+  if (!props.tree) {
+    clearResults()
+    return
+  }
   if (queryView && queryView.state.doc.toString().trim()) runQuery()
 })
 

@@ -11,6 +11,8 @@ const footerSections = [
       { label: 'Tablegen 指南', to: '/docs/tablegen/overview' },
       { label: 'Runtime 指南', to: '/docs/runtime/overview' },
       { label: 'Cmd 指南', to: '/docs/cmd/overview' },
+      { label: 'Query 指南', to: '/docs/query/overview' },
+      { label: 'Wasm 指南', to: '/docs/wasm/overview' },
       { label: 'API 参考', to: '/docs/api-reference' },
     ],
   },

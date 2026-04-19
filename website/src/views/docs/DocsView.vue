@@ -21,6 +21,16 @@ import {
   CMD_NAV,
   normalizeCmdPage,
 } from './cmd/navigation.js'
+import {
+  DEFAULT_QUERY_PAGE,
+  QUERY_NAV,
+  normalizeQueryPage,
+} from './query/navigation.js'
+import {
+  DEFAULT_WASM_PAGE,
+  WASM_NAV,
+  normalizeWasmPage,
+} from './wasm/navigation.js'
 
 const route  = useRoute()
 const router = useRouter()
@@ -31,6 +41,8 @@ const NAV = [
   { id: 'tablegen-guide',  label: 'Tablegen', children: TABLEGEN_NAV },
   { id: 'runtime-guide',   label: 'Runtime', children: RUNTIME_NAV },
   { id: 'cmd-guide',       label: 'Cmd', children: CMD_NAV },
+  { id: 'query-guide',     label: 'Query', children: QUERY_NAV },
+  { id: 'wasm-guide',      label: 'Wasm', children: WASM_NAV },
   { id: 'api-reference',   label: 'API 参考' },
 ]
 
@@ -46,6 +58,12 @@ const rawSection = computed(() => {
   }
   if (route.name === 'docs-cmd') {
     return 'cmd-guide'
+  }
+  if (route.name === 'docs-query') {
+    return 'query-guide'
+  }
+  if (route.name === 'docs-wasm') {
+    return 'wasm-guide'
   }
   return String(route.params.section || 'getting-started')
 })
@@ -82,6 +100,20 @@ const cmdPage = computed(() => {
   return normalizeCmdPage(String(route.query.page || DEFAULT_CMD_PAGE))
 })
 
+const queryPage = computed(() => {
+  if (route.name === 'docs-query') {
+    return normalizeQueryPage(String(route.params.page || DEFAULT_QUERY_PAGE))
+  }
+  return normalizeQueryPage(String(route.query.page || DEFAULT_QUERY_PAGE))
+})
+
+const wasmPage = computed(() => {
+  if (route.name === 'docs-wasm') {
+    return normalizeWasmPage(String(route.params.page || DEFAULT_WASM_PAGE))
+  }
+  return normalizeWasmPage(String(route.query.page || DEFAULT_WASM_PAGE))
+})
+
 const currentChildPage = computed(() => {
   if (section.value === 'grammar-guide') {
     return grammarPage.value
@@ -94,6 +126,12 @@ const currentChildPage = computed(() => {
   }
   if (section.value === 'cmd-guide') {
     return cmdPage.value
+  }
+  if (section.value === 'query-guide') {
+    return queryPage.value
+  }
+  if (section.value === 'wasm-guide') {
+    return wasmPage.value
   }
   return ''
 })
@@ -109,6 +147,10 @@ function go(id) {
     router.push(`/docs/runtime/${runtimePage.value}`)
   } else if (id == 'cmd-guide') {
     router.push(`/docs/cmd/${cmdPage.value}`)
+  } else if (id == 'query-guide') {
+    router.push(`/docs/query/${queryPage.value}`)
+  } else if (id == 'wasm-guide') {
+    router.push(`/docs/wasm/${wasmPage.value}`)
   } else {
     router.push(`/docs/${id}`)
   }
@@ -124,6 +166,10 @@ function goChildPage(sectionId, id) {
     router.push(`/docs/runtime/${id}`)
   } else if (sectionId == 'cmd-guide') {
     router.push(`/docs/cmd/${id}`)
+  } else if (sectionId == 'query-guide') {
+    router.push(`/docs/query/${id}`)
+  } else if (sectionId == 'wasm-guide') {
+    router.push(`/docs/wasm/${id}`)
   }
   sidebarOpen.value = false
 }
@@ -138,6 +184,8 @@ const SECTIONS = {
   'tablegen-guide':  defineAsyncComponent(() => import('./TablegenGuide.vue')),
   'runtime-guide':   defineAsyncComponent(() => import('./RuntimeGuide.vue')),
   'cmd-guide':       defineAsyncComponent(() => import('./CmdGuide.vue')),
+  'query-guide':     defineAsyncComponent(() => import('./QueryGuide.vue')),
+  'wasm-guide':      defineAsyncComponent(() => import('./WasmGuide.vue')),
   'api-reference':   defineAsyncComponent(() => import('./ApiReference.vue')),
 }
 
@@ -154,6 +202,12 @@ const activeDocProps = computed(() => {
   }
   if (section.value == 'cmd-guide') {
     return { page: cmdPage.value }
+  }
+  if (section.value == 'query-guide') {
+    return { page: queryPage.value }
+  }
+  if (section.value == 'wasm-guide') {
+    return { page: wasmPage.value }
   }
   return {}
 })

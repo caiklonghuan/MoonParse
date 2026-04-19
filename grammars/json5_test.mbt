@@ -174,16 +174,16 @@ test "json5 stress / 超长数组与对象字段列表" {
 }
 
 // ============================================================
-// JSON 黑盒测试（parse_json = parse_json5 超集）
+// JSON 黑盒测试（JSON 输入走 JSON5 语法）
 // ============================================================
 
 ///|
 /// 辅助：解析 JSON 并返回根节点，断言无顶层错误
 fn parse_ok(source : String) -> @runtime.CstNode {
-  match @grammars.parse_json(source) {
+  match @grammars.parse_json5(source) {
     Ok(node) => node
     Err(e) => {
-      println("parse_json failed: \{e.message}")
+      println("parse_json5 failed: \{e.message}")
       panic()
     }
   }
@@ -255,13 +255,13 @@ fn assert_json_recovery_usable(
     println("\{label}: expected recovered tree to contain MISSING node")
     panic()
   }
-  let sexp = @grammars.json_sexp(input)
+  let sexp = @grammars.json5_sexp(input)
   if sexp.is_empty() {
-    println("\{label}: json_sexp should stay available on recovered tree")
+    println("\{label}: json5_sexp should stay available on recovered tree")
     panic()
   }
-  if !sexp.has_prefix("(json") {
-    println("\{label}: expected json sexp to keep root node, got \{sexp}")
+  if !sexp.has_prefix("(json5") {
+    println("\{label}: expected json5 sexp to keep root node, got \{sexp}")
     panic()
   }
   if !expected_fragment.is_empty() && !sexp.contains(expected_fragment) {
@@ -278,16 +278,16 @@ fn assert_json_recovery_usable(
 /// - 若恢复成功：断言树不变量 + ERROR/MISSING 存在 + sexp 可用。
 /// - 若无法恢复：断言错误消息非空（干净失败，非 panic）。
 fn check_json_error_input(label : String, input : String) -> Unit {
-  match @grammars.parse_json(input) {
+  match @grammars.parse_json5(input) {
     Ok(root) => {
       @grammars.assert_cst_invariants(root, input, "root")
       if !has_error_or_missing(root) {
         println("\{label}: unexpected clean parse on invalid input")
         panic()
       }
-      let sexp = @grammars.json_sexp(input)
-      if sexp.is_empty() || !sexp.has_prefix("(json") {
-        println("\{label}: json_sexp unusable on recovered tree: \{sexp}")
+      let sexp = @grammars.json5_sexp(input)
+      if sexp.is_empty() || !sexp.has_prefix("(json5") {
+        println("\{label}: json5_sexp unusable on recovered tree: \{sexp}")
         panic()
       }
     }
@@ -441,16 +441,18 @@ fn json_random_layout_noise(seed : Int, count : Int) -> (Int, String) {
 
 ///|
 fn check_json_any_input_stable(label : String, input : String) -> Unit {
-  let sexp = @grammars.json_sexp(input)
+  let sexp = @grammars.json5_sexp(input)
   if sexp.is_empty() {
-    println("\{label}: json_sexp returned empty output")
+    println("\{label}: json5_sexp returned empty output")
     panic()
   }
-  if !sexp.has_prefix("(json") && !sexp.has_prefix("ERROR: ") {
-    println("\{label}: unexpected json_sexp prefix: \{sexp}")
+  if !sexp.has_prefix("(json5") &&
+    sexp != "(ERROR)" &&
+    !sexp.has_prefix("ERROR: ") {
+    println("\{label}: unexpected json5_sexp prefix: \{sexp}")
     panic()
   }
-  match @grammars.parse_json(input) {
+  match @grammars.parse_json5(input) {
     Ok(root) => {
       @grammars.assert_cst_invariants(root, input, "root")
       if root.end_byte > input.length() {
@@ -630,7 +632,7 @@ fn json_guided_value(seed : Int, depth : Int, width : Int) -> (Int, String) {
 
 ///|
 fn assert_json_guided_parse(label : String, input : String) -> Unit {
-  match @grammars.parse_json(input) {
+  match @grammars.parse_json5(input) {
     Ok(root) => {
       @grammars.assert_cst_invariants(root, input, "root")
       if root.start_byte != 0 || root.end_byte != input.length() {
@@ -639,10 +641,10 @@ fn assert_json_guided_parse(label : String, input : String) -> Unit {
         )
         panic()
       }
-      let sexp = @grammars.json_sexp(input)
-      if sexp.contains("ERROR") || !sexp.has_prefix("(json") {
+      let sexp = @grammars.json5_sexp(input)
+      if sexp.contains("ERROR") || !sexp.has_prefix("(json5") {
         println(
-          "\{label}: guided JSON should parse cleanly for \{input.escape()}, got \{sexp}",
+          "\{label}: guided JSON should parse cleanly under JSON5 grammar for \{input.escape()}, got \{sexp}",
         )
         panic()
       }
@@ -673,7 +675,7 @@ priv struct JsonMutation {
 
 ///|
 fn json_make_table() -> @tablegen.ParseTable {
-  let grammar = match @grammar.parse_grammar(@grammars.json_grammar) {
+  let grammar = match @grammar.parse_grammar(@grammars.json5_grammar) {
     @grammar.Success(grammar) => grammar
     @grammar.Error(e) => {
       println("json_make_table: parse_grammar failed: \{e.message}")
@@ -1436,7 +1438,7 @@ fn spans_valid(node : @runtime.CstNode) -> Bool {
 
 ///|
 test "json 结构 / null 根节点类型为 json5，有唯一命名子节点 value" {
-  let s = @grammars.json_sexp("null")
+  let s = @grammars.json5_sexp("null")
   assert_true(s.has_prefix("(json5 "))
   assert_true(s.contains("(value)"))
   assert_true(!s.contains("ERROR"))
@@ -1444,7 +1446,7 @@ test "json 结构 / null 根节点类型为 json5，有唯一命名子节点 val
 
 ///|
 test "json 结构 / 对象包含 object → members → member → string + number" {
-  let s = @grammars.json_sexp("{\"a\": 1}")
+  let s = @grammars.json5_sexp("{\"a\": 1}")
   assert_true(s.contains("(object "))
   assert_true(s.contains("(member "))
   assert_true(s.contains("(string "))
@@ -1454,7 +1456,7 @@ test "json 结构 / 对象包含 object → members → member → string + numb
 
 ///|
 test "json 结构 / 数组包含 array 和 elements 节点" {
-  let s = @grammars.json_sexp("[1, 2, 3]")
+  let s = @grammars.json5_sexp("[1, 2, 3]")
   assert_true(s.contains("(array "))
   assert_true(s.contains("(elements "))
   assert_true(!s.contains("ERROR"))
@@ -1466,7 +1468,7 @@ test "json 结构 / 合法输入均无 ERROR 节点" {
     "null", "true", "false", "42", "\"hello\"", "{}", "[]", "{\"a\":1}",
   ]
   for input in inputs {
-    assert_true(!@grammars.json_sexp(input).contains("ERROR"))
+    assert_true(!@grammars.json5_sexp(input).contains("ERROR"))
   }
 }
 
@@ -1477,7 +1479,7 @@ test "json 结构 / 合法输入均无 ERROR 节点" {
 ///|
 test "json snapshot / null" {
   inspect(
-    @grammars.json_sexp("null"),
+    @grammars.json5_sexp("null"),
     content=(
       #|(json5 (value))
     ),
@@ -1487,7 +1489,7 @@ test "json snapshot / null" {
 ///|
 test "json snapshot / simple object" {
   inspect(
-    @grammars.json_sexp("{\"a\": 1}"),
+    @grammars.json5_sexp("{\"a\": 1}"),
     content=(
       #|(json5 (value (object (members (member (property_name (string (dstring))) (value (number)))))))
     ),
@@ -1497,7 +1499,7 @@ test "json snapshot / simple object" {
 ///|
 test "json snapshot / nested" {
   inspect(
-    @grammars.json_sexp("{\"a\": [1, 2, {\"b\": true}]}"),
+    @grammars.json5_sexp("{\"a\": [1, 2, {\"b\": true}]}"),
     content=(
       #|(json5 (value (object (members (member (property_name (string (dstring))) (value (array (elements (value (number)) (value (number)) (value (object (members (member (property_name (string (dstring))) (value)))))))))))))
     ),
@@ -1507,7 +1509,7 @@ test "json snapshot / nested" {
 ///|
 test "json snapshot / array" {
   inspect(
-    @grammars.json_sexp("[1,2,3]"),
+    @grammars.json5_sexp("[1,2,3]"),
     content=(
       #|(json5 (value (array (elements (value (number)) (value (number)) (value (number))))))
     ),
@@ -1517,7 +1519,7 @@ test "json snapshot / array" {
 ///|
 test "json snapshot / extras（whitespace 被忽略）" {
   inspect(
-    @grammars.json_sexp(" { \"a\" : 1 } "),
+    @grammars.json5_sexp(" { \"a\" : 1 } "),
     content=(
       #|(json5 (value (object (members (member (property_name (string (dstring))) (value (number)))))))
     ),
@@ -1527,7 +1529,7 @@ test "json snapshot / extras（whitespace 被忽略）" {
 ///|
 test "json snapshot / true false null 关键字" {
   inspect(
-    @grammars.json_sexp("[true, false, null]"),
+    @grammars.json5_sexp("[true, false, null]"),
     content=(
       #|(json5 (value (array (elements (value) (value) (value)))))
     ),
@@ -1592,7 +1594,7 @@ test "json 位置 / 多行输入 end_point.row 正确跨两个换行符" {
 ///|
 test "json snapshot / empty object" {
   inspect(
-    @grammars.json_sexp("{}"),
+    @grammars.json5_sexp("{}"),
     content=(
       #|(json5 (value (object)))
     ),
@@ -1602,7 +1604,7 @@ test "json snapshot / empty object" {
 ///|
 test "json snapshot / empty array" {
   inspect(
-    @grammars.json_sexp("[]"),
+    @grammars.json5_sexp("[]"),
     content=(
       #|(json5 (value (array)))
     ),
@@ -1612,7 +1614,7 @@ test "json snapshot / empty array" {
 ///|
 test "json snapshot / number types" {
   inspect(
-    @grammars.json_sexp("-3.14"),
+    @grammars.json5_sexp("-3.14"),
     content=(
       #|(json5 (value (number)))
     ),
@@ -1622,7 +1624,10 @@ test "json snapshot / number types" {
 ///|
 // assert_tree_shape_eq — 强断言（不通过 --update 更新）
 test "json 断言 / assert_tree_shape_eq 演示（null）" {
-  @grammars.assert_tree_shape_eq(@grammars.json_sexp("null"), "(json5 (value))")
+  @grammars.assert_tree_shape_eq(
+    @grammars.json5_sexp("null"),
+    "(json5 (value))",
+  )
 }
 
 ///|
@@ -1661,7 +1666,7 @@ test "json stress / 100 层数组与对象嵌套" {
   let inputs = [nested_json_array(100), nested_json_object(100)]
   for input in inputs {
     let root = parse_ok(input)
-    assert_true(!@grammars.json_sexp(input).contains("ERROR"))
+    assert_true(!@grammars.json5_sexp(input).contains("ERROR"))
     @grammars.assert_span_eq(root, 0, input.length())
   }
 }
@@ -1671,7 +1676,7 @@ test "json stress / 超长数组与对象字段列表" {
   let inputs = [wide_json_array(256), wide_json_object(256)]
   for input in inputs {
     let root = parse_ok(input)
-    assert_true(!@grammars.json_sexp(input).contains("ERROR"))
+    assert_true(!@grammars.json5_sexp(input).contains("ERROR"))
     @grammars.assert_span_eq(root, 0, input.length())
   }
 }

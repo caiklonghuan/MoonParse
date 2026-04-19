@@ -35,6 +35,8 @@ const features = [
 const links = [
   { label: '快速开始', to: '/docs/getting-started' },
   { label: '文法指南', to: '/docs/grammar-guide' },
+  { label: 'Query 指南', to: '/docs/query/overview' },
+  { label: 'Wasm 指南', to: '/docs/wasm/overview' },
   { label: 'API 参考', to: '/docs/api-reference' },
   { label: '在线试用', to: '/online' },
 ]

@@ -18,7 +18,6 @@ const PAGE_COMPONENTS = {
   'parse-query': defineAsyncComponent(() => import('./cmd/ParseQueryPage.vue')),
   'check-fmt-test': defineAsyncComponent(() => import('./cmd/CheckFmtTestPage.vue')),
   'io-reporter': defineAsyncComponent(() => import('./cmd/IoReporterPage.vue')),
-  'best-practices': defineAsyncComponent(() => import('./cmd/BestPracticesPage.vue')),
 }
 
 const currentPage = computed(() => normalizeCmdPage(props.page))

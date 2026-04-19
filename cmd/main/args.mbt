@@ -72,16 +72,6 @@ pub struct TestArgs {
 } derive(Debug)
 
 ///|
-pub struct GenerateTypesArgs {
-  /// 语法文件路径（.grammar）
-  grammar_file : String
-  /// 输出文件路径（None = 输出到 stdout）
-  output : String?
-  /// 生成代码头部的模块名（None = 取文件 basename）
-  module_name : String?
-} derive(Debug)
-
-///|
 pub enum OutputFormat {
   Sexp
   Json
@@ -139,7 +129,6 @@ pub enum Command {
   Fmt(FmtArgs)
   Query(QueryArgs)
   Test(TestArgs)
-  GenerateTypes(GenerateTypesArgs)
   Build(BuildArgs)
   Wasm(WasmArgs)
   Dump(DumpArgs)
@@ -185,13 +174,6 @@ pub impl Show for QueryArgs with output(self, logger) {
 ///|
 pub impl Show for TestArgs with output(self, logger) {
   logger.write_string("TestArgs(test_dir: \{self.test_dir})")
-}
-
-///|
-pub impl Show for GenerateTypesArgs with output(self, logger) {
-  logger.write_string(
-    "GenerateTypesArgs(grammar_file: \{self.grammar_file}, output: \{self.output}, module_name: \{self.module_name})",
-  )
 }
 
 ///|
@@ -245,7 +227,6 @@ pub impl Show for Command with output(self, logger) {
     Fmt(args) => logger.write_string("Fmt(\{args})")
     Query(args) => logger.write_string("Query(\{args})")
     Test(args) => logger.write_string("Test(\{args})")
-    GenerateTypes(args) => logger.write_string("GenerateTypes(\{args})")
     Build(args) => logger.write_string("Build(\{args})")
     Wasm(args) => logger.write_string("Wasm(\{args})")
     Dump(args) => logger.write_string("Dump(\{args})")
@@ -358,57 +339,11 @@ pub fn parse_args(argv : Array[String]) -> Result[Command, String] {
     "fmt" => parse_fmt(p)
     "query" => parse_query(p)
     "test" => parse_test(p)
-    "generate-types" => parse_generate_types(p)
     "build" => parse_build(p)
     "wasm" => parse_wasm(p)
     "dump" => parse_dump(p)
     "clean" => parse_clean(p)
     other => Err("unknown command '\{other}'\n\{global_usage()}")
-  }
-}
-
-///|
-fn parse_generate_types(p : ArgParser) -> Result[Command, String] {
-  let mut grammar_file : String? = None
-  let mut output : String? = None
-  let mut module_name : String? = None
-  while !p.at_end() {
-    match p.peek() {
-      Some("--help") | Some("-h") => return Ok(Help(Some("generate-types")))
-      Some("--output") | Some("-o") => {
-        let _ = p.next()
-        match p.require_value("--output") {
-          Ok(v) => output = Some(v)
-          Err(e) => return Err(e)
-        }
-      }
-      Some("--module") | Some("-m") => {
-        let _ = p.next()
-        match p.require_value("--module") {
-          Ok(v) => module_name = Some(v)
-          Err(e) => return Err(e)
-        }
-      }
-      Some("--stdout") => {
-        let _ = p.next()
-        output = None // None = stdout（明确覆写，无副作用）
-      }
-      Some(s) =>
-        if s[0].to_int() == '-'.to_int() {
-          return Err(
-            "unknown flag '\{s}' for generate-types\n\{generate_types_usage()}",
-          )
-        } else {
-          let _ = p.next()
-          grammar_file = Some(s)
-        }
-      None => break
-    }
-  }
-  match grammar_file {
-    None =>
-      Err("generate-types: grammar file required\n\{generate_types_usage()}")
-    Some(gf) => Ok(GenerateTypes({ grammar_file: gf, output, module_name }))
   }
 }
 
@@ -705,7 +640,6 @@ fn global_usage() -> String {
     #|  fmt            <file.grammar>  Format a .grammar file
     #|  query          <pattern>       Run S-expression query on CST
     #|  test           [dir]           Run corpus test cases
-    #|  generate-types <file.grammar>  Generate typed CST API (.mbt)
     #|  build          <file>          Build distributable parser artifact
     #|  wasm           <file>          Build WASM distribution package
     #|  dump           <target> <file> Dump internal structures for debugging
@@ -720,22 +654,6 @@ fn global_usage() -> String {
     #|  -v, --version  Show version
     #|
     #|Run 'moonparse help <command>' for command-specific help.
-  )
-}
-
-///|
-fn generate_types_usage() -> String {
-  (
-    #|Usage: moonparse generate-types <file.grammar> [options]
-    #|
-    #|Generate a type-safe MoonBit CST accessor API from a grammar file.
-    #|
-    #|Options:
-    #|  -o, --output <path>   Write to file (default: stdout)
-    #|  -m, --module <name>   Module name for the generated header
-    #|                        (default: grammar filename without extension)
-    #|  --stdout              Write result to stdout (default when -o is omitted)
-    #|  -h, --help            Show this help
   )
 }
 

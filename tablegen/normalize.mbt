@@ -785,7 +785,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
   }
 
   // 后处理：扫描产生式，为每个非终结符收集字段名（来自 Field / Tagged），
-  // 然后重建 nt_metas，使 field_slots 填充就位，供 runtime 直接读取。
+  // 然后重建 nt_metas，使 field_slots 填充就位，供 runtime 和其他上层工具读取。
   let nt_field_names : Array[Array[String]] = []
   for _ in 0..<ctx.nt_metas.length() {
     nt_field_names.push([])

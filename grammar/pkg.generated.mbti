@@ -24,8 +24,6 @@ pub fn grammar_to_string(Grammar) -> String
 
 pub fn lit(String) -> Pattern
 
-pub let moonbit_grammar : String
-
 pub fn not_(Pattern) -> Pattern
 
 pub fn optional(Pattern) -> Pattern

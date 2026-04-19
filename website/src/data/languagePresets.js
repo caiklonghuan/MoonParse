@@ -82,29 +82,38 @@ rule identifier: /[$A-Za-z_][$0-9A-Za-z_]*/`,
   {
     id: 'c',
     name: 'C',
-    desc: '来自 grammars/c.mbt 的在线同步版，覆盖预处理行、函数定义、声明、do/while、switch 以及位运算和复合赋值。',
+    desc: '来自 grammars/c.mbt 的在线同步版，覆盖 typedef、struct/union/enum 定义、数组、sizeof、强制转换、goto/label 以及完整的表达式优先级。',
     grammar: String.raw`start translation_unit
 extras [/[ \t\n\r]+/, /\/\/[^\n\r]*/, /\/\*([^*]|\*+[^*/])*\*+\//]
+conflicts [[labeled_statement, expression_statement]]
 rule translation_unit: item*
 rule item: preproc_directive | function_definition | declaration
 rule preproc_directive: /#[^\n\r]*/
 rule function_definition: declaration_specifiers declarator compound_statement
 rule declaration: declaration_specifiers init_declarator_list? ";"
 rule declaration_specifiers: declaration_specifier+
-rule declaration_specifier: type_specifier | "const" | "static" | "extern"
-rule type_specifier: "void" | "char" | "short" | "int" | "long" | "float" | "double" | "signed" | "unsigned" | "struct" identifier
+rule declaration_specifier: type_specifier | "const" | "static" | "extern" | "typedef" | "volatile" | "inline" | "register"
+rule type_specifier: "void" | "char" | "short" | "int" | "long" | "float" | "double" | "signed" | "unsigned" | struct_or_union_specifier | enum_specifier
+rule struct_or_union_specifier: ("struct" | "union") identifier "{" struct_field* "}" | ("struct" | "union") "{" struct_field* "}" | ("struct" | "union") identifier
+rule struct_field: declaration_specifiers struct_field_declarator_list ";"
+rule struct_field_declarator_list: declarator ("," declarator)*
+rule enum_specifier: "enum" identifier "{" enumerator_list ","? "}" | "enum" "{" enumerator_list ","? "}" | "enum" identifier
+rule enumerator_list: enumerator ("," enumerator)*
+rule enumerator: identifier ("=" conditional_expression)?
 rule init_declarator_list: init_declarator ("," init_declarator)*
 rule init_declarator: declarator ("=" initializer)?
 rule initializer: assignment_expression | "{" initializer_list ","? "}"
 rule initializer_list: initializer ("," initializer)*
-rule declarator: pointer? identifier function_suffix?
+rule declarator: pointer? identifier declarator_suffix*
+rule declarator_suffix: function_suffix | array_suffix
 rule pointer: "*" pointer?
 rule function_suffix: "(" parameter_list? ")"
+rule array_suffix: "[" expression? "]"
 rule parameter_list: parameter ("," parameter)* ("," "...")?
 rule parameter: declaration_specifiers declarator?
 rule compound_statement: "{" block_item* "}"
 rule block_item: declaration | statement
-rule statement: compound_statement | if_statement | while_statement | do_while_statement | for_statement | switch_statement | return_statement | break_statement | continue_statement | expression_statement
+rule statement: compound_statement | if_statement | while_statement | do_while_statement | for_statement | switch_statement | return_statement | break_statement | continue_statement | goto_statement | labeled_statement | expression_statement
 rule if_statement: "if" "(" expression ")" statement ("else" statement)?
 rule while_statement: "while" "(" expression ")" statement
 rule for_statement: "for" "(" for_init? ";" expression? ";" expression? ")" statement
@@ -118,6 +127,8 @@ rule default_clause: "default" ":"
 rule return_statement: "return" expression? ";"
 rule break_statement: "break" ";"
 rule continue_statement: "continue" ";"
+rule goto_statement: "goto" identifier ";"
+rule labeled_statement: identifier ":" statement
 rule expression_statement: expression? ";"
 rule expression: assignment_expression ("," assignment_expression)*
 rule assignment_expression: unary_expression assignment_operator assignment_expression | conditional_expression
@@ -133,8 +144,10 @@ rule relational_expression: shift_expression (("<" | ">" | "<=" | ">=") shift_ex
 rule shift_expression: additive_expression (("<<" | ">>") additive_expression)*
 rule additive_expression: multiplicative_expression (("+" | "-") multiplicative_expression)*
 rule multiplicative_expression: unary_expression (("*" | "/" | "%") unary_expression)*
-rule unary_expression: postfix_expression | unary_operator unary_expression
+rule unary_expression: postfix_expression | unary_operator unary_expression | sizeof_expression | cast_expression
 rule unary_operator: "&" | "*" | "+" | "-" | "!" | "~" | "++" | "--"
+rule sizeof_expression: "sizeof" unary_expression
+rule cast_expression: "(" type_specifier pointer? ")" unary_expression
 rule postfix_expression: primary_expression postfix_suffix*
 rule postfix_suffix: "(" argument_list? ")" | "[" expression "]" | "." identifier | "->" identifier | "++" | "--"
 rule argument_list: assignment_expression ("," assignment_expression)*
@@ -145,26 +158,33 @@ rule string_literal: /"([^"\\]|\\.)*"/
 rule char_literal: /'([^'\\]|\\.)'/`,
     source: `#include <stdio.h>
 
+typedef unsigned long size_t;
+
+enum Color { RED, GREEN, BLUE };
+
+struct Node {
+  int value;
+  struct Node *next;
+};
+
 static int fib(int n) {
   if (n < 2) return n;
   return fib(n - 1) + fib(n - 2);
 }
 
-int main(int argc, char *argv) {
-  int i = 0;
+int main(int argc, char *argv[]) {
+  struct Node nodes[10];
   int sum = 0;
+  int i = 0;
 
-  do {
-    sum += i;
-    i += 1;
-  } while (i < argc);
+  loop:
+    nodes[i].value = (int)fib(i);
+    sum += nodes[i].value;
+    i++;
+  if (i < argc) goto loop;
 
-  switch (sum) {
-    case 0:
-      return 0;
-    default:
-      return fib(sum & 7);
-  }
+  int s = sizeof(nodes);
+  return s > 0 ? sum : 0;
 }`,
     query: '(function_definition (declarator (identifier) @function))',
     highlightQuery: String.raw`(string_literal) @string
@@ -185,7 +205,15 @@ int main(int argc, char *argv) {
 "const" @keyword
 "static" @keyword
 "extern" @keyword
+"typedef" @keyword
+"volatile" @keyword
+"inline" @keyword
+"register" @keyword
 "struct" @keyword
+"union" @keyword
+"enum" @keyword
+"sizeof" @keyword
+"goto" @keyword
 "if" @keyword
 "else" @keyword
 "while" @keyword

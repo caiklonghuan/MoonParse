@@ -3,7 +3,6 @@ import {
   "caiklonghuan/MoonParse/tablegen" @tablegen,
   "caiklonghuan/MoonParse/runtime" @runtime,
   "caiklonghuan/MoonParse/query" @query,
-  "caiklonghuan/MoonParse/typegen" @typegen,
   "moonbitlang/core/buffer" @buffer,
   "moonbitlang/core/encoding/utf8" @utf8,
   "moonbitlang/core/env" @env,

@@ -1,7 +1,7 @@
 <template>
   <article>
     <h1>API 参考</h1>
-    <p>本页汇总 <code>moonparse.js</code> 对外暴露的核心类、方法和数据结构，覆盖 DSL 文本、解析表 JSON 和结构化 Grammar 对象三类入口。</p>
+    <p>本页汇总 <code>moonparse.js</code> 对外暴露的核心类、方法和数据结构，基于 <code>src/lib/moonparse.js</code> 实际实现。</p>
 
     <h2>loadMoonParse(wasmUrl?)</h2>
     <p>异步加载并实例化 WASM 运行时，返回一个 <code>MoonParseInstance</code>。</p>
@@ -26,48 +26,58 @@ const mp = await loadMoonParse('./moonparse.wasm')</code></pre>
       </tbody>
     </table>
 
-    <h3>mp.createParserFromJson(tableJson)</h3>
-    <p>使用 <code>parser.tableJson()</code> 导出的解析表 JSON 恢复解析器，适合做缓存或预编译加载。</p>
-
-    <h3>mp.createParserFromGrammarObject(grammarObj)</h3>
-    <p>使用结构化 Grammar 对象直接编译解析器。JS 层会先对对象执行 <code>JSON.stringify()</code>，再调用 WASM 的 <code>parser_create_from_grammar_json</code>。这里接受的是 <code>grammar_to_json(grammar)</code> 对应的数据结构，而不是任意自定义 schema。</p>
+    <h3>mp.createParserFromJson(tableJson, builtinId?)</h3>
+    <p>使用 <code>parser.tableJson()</code> 导出的解析表 JSON 恢复解析器，适合做缓存或预编译加载。当提供 <code>builtinId</code> 时，会使用 <code>parser_create_from_json_with_builtin</code> 来关联内置词法规则。</p>
     <table>
       <thead><tr><th>参数</th><th>类型</th><th>说明</th></tr></thead>
       <tbody>
-        <tr><td><code>grammarObj</code></td><td><code>object</code></td><td>与 <code>grammar_to_json</code> 输出同构的 Grammar 对象。</td></tr>
+        <tr><td><code>tableJson</code></td><td><code>string</code></td><td>由 <code>parser.tableJson()</code> 序列化的解析表 JSON。</td></tr>
+        <tr><td><code>builtinId</code></td><td><code>string?</code></td><td>内置文法 ID（如 <code>"json"</code>），默认为 <code>null</code>。</td></tr>
       </tbody>
     </table>
-    <pre><code>const parser = mp.createParserFromGrammarObject({
-  start: "expr",
-  rules: {
-    expr: {
-      name: "expr",
-      is_named: true,
-      is_token: false,
-      params: [],
-      attributes: [],
-      pattern: { type: "Regex", value: "[0-9]+" },
-    },
-  },
-  precedences: [],
-  extras: [],
-  externals: [],
-  word: null,
-  conflicts: [],
-  supertypes: [],
-})</code></pre>
 
-    <h3>mp.validateDsl(dsl)</h3>
-    <p>校验 DSL 是否合法，返回布尔值，不抛异常。</p>
+    <h3>mp.validateGrammarDsl(dsl)</h3>
+    <p>对 DSL 进行语法和语义校验，返回 <code>Diagnostic[]</code> 错误数组，合法时返回空数组。不抛异常，适合用于编辑器实时反馈。每条诊断对象包含 <code>rule</code>（相关规则名）和 <code>message</code>（错误描述）字段。</p>
+    <table>
+      <thead><tr><th>参数</th><th>类型</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>dsl</code></td><td><code>string</code></td><td>待校验的文法 DSL 源码。</td></tr>
+      </tbody>
+    </table>
+    <pre><code>// 返回示例（有错误时）
+[{ "rule": "expr", "message": "undefined rule: expr" }]</code></pre>
 
     <h3>mp.compileQuery(pattern)</h3>
     <p>编译查询模式并返回 <code>MoonQuery</code>。如果模式语法错误会抛出异常，用完后应调用 <code>q.free()</code>。</p>
 
     <h3>mp.highlightNames()</h3>
-    <p>返回内置高亮查询支持的捕获名列表，例如 <code>string</code>、<code>number</code>、<code>keyword</code> 等。</p>
+    <p>返回内置高亮查询支持的捕获名列表（<code>string[]</code>），例如 <code>"string"</code>、<code>"number"</code>、<code>"keyword"</code> 等。</p>
+
+    <h3>mp.builtinGrammars()</h3>
+    <p>返回内置文法字典 <code>Record&lt;string, string&gt;</code>，键为文法 ID（如 <code>"json"</code>、<code>"moonbit"</code>），值为对应 DSL 源码。可用于列举可用语言或恢复预编译解析器。</p>
+    <pre><code>const grammars = mp.builtinGrammars()
+// { "json": "start value\n...", "moonbit": "...", ... }</code></pre>
+
+    <h3>mp.setParseConfig(cfg)</h3>
+    <p>调整解析器的容错代价参数，影响错误恢复行为。所有字段均可选，省略时沿用 WASM 内部默认值（传 <code>-1</code> 表示不更新）。</p>
+    <table>
+      <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>error_cost_per_skipped_tree</code></td><td><code>number?</code></td><td>跳过一棵子树的代价。</td></tr>
+        <tr><td><code>error_cost_per_skipped_char</code></td><td><code>number?</code></td><td>跳过一个字符的代价。</td></tr>
+        <tr><td><code>error_cost_per_skipped_line</code></td><td><code>number?</code></td><td>跳过一行的代价。</td></tr>
+        <tr><td><code>error_cost_per_missing_tree</code></td><td><code>number?</code></td><td>插入缺失节点的代价。</td></tr>
+        <tr><td><code>error_cost_per_recovery</code></td><td><code>number?</code></td><td>进行一次错误恢复的代价。</td></tr>
+        <tr><td><code>max_version_count</code></td><td><code>number?</code></td><td>GLR 解析版本数上限。</td></tr>
+        <tr><td><code>max_version_count_overflow</code></td><td><code>number?</code></td><td>GLR 版本溢出时允许的额外数量。</td></tr>
+      </tbody>
+    </table>
+
+    <h3>mp.resetParseConfig()</h3>
+    <p>将解析代价配置重置为 WASM 内部默认值，等价于撤销所有 <code>setParseConfig()</code> 的修改。</p>
 
     <h3>mp.version()</h3>
-    <p>返回当前运行时版本号，例如 <code>"0.1.0"</code>。</p>
+    <p>返回当前运行时版本号字符串，例如 <code>"0.1.0"</code>。</p>
 
     <h2>MoonParser</h2>
     <p>编译好的文法解析器，由 <code>mp.createParser()</code>、<code>mp.createParserFromJson()</code> 或 <code>mp.createParserFromGrammarObject()</code> 创建。</p>
@@ -82,7 +92,7 @@ const mp = await loadMoonParse('./moonparse.wasm')</code></pre>
     </table>
 
     <h3>parser.parseIncremental(source, oldTree, edit)</h3>
-    <p>执行增量重新解析。MoonParse 会复用 <code>oldTree</code> 中未受修改影响的子树，并返回一棵新的 <code>ParseTree</code>。旧树不会被自动释放，需要调用方自行管理。</p>
+    <p>执行增量重新解析。MoonParse 会复用 <code>oldTree</code> 中未受修改影响的子树，并返回一棵新的 <code>ParseTree</code>。<strong>调用完成后 <code>oldTree</code> 的 WASM 句柄会被置为 <code>-1</code>（失效），调用方不应再继续使用该对象。</strong></p>
     <table>
       <thead><tr><th>参数</th><th>类型</th><th>说明</th></tr></thead>
       <tbody>
@@ -131,9 +141,16 @@ const mp = await loadMoonParse('./moonparse.wasm')</code></pre>
     <p>一次性查询辅助方法：内部会编译模式、执行查询并释放编译结果，最后返回 <code>CaptureResult[]</code>。高频场景建议改用 <code>mp.compileQuery()</code> 复用查询对象。</p>
 
     <h3>tree.highlight(hlQuery, locsQuery?)</h3>
-    <p>执行高亮查询，返回 <code>HighlightRange[]</code>。可选的 <code>locsQuery</code> 用于限制高亮范围。</p>
+    <p>执行高亮查询，返回 <code>HighlightRange[]</code>。<code>hlQuery</code> 是高亮捕获查询，<code>locsQuery</code> 是可选的 locals 作用域查询（用于区分定义与引用）。两者均为 <code>MoonQuery</code> 对象，需提前通过 <code>mp.compileQuery()</code> 创建。</p>
+    <table>
+      <thead><tr><th>参数</th><th>类型</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>hlQuery</code></td><td><code>MoonQuery</code></td><td>包含 <code>@highlight.*</code> 捕获的高亮查询。</td></tr>
+        <tr><td><code>locsQuery</code></td><td><code>MoonQuery?</code></td><td>包含 <code>@local.*</code> 捕获的 locals 查询，可省略。</td></tr>
+      </tbody>
+    </table>
     <pre><code>{
-  highlight: string,
+  highlight: string,   // 捕获名，例如 "keyword"、"string"
   start_byte: number,
   end_byte: number,
   start_row: number,

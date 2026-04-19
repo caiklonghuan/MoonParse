@@ -48,6 +48,16 @@ const routes = [
     component: () => import('@/views/docs/DocsView.vue'),
   },
   {
+    path: '/docs/query/:page?',
+    name: 'docs-query',
+    component: () => import('@/views/docs/DocsView.vue'),
+  },
+  {
+    path: '/docs/wasm/:page?',
+    name: 'docs-wasm',
+    component: () => import('@/views/docs/DocsView.vue'),
+  },
+  {
     path: '/docs/:section?',
     name: 'docs',
     component: () => import('@/views/docs/DocsView.vue'),

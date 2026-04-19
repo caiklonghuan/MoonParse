@@ -110,8 +110,13 @@ let global_parse_config : Array[@runtime.ParseConfig] = [
 ///|
 fn parser_scanner_kind_from_dsl(dsl : String) -> ParserScannerKind {
   if dsl.contains("externals [indent dedent newline]") &&
-    dsl.contains(
-      "rule suite: simple_statement | newline indent statement+ dedent",
+    (
+      dsl.contains(
+        "rule suite: simple_statement | newline indent statement+ dedent",
+      ) ||
+      dsl.contains(
+        "rule suite: simple_statement | newline indent newline* statement* simple_statement? dedent",
+      )
     ) {
     ParserScannerKind::PythonIndent
   } else {

@@ -73,7 +73,40 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 function onSourceChange(val) { sourceCode.value = val }
 function onEdit(inputEdit)   { triggerEdit(inputEdit) }
 
+function clearSourceHighlight() {
+  editorPanelRef.value?.clearHighlight?.()
+}
+
+function shouldKeepSourceHighlight(target) {
+  if (!(target instanceof Element)) {
+    return false
+  }
+  return Boolean(target.closest('.tree-node') || target.closest('.query-result'))
+}
+
+function onPlaygroundPointerDown(event) {
+  if (shouldKeepSourceHighlight(event.target)) {
+    return
+  }
+  clearSourceHighlight()
+}
+
+function applyCustomPreset() {
+  grammarDsl.value = ''
+  sourceCode.value = ''
+  queryPattern.value = ''
+  querySuggestion.value = ''
+  hlQueryStr.value = ''
+  mobileTab.value = 0
+  clearSourceHighlight()
+}
+
 function applyPreset(id) {
+  if (id === 'custom') {
+    applyCustomPreset()
+    return
+  }
+
   const preset = BUILTIN_LANGUAGE_PRESETS.find((item) => item.id === id)
   if (!preset) return
   grammarDsl.value = preset.grammar
@@ -82,7 +115,7 @@ function applyPreset(id) {
   querySuggestion.value = preset.query ?? ''
   hlQueryStr.value = preset.highlightQuery ?? ''
   mobileTab.value = 0
-  editorPanelRef.value?.clearHighlight?.()
+  clearSourceHighlight()
 }
 
 function onPresetChange(event) {
@@ -117,7 +150,7 @@ useKeyboard({
 </script>
 
 <template>
-  <div class="playground">
+  <div class="playground" @pointerdown.capture="onPlaygroundPointerDown">
     <div v-if="loading" class="playground-loading">
       <span class="spinner" />
       <span>正在加载 MoonParse WASM…</span>

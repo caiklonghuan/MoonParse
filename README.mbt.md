@@ -54,7 +54,7 @@ MoonParse 提供四种直接可用的入口：MoonBit 根包 API、通过 `moon 
 
 根包 `caiklonghuan/MoonParse` 暴露的是高层可直接调用的入口：既可以从 DSL 生成 ParseTable JSON，也可以直接调用内置语法入口。
 
-```moonbit
+```moonbit nocheck
 import "caiklonghuan/MoonParse" @moonparse
 
 let dsl =
@@ -191,7 +191,6 @@ console.log(tree.root.type)
 - `wasm/`：Parser / Tree / Cursor / Query 句柄、JSON / bytes / base64 restore、宿主桥接。
 - `cmd/`：统一命令行入口，仓库内通过 `moon run cmd/main --` 调用，包括 `check`、`fmt`、`generate`、`parse`、`query`、`test`、`wasm` 等命令。
 - `scripts/`：fuzz、mutation、增量一致性验证、parse / incremental / serialize benchmark。
-- `typegen/`：类型安全 CST 访问器生成相关代码。
 - `website/`：文档站、在线 playground、预编译表和浏览器侧胶水。
 
 ## 设计概览
@@ -249,7 +248,6 @@ Grammar DSL / Builder API
 | `cmd/`      | 命令行编排层     | 文件、stdin、参数                  | 诊断、ParseTable 产物、查询输出     |
 | `scripts/`  | 开发验证层       | 内置语法、随机种子、样本输入       | fuzz / mutation / benchmark 结果    |
 | `website/`  | 文档与在线集成层 | wasm、预编译表、示例 grammar       | docs、playground、浏览器胶水        |
-| `typegen/`  | 类型化访问器生成 | grammar 形状信息                   | 类型安全 CST 访问器代码             |
 
 这套边界的关键点是：
 
@@ -262,7 +260,7 @@ Grammar DSL / Builder API
 
 #### 1. Grammar 是单一真相来源
 
-MoonParse 不把 grammar、runtime、highlight 视为互不相干的三套配置。Grammar 是生成链路的起点；内置语法、website 预编译表、query 示例和类型化访问器都围绕 grammar 展开。
+MoonParse 不把 grammar、runtime、highlight 视为互不相干的三套配置。Grammar 是生成链路的起点；内置语法、website 预编译表和 query 示例都围绕 grammar 展开。
 
 #### 2. 建表选 LALR，运行时选 GLR
 
