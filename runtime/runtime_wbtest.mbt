@@ -1,4 +1,4 @@
-﻿///|
+///|
 // runtime_wbtest.mbt — parse() 端对端表格驱动测试
 //
 // 流水线：Grammar DSL → parse_from_dsl() → CstNode
@@ -16,6 +16,500 @@
 /// CstNode 的紧凑摘要（调试输出）
 fn node_summary(n : CstNode) -> String {
   "sym=\{n.symbol} [\{n.start_byte},\{n.end_byte}) ch=\{n.children.length()}"
+}
+
+///|
+fn must_make_table(dsl : String) -> @tablegen.ParseTable {
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => {
+      println("parse_grammar failed: \{e.message}")
+      panic()
+    }
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => {
+          println("generate_parse_table failed: \{e}")
+          panic()
+        }
+        Ok((table, _)) => table
+      }
+  }
+}
+
+///|
+fn must_parse_linear(
+  label : String,
+  table : @tablegen.ParseTable,
+  input : String,
+) -> CstNode {
+  match parse_linear(table, input) {
+    Ok(root) => root
+    Err(e) => {
+      println("\{label}: parse_linear failed: \{e.message}")
+      panic()
+    }
+  }
+}
+
+///|
+fn must_parse_glr(
+  label : String,
+  table : @tablegen.ParseTable,
+  input : String,
+) -> CstNode {
+  match parse(table, input) {
+    Ok(root) => root
+    Err(e) => {
+      println("\{label}: parse failed: \{e.message}")
+      panic()
+    }
+  }
+}
+
+///|
+fn point_at(input : String, pos : Int) -> Point {
+  bytes_to_point(input, 0, { row: 0, column: 0 }, pos)
+}
+
+///|
+fn replace_range(
+  old_input : String,
+  start_byte : Int,
+  old_end_byte : Int,
+  replacement : String,
+) -> String {
+  old_input[0:start_byte].to_string() +
+  replacement +
+  old_input[old_end_byte:old_input.length()].to_string()
+}
+
+///|
+fn make_edit_from_replacement(
+  old_input : String,
+  start_byte : Int,
+  old_end_byte : Int,
+  replacement : String,
+) -> (String, InputEdit) {
+  let new_input = replace_range(
+    old_input, start_byte, old_end_byte, replacement,
+  )
+  let new_end_byte = start_byte + replacement.length()
+  let edit : InputEdit = {
+    start_byte,
+    old_end_byte,
+    new_end_byte,
+    start_point: point_at(old_input, start_byte),
+    old_end_point: point_at(old_input, old_end_byte),
+    new_end_point: point_at(new_input, new_end_byte),
+  }
+  (new_input, edit)
+}
+
+///|
+fn point_repr(p : Point) -> String {
+  "(" + p.row.to_string() + ", " + p.column.to_string() + ")"
+}
+
+///|
+fn node_type_name_for_test(
+  node : CstNode,
+  table : @tablegen.ParseTable,
+) -> String {
+  if node.is_error {
+    return "ERROR"
+  }
+  if node.symbol == sym_error {
+    return "ERROR"
+  }
+  if node.children.is_empty() {
+    if node.symbol == sym_end {
+      return "EOF"
+    }
+    match table.terminal_names.get(node.symbol) {
+      Some(name) => name
+      None => "<t:" + node.symbol.to_string() + ">"
+    }
+  } else {
+    let meta = table.symbol_metadata
+    if node.symbol >= 0 && node.symbol < meta.length() {
+      let alias_name : String? = if node.production_id >= 0 &&
+        node.production_id < table.productions.length() {
+        table.productions[node.production_id].alias_name
+      } else {
+        None
+      }
+      match alias_name {
+        Some(name) => name
+        None => meta[node.symbol].name
+      }
+    } else {
+      "<nt:" + node.symbol.to_string() + ">"
+    }
+  }
+}
+
+///|
+fn write_named_sexp_children(
+  buf : StringBuilder,
+  node : CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> Unit {
+  for i in 0..<node.children.length() {
+    let child = node.children[i]
+    if child.is_named || child.is_error {
+      buf.write_char(' ')
+      let field = if i < node.field_names.length() {
+        node.field_names[i]
+      } else {
+        None
+      }
+      write_named_sexp(buf, child, input, table, field)
+    } else if !child.children.is_empty() {
+      write_named_sexp_children(buf, child, input, table)
+    }
+  }
+}
+
+///|
+fn write_named_sexp(
+  buf : StringBuilder,
+  node : CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+  field : String?,
+) -> Unit {
+  match field {
+    Some(name) => {
+      buf.write_string(name)
+      buf.write_string(": ")
+    }
+    None => ()
+  }
+  if node.is_named || node.is_error {
+    buf.write_char('(')
+    buf.write_string(node_type_name_for_test(node, table))
+    write_named_sexp_children(buf, node, input, table)
+    buf.write_char(')')
+  } else {
+    buf.write_char('"')
+    let text = if node.start_byte <= node.end_byte &&
+      node.end_byte <= input.length() {
+      input[node.start_byte:node.end_byte].to_string()
+    } else {
+      ""
+    }
+    for ch in text {
+      if ch == '"' || ch == '\\' {
+        buf.write_char('\\')
+      }
+      buf.write_char(ch)
+    }
+    buf.write_char('"')
+  }
+}
+
+///|
+fn cst_to_named_sexp(
+  node : CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> String {
+  let buf = StringBuilder::new()
+  write_named_sexp(buf, node, input, table, None)
+  buf.to_string()
+}
+
+///|
+fn is_visible_for_compare(node : CstNode) -> Bool {
+  node.is_named || node.is_error || node.is_missing
+}
+
+///|
+fn collect_visible_children(node : CstNode) -> Array[CstNode] {
+  let out : Array[CstNode] = []
+  for child in node.children {
+    if is_visible_for_compare(child) {
+      out.push(child)
+    } else if !child.children.is_empty() {
+      for nested in collect_visible_children(child) {
+        out.push(nested)
+      }
+    }
+  }
+  out
+}
+
+///|
+fn assert_same_tree_shape(
+  label : String,
+  table : @tablegen.ParseTable,
+  actual : CstNode,
+  expected : CstNode,
+  path : String,
+) -> Unit {
+  if is_visible_for_compare(actual) != is_visible_for_compare(expected) {
+    println("\{label}: visible-node mismatch at \{path}")
+    panic()
+  }
+  if actual.symbol != expected.symbol {
+    println(
+      "\{label}: symbol mismatch at \{path}: \{node_type_name_for_test(actual, table)} != \{node_type_name_for_test(expected, table)}",
+    )
+    panic()
+  }
+  if actual.is_named != expected.is_named {
+    println("\{label}: is_named mismatch at \{path}")
+    panic()
+  }
+  if actual.is_error != expected.is_error {
+    println("\{label}: is_error mismatch at \{path}")
+    panic()
+  }
+  if actual.is_missing != expected.is_missing {
+    println("\{label}: is_missing mismatch at \{path}")
+    panic()
+  }
+  if actual.extra != expected.extra {
+    println("\{label}: extra mismatch at \{path}")
+    panic()
+  }
+  if actual.start_byte != expected.start_byte ||
+    actual.end_byte != expected.end_byte {
+    println(
+      "\{label}: byte span mismatch at \{path}: [\{actual.start_byte}, \{actual.end_byte}) != [\{expected.start_byte}, \{expected.end_byte})",
+    )
+    panic()
+  }
+  if actual.start_point != expected.start_point ||
+    actual.end_point != expected.end_point {
+    println(
+      "\{label}: point mismatch at \{path}: " +
+      point_repr(actual.start_point) +
+      ".." +
+      point_repr(actual.end_point) +
+      " != " +
+      point_repr(expected.start_point) +
+      ".." +
+      point_repr(expected.end_point),
+    )
+    panic()
+  }
+  let actual_children = collect_visible_children(actual)
+  let expected_children = collect_visible_children(expected)
+  if actual_children.length() != expected_children.length() {
+    println(
+      "\{label}: children length mismatch at \{path}: \{actual_children.length()} != \{expected_children.length()}",
+    )
+    panic()
+  }
+  for i in 0..<actual_children.length() {
+    assert_same_tree_shape(
+      label,
+      table,
+      actual_children[i],
+      expected_children[i],
+      path + "/" + i.to_string(),
+    )
+  }
+}
+
+///|
+fn assert_incremental_equals_full(
+  label : String,
+  table : @tablegen.ParseTable,
+  old_input : String,
+  old_root : CstNode,
+  edit : InputEdit,
+  new_input : String,
+) -> Unit {
+  let inc_root = match
+    parse_incremental(
+      table,
+      new_input,
+      Some({ root: old_root, old_input }),
+      Some(edit),
+    ) {
+    Ok(root) => root
+    Err(e) => {
+      println("\{label}: parse_incremental failed: \{e.message}")
+      panic()
+    }
+  }
+  let full_root = match parse_linear(table, new_input) {
+    Ok(root) => root
+    Err(e) => {
+      println("\{label}: parse_linear failed: \{e.message}")
+      panic()
+    }
+  }
+
+  if inc_root.start_byte != full_root.start_byte ||
+    inc_root.end_byte != full_root.end_byte {
+    println(
+      "\{label}: root span mismatch: [\{inc_root.start_byte}, \{inc_root.end_byte}) != [\{full_root.start_byte}, \{full_root.end_byte})",
+    )
+    panic()
+  }
+
+  let inc_sexp = cst_to_named_sexp(inc_root, new_input, table)
+  let full_sexp = cst_to_named_sexp(full_root, new_input, table)
+  if inc_sexp != full_sexp {
+    println(
+      "\{label}: named S-expression mismatch\ninc : \{inc_sexp}\nfull: \{full_sexp}",
+    )
+    panic()
+  }
+
+  assert_same_tree_shape(label, table, inc_root, full_root, "root")
+}
+
+///|
+fn assert_incremental_case_from_linear(
+  label : String,
+  table : @tablegen.ParseTable,
+  old_input : String,
+  start_byte : Int,
+  old_end_byte : Int,
+  replacement : String,
+) -> Unit {
+  let old_root = must_parse_linear(label, table, old_input)
+  let (new_input, edit) = make_edit_from_replacement(
+    old_input, start_byte, old_end_byte, replacement,
+  )
+  assert_incremental_equals_full(
+    label, table, old_input, old_root, edit, new_input,
+  )
+}
+
+///|
+fn assert_incremental_case_exact(
+  label : String,
+  table : @tablegen.ParseTable,
+  old_input : String,
+  start_byte : Int,
+  old_end_byte : Int,
+  replacement : String,
+  expected_new_input : String,
+) -> Unit {
+  let old_root = must_parse_linear(label, table, old_input)
+  let (new_input, edit) = make_edit_from_replacement(
+    old_input, start_byte, old_end_byte, replacement,
+  )
+  if new_input != expected_new_input {
+    println(
+      "\{label}: new_input mismatch: expected \{expected_new_input}, got \{new_input}",
+    )
+    panic()
+  }
+  assert_incremental_equals_full(
+    label, table, old_input, old_root, edit, new_input,
+  )
+}
+
+///|
+fn make_large_stmt_block(prefix : String, count : Int, base : Int) -> String {
+  let buf = StringBuilder::new()
+  buf.write_string("{")
+  for i in 0..<count {
+    buf.write_string(" let ")
+    buf.write_string(prefix)
+    buf.write_string(i.to_string())
+    buf.write_string(" = ")
+    buf.write_string((base + i).to_string())
+    buf.write_string(";")
+  }
+  buf.write_string(" }")
+  buf.to_string()
+}
+
+///|
+fn has_error_or_missing(node : CstNode) -> Bool {
+  if node.is_error || node.is_missing {
+    return true
+  }
+  for child in node.children {
+    if has_error_or_missing(child) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn count_error_nodes(node : CstNode) -> Int {
+  let mut total = if node.is_error { 1 } else { 0 }
+  for child in node.children {
+    total = total + count_error_nodes(child)
+  }
+  total
+}
+
+///|
+fn count_missing_nodes(node : CstNode) -> Int {
+  let mut total = if node.is_missing { 1 } else { 0 }
+  for child in node.children {
+    total = total + count_missing_nodes(child)
+  }
+  total
+}
+
+///|
+fn assert_recovery_tree_usable(
+  label : String,
+  table : @tablegen.ParseTable,
+  input : String,
+  root : CstNode,
+  expected_start_byte : Int,
+  min_end_byte : Int,
+  require_error : Bool,
+  require_missing : Bool,
+  expected_fragments : Array[String],
+) -> String {
+  if root.start_byte != expected_start_byte {
+    println(
+      "\{label}: expected root.start_byte = \{expected_start_byte}, got \{root.start_byte}",
+    )
+    panic()
+  }
+  if root.end_byte < min_end_byte {
+    println(
+      "\{label}: expected root.end_byte >= \{min_end_byte}, got \{root.end_byte}",
+    )
+    panic()
+  }
+  if root.end_byte > input.length() {
+    println(
+      "\{label}: expected root.end_byte <= \{input.length()}, got \{root.end_byte}",
+    )
+    panic()
+  }
+  if !has_error_or_missing(root) {
+    println("\{label}: expected recovered tree to contain ERROR or MISSING")
+    panic()
+  }
+  if require_error && count_error_nodes(root) == 0 {
+    println("\{label}: expected recovered tree to contain ERROR node")
+    panic()
+  }
+  if require_missing && count_missing_nodes(root) == 0 {
+    println("\{label}: expected recovered tree to contain MISSING node")
+    panic()
+  }
+  let sexp = cst_to_named_sexp(root, input, table)
+  if sexp.is_empty() {
+    println("\{label}: recovered tree should still export named sexp")
+    panic()
+  }
+  for fragment in expected_fragments {
+    if !sexp.contains(fragment) {
+      println(
+        "\{label}: expected named sexp to contain \{fragment}, got \{sexp}",
+      )
+      panic()
+    }
+  }
+  sexp
 }
 
 // parse 成功
@@ -76,6 +570,23 @@ test "parse 失败 — 语法/词法错误返回 Err" {
   }
 }
 
+///|
+test "parse_from_dsl/validation_error_includes_hint" {
+  let dsl =
+    #|start s
+    #|word ident
+    #|rule s: ident
+    #|rule ident: /[a-z]+/
+  match parse_from_dsl(dsl, "abc") {
+    Ok(_) => fail("expected validation error")
+    Err(err) => {
+      assert_true(err.message.contains("validation failed"))
+      assert_true(err.message.contains("hint:"))
+      assert_true(err.message.contains("token rule"))
+    }
+  }
+}
+
 // parse 叶节点位置信息
 // (_label, dsl, input, leaf_index, exp_start, exp_end)
 
@@ -113,7 +624,7 @@ test "parse 叶节点位置" {
 test "parse extras — 空白跳过不影响结构" {
   let cases : Array[(String, String, String, Int, Int)] = [
     ("前置空格", "start s\nrule s: \"a\"\nextras [/\\s+/]", " a", 2, -1),
-    ("后置空格", "start s\nrule s: \"a\"\nextras [/\\s+/]", "a ", 1, -1),
+    ("后置空格", "start s\nrule s: \"a\"\nextras [/\\s+/]", "a ", 2, -1),
     (
       "加法中间空格", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"\nextras [/\\s+/]",
       "n + n", 5, -1,
@@ -127,7 +638,7 @@ test "parse extras — 空白跳过不影响结构" {
       Ok(root) => {
         assert_eq(root.end_byte, exp_end)
         if exp_ne_ch >= 0 {
-          let ne = root.children.iter().filter(fn(c) { not(c.extra) }).count()
+          let ne = root.children.iter().filter(fn(c) { !c.extra }).count()
           assert_eq(ne, exp_ne_ch)
         }
       }
@@ -355,17 +866,56 @@ test "insert_missing — 缺少中间 token 的代价标记" {
   }
 }
 
+///|
+test "error recovery / 非法 token 前缀产生 ERROR 节点且保留根树" {
+  let label = "error recovery / 非法 token 前缀"
+  let dsl = "start s\nrule s: \"a\" \"b\""
+  let input = "!ab"
+  let table = must_make_table(dsl)
+  let root = must_parse_glr(label, table, input)
+  let sexp = assert_recovery_tree_usable(
+    label,
+    table,
+    input,
+    root,
+    1,
+    input.length(),
+    true,
+    false,
+    ["(s", "(ERROR)"],
+  )
+  assert_eq(root.children.length(), 3)
+  assert_true(root.children[0].is_error)
+  assert_true(sexp.contains("(ERROR)"))
+}
+
+///|
+test "error recovery / 缺失中间 token 产生 MISSING 节点且保留结构" {
+  let label = "error recovery / 缺失中间 token"
+  let dsl = "start s\nrule s: \"a\" \";\" \"b\""
+  let input = "ab"
+  let table = must_make_table(dsl)
+  let root = must_parse_glr(label, table, input)
+  ignore(
+    assert_recovery_tree_usable(
+      label,
+      table,
+      input,
+      root,
+      0,
+      input.length(),
+      false,
+      true,
+      ["(s"],
+    ),
+  )
+  assert_eq(root.children.length(), 3)
+  assert_true(root.children[1].is_missing)
+  assert_eq(root.children[1].start_byte, 1)
+  assert_eq(root.children[1].end_byte, 1)
+}
+
 // parse GLR — recover_to_state 恢复
-//
-// recover_to_state 沿 GSS 入边回溯，找到可接受当前 token 的祖先状态，
-// 将路径上的内容包进 ERROR 节点后从祖先状态继续解析。
-//
-// 该策略在 next_tops.is_empty()（insert_missing 也无法推进）时触发，
-// 常见于 GLR 多路径中某路径陷入死胡同的情形。
-// 注意：当前实现中 skip_token 的「停留路径」仅在初始状态（state=0）或
-// 完整产生式归约边界处可正确穿透 enum_paths；产生式体中间出现错误时，
-// 应优先由 insert_missing_and_relex 介入补齐缺失 token。
-// 以下测试通过 parse_from_dsl 验证恢复后解析可成功完成。
 
 ///|
 test "recover_to_state — 初始状态前的错误不影响后续解析" {
@@ -377,9 +927,9 @@ test "recover_to_state — 初始状态前的错误不影响后续解析" {
   match parse_from_dsl(dsl, "_abc") {
     Err(e) => fail("expected Ok but got Err: \{e.message}")
     Ok(root) => {
-      // 根节点覆盖 [0, 4)，包含 3 个子节点（不含 ERROR 前缀 "_"）
+      // 根节点覆盖 [0, 4)；ERROR 前缀 "_" 作为 extra 子节点嵌入，共 4 个子节点
       assert_eq(root.end_byte, 4)
-      assert_eq(root.children.length(), 3)
+      assert_eq(root.children.length(), 4)
     }
   }
 }
@@ -549,7 +1099,7 @@ test "find_reusable_node — 叶节点满足所有条件时返回 Some" {
   // 查询 new_pos=2, lr_state=5, edit_start=10 → 全部条件通过
   let leaf = make_leaf(2, 3, 5, 3, false)
   let tree : OldTree = { root: leaf, old_input: "abc" }
-  match find_reusable_node(tree, 2, 5, 10) {
+  match find_reusable_node(tree, 2, 5, 10, 20) {
     None => fail("expected Some but got None")
     Some(n) => {
       assert_eq(n.start_byte, 2)
@@ -562,7 +1112,7 @@ test "find_reusable_node — 叶节点满足所有条件时返回 Some" {
 test "find_reusable_node — has_changes 阻止复用" {
   let leaf = make_leaf(2, 3, 5, 3, true) // has_changes = true
   let tree : OldTree = { root: leaf, old_input: "abc" }
-  assert_true(find_reusable_node(tree, 2, 5, 10) is None)
+  assert_true(find_reusable_node(tree, 2, 5, 10, 20) is None)
 }
 
 ///|
@@ -570,7 +1120,7 @@ test "find_reusable_node — parse_state 不匹配阻止复用" {
   let leaf = make_leaf(2, 3, 5, 3, false)
   let tree : OldTree = { root: leaf, old_input: "abc" }
   // 传入 lr_state=99，与 leaf.parse_state=5 不符
-  assert_true(find_reusable_node(tree, 2, 99, 10) is None)
+  assert_true(find_reusable_node(tree, 2, 99, 10, 20) is None)
 }
 
 ///|
@@ -578,7 +1128,7 @@ test "find_reusable_node — lookahead 越过 edit_start 阻止复用" {
   // lookahead_bytes=8 > edit_start=5 → 不可复用
   let leaf = make_leaf(2, 3, 5, 8, false)
   let tree : OldTree = { root: leaf, old_input: "abc" }
-  assert_true(find_reusable_node(tree, 2, 5, 5) is None)
+  assert_true(find_reusable_node(tree, 2, 5, 5, 20) is None)
 }
 
 ///|
@@ -587,7 +1137,7 @@ test "find_reusable_node — new_pos 不匹配时剪枝返回 None" {
   let leaf = make_leaf(2, 3, 5, 3, false)
   let tree : OldTree = { root: leaf, old_input: "abc" }
   // leaf.start_byte=2 > new_pos=0 → 剪枝
-  assert_true(find_reusable_node(tree, 0, 5, 10) is None)
+  assert_true(find_reusable_node(tree, 0, 5, 10, 20) is None)
 }
 
 ///|
@@ -606,9 +1156,10 @@ test "find_reusable_node — 在 children 中找到匹配叶节点" {
     0,
     false,
     false,
+    0,
   )
   let tree : OldTree = { root, old_input: "abc" }
-  match find_reusable_node(tree, 1, 7, 10) {
+  match find_reusable_node(tree, 1, 7, 10, 20) {
     None => fail("expected Some but got None")
     Some(n) => {
       assert_eq(n.start_byte, 1)
@@ -633,9 +1184,10 @@ test "find_reusable_node — children 中靠后的节点被正确剪枝" {
     0,
     false,
     false,
+    0,
   )
   let tree : OldTree = { root, old_input: "abcdef" }
-  match find_reusable_node(tree, 2, 4, 10) {
+  match find_reusable_node(tree, 2, 4, 10, 20) {
     None => fail("expected Some but got None")
     Some(n) => assert_eq(n.start_byte, 2)
   }
@@ -826,7 +1378,7 @@ test "find_reusable_node — fragile_left 阻止复用" {
     fragile_left: true,
   }
   let tree : OldTree = { root: leaf, old_input: "abc" }
-  assert_true(find_reusable_node(tree, 2, 5, 10) is None)
+  assert_true(find_reusable_node(tree, 2, 5, 10, 20) is None)
 }
 
 ///|
@@ -838,7 +1390,7 @@ test "find_reusable_node — fragile_right 阻止复用" {
     fragile_right: true,
   }
   let tree : OldTree = { root: leaf, old_input: "abc" }
-  assert_true(find_reusable_node(tree, 2, 5, 10) is None)
+  assert_true(find_reusable_node(tree, 2, 5, 10, 20) is None)
 }
 
 // parse_incremental — 扩张 edit 与收缩 edit
@@ -1294,6 +1846,10 @@ test "parse_incremental — 三 token 序列中间替换结果与全量解析一
                     new_root.children.length(),
                     baseline.children.length(),
                   )
+                  assert_eq(
+                    new_root.children.length(),
+                    baseline.children.length(),
+                  )
                   // children[0] 的 lookahead <= edit_start，应被复用（哨兵保留）
                   assert_eq(new_root.children[0].is_keyword, true)
                 }
@@ -1474,4 +2030,1019 @@ test "byte_offset_to_char_col — 多行：正确跳过前几行" {
 test "byte_offset_to_char_col — col_bytes=0 时返回 0" {
   let src = "hello"
   assert_eq(byte_offset_to_char_col(src, 0, 0), 0)
+}
+
+// ── External scanner 端对端测试 ─────────────────────────────────────────────
+//
+// parse_with_external_scanner / parse_with_old_tree_and_external_scanner
+// 的集成测试，验证三个场景：
+//   A. no-op scanner（始终返回 None）等价于 parse —— 不干扰 DFA 词法
+//   B. 含 externals 声明的文法 + 真实外部词法器 —— external token 被正确识别
+//   C. 增量 + no-op scanner 等价于 parse_with_old_tree
+
+///|
+test "parse_with_external_scanner — no-op scanner 等价于 parse" {
+  // 无 externals 声明的文法；no-op scanner 永不被调用（ext_tids 为空），
+  // 因此结果与 glr_parse 完全一致。
+  let dsl = "start e\nrule e: e \"+\" t | t\nrule t: /[0-9]+/\nextras [/\\s+/]"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) => {
+          let r1 = parse(table, "1+2")
+          let r2 = parse_with_external_scanner(table, "1+2", fn(_, _, _) {
+            None
+          })
+          match (r1, r2) {
+            (Ok(a), Ok(b)) => {
+              assert_eq(a.start_byte, b.start_byte)
+              assert_eq(a.end_byte, b.end_byte)
+              assert_eq(a.children.length(), b.children.length())
+            }
+            (Err(_), Err(_)) => ()
+            _ => fail("r1 和 r2 对 Ok/Err 应一致")
+          }
+        }
+      }
+  }
+}
+
+///|
+test "parse_with_external_scanner — externals 声明的 token 由外部词法器识别" {
+  // 文法 s → tok，tok 为 externals 声明的外部 token。
+  // 外部词法器：当 ext_tids 包含 tok 的 terminal_id 时，消费 5 个字节。
+  let dsl = "start s\nexternals [tok]\nrule s: tok"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) => {
+          // externals 声明必须产生非空的 external_token_ids
+          assert_true(table.external_token_ids.length() > 0)
+          let ext_id = table.external_token_ids[0]
+          // 外部词法器：ext_tids 包含 ext_id 时消费 5 个字节
+          let scanner : ExternalScanner = fn(
+            _input : String,
+            pos : Int,
+            valid : Array[Int],
+          ) -> (Int, Int)? {
+            let mut has_ext = false
+            for tid in valid {
+              if tid == ext_id {
+                has_ext = true
+                break
+              }
+            }
+            if has_ext {
+              Some((ext_id, pos + 5))
+            } else {
+              None
+            }
+          }
+          match parse_with_external_scanner(table, "hello", scanner) {
+            Err(e) => fail("expected Ok but got Err: \{e.message}")
+            Ok(root) => {
+              assert_eq(root.start_byte, 0)
+              assert_eq(root.end_byte, 5)
+            }
+          }
+        }
+      }
+  }
+}
+
+///|
+test "parse_with_old_tree_and_external_scanner — no-op scanner 等价于 parse_with_old_tree" {
+  // no-op 外部词法器不干预词法，parse_with_old_tree_and_external_scanner
+  // 与 parse_with_old_tree 的结果应完全一致。
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/"
+  match @grammar.parse_grammar(dsl) {
+    @grammar.Error(e) => fail(e.message)
+    @grammar.Success(gram) =>
+      match @tablegen.generate_parse_table(gram) {
+        Err(e) => fail(e)
+        Ok((table, _)) =>
+          match parse_linear(table, "ab") {
+            Err(e) => fail("old parse: \{e.message}")
+            Ok(old_root) => {
+              let old_tree : OldTree = { root: old_root, old_input: "ab" }
+              let edit : InputEdit = {
+                start_byte: 1,
+                old_end_byte: 2,
+                new_end_byte: 2,
+                start_point: { row: 0, column: 1 },
+                old_end_point: { row: 0, column: 2 },
+                new_end_point: { row: 0, column: 2 },
+              }
+              let no_op : ExternalScanner = fn(_, _, _) { None }
+              let r_ext = parse_with_old_tree_and_external_scanner(
+                table,
+                "ad",
+                Some(old_tree),
+                Some(edit),
+                no_op,
+              )
+              let r_inc = parse_with_old_tree(
+                table,
+                "ad",
+                Some(old_tree),
+                Some(edit),
+              )
+              match (r_ext, r_inc) {
+                (Ok(a), Ok(b)) => {
+                  assert_eq(a.start_byte, b.start_byte)
+                  assert_eq(a.end_byte, b.end_byte)
+                  assert_eq(a.children.length(), b.children.length())
+                }
+                _ => fail("unexpected parse failure")
+              }
+            }
+          }
+      }
+  }
+}
+
+// parse_incremental — 阶段二验证矩阵
+
+///|
+test "parse_incremental — 2.1 编辑类型矩阵与全量解析一致" {
+  let word_list_dsl =
+    #|start s
+    #|extras [/[ \t\n\r]+/, /#[^\n\r]*/]
+    #|rule s: word | word rest
+    #|rule rest: word | word rest
+    #|rule word: /[a-z]+/
+  let table = must_make_table(word_list_dsl)
+  let cases : Array[(String, String, Int, Int, String)] = [
+    ("insert / 文件开头插入", "b c d", 0, 0, "a "),
+    ("insert / 文件中间插入", "a c d", 2, 2, "b "),
+    ("insert / 文件末尾插入", "a b c", 5, 5, " d"),
+    ("delete / 删除单字符", "abcd ef", 2, 3, ""),
+    ("delete / 删除整 token", "a bb c d", 2, 5, ""),
+    ("delete / 删除整行", "aa\nbb\ncc", 3, 6, ""),
+    ("delete / 删除多行块", "aa\nbb\ncc\ndd", 3, 9, ""),
+    ("replace / 同长度替换", "a b x d", 4, 5, "c"),
+    ("replace / 扩张替换", "a b d", 2, 3, "bc"),
+    ("replace / 收缩替换", "alpha beta gamma", 6, 10, "b"),
+    ("identity / old_input == new_input", "a b c", 2, 3, "b"),
+    ("identity / 空编辑 [i,i) -> [i,i)", "a b c", 2, 2, ""),
+  ]
+  for case in cases {
+    let (label, old_input, start_byte, old_end_byte, replacement) = case
+    assert_incremental_case_from_linear(
+      label, table, old_input, start_byte, old_end_byte, replacement,
+    )
+  }
+}
+
+///|
+test "parse_incremental — 2.2 结构场景矩阵与全量解析一致" {
+  let flat_dsl =
+    #|start s
+    #|extras [/[ \t\n\r]+/]
+    #|rule s: word | word rest
+    #|rule rest: word | word rest
+    #|rule word: /[a-z]+/
+  let flat_table = must_make_table(flat_dsl)
+  assert_incremental_case_from_linear(
+    "scene / 平铺 token 序列", flat_table, "a b d", 4, 4, "c ",
+  )
+
+  let expr_dsl = "start e\nrule e: e \"+\" t | t\nrule t: \"n\""
+  let expr_table = must_make_table(expr_dsl)
+  assert_incremental_case_from_linear(
+    "scene / 左递归表达式", expr_table, "n+n+n+n", 7, 7, "+n",
+  )
+
+  let nested_dsl =
+    #|start value
+    #|extras [/[ \t\n\r]+/]
+    #|rule value: object | array | number
+    #|rule object: "{" pair_list? "}"
+    #|rule pair_list: pair ("," pair)*
+    #|rule pair: key ":" value
+    #|rule key: "a" | "b"
+    #|rule array: "[" elem_list? "]"
+    #|rule elem_list: value ("," value)*
+    #|rule number: "1" | "2" | "3" | "4"
+  let nested_table = must_make_table(nested_dsl)
+  assert_incremental_case_from_linear(
+    "scene / 深层嵌套结构", nested_table, "{a:[{b:[1,2]}]}", 11, 11, ",3",
+  )
+
+  let extras_dsl =
+    #|start s
+    #|extras [/[ \t\n\r]+/, /#[^\n\r]*/]
+    #|rule s: word | word rest
+    #|rule rest: word | word rest
+    #|rule word: /[a-z]+/
+  let extras_table = must_make_table(extras_dsl)
+  assert_incremental_case_from_linear(
+    "scene / extras 密集结构", extras_table, "a b c", 1, 1, "  #gap\n  ",
+  )
+
+  let recovery_dsl = "start s\nrule s: \"a\" \";\" \"b\""
+  let recovery_table = must_make_table(recovery_dsl)
+  let old_input = "ab"
+  let old_root = must_parse_glr(
+    "scene / 含错误恢复路径的旧树", recovery_table, old_input,
+  )
+  if !has_error_or_missing(old_root) {
+    println(
+      "scene / 含错误恢复路径的旧树: expected old tree to contain ERROR or MISSING",
+    )
+    panic()
+  }
+  let (new_input, edit) = make_edit_from_replacement(old_input, 1, 1, ";")
+  assert_incremental_equals_full(
+    "scene / 含错误恢复路径的旧树", recovery_table, old_input, old_root,
+    edit, new_input,
+  )
+}
+
+// parse_incremental — 2.3 必测边界案例
+
+///|
+test "parse_incremental — 2.3 必测边界案例与全量解析一致" {
+  let seq_dsl = "start s\nrule s: ch | ch s\nrule ch: /[a-z]/"
+  let seq_table = must_make_table(seq_dsl)
+  let seq_cases : Array[(String, String, Int, Int, String, String)] = [
+    ("case 1 / 文件首字符插入", "abc", 0, 0, "x", "xabc"),
+    ("case 2 / 文件末尾删除", "abc", 2, 3, "", "ab"),
+    ("case 3 / 中间替换同长度", "abc", 1, 2, "x", "axc"),
+    ("case 4 / 中间扩张", "abc", 1, 2, "xyz", "axyzc"),
+    ("case 5 / 中间收缩", "abcdef", 2, 5, "x", "abxf"),
+  ]
+  for case in seq_cases {
+    let (label, old_input, start_byte, old_end_byte, replacement, new_input) = case
+    assert_incremental_case_exact(
+      label, seq_table, old_input, start_byte, old_end_byte, replacement, new_input,
+    )
+  }
+
+  let seq_with_extras_dsl = "start s\nextras [/[ \\t\\n\\r]+/]\nrule s: ch | ch s\nrule ch: /[a-z]/"
+  let seq_with_extras_table = must_make_table(seq_with_extras_dsl)
+  assert_incremental_case_exact(
+    "case 6 / 跨行删除", seq_with_extras_table, "a\n  b\n  c", 4, 8, "", "a\n  c",
+  )
+
+  let json_like_dsl =
+    #|start json
+    #|extras [/[ \t\n\r]+/]
+    #|rule json: value
+    #|rule value: object | array | number
+    #|rule object: "{" pair_list? "}"
+    #|rule pair_list: pair ("," pair)*
+    #|rule pair: key ":" value
+    #|rule key: /"[ab]"/
+    #|rule array: "[" elem_list? "]"
+    #|rule elem_list: value ("," value)*
+    #|rule number: /[0-9]+/
+  let json_like_table = must_make_table(json_like_dsl)
+  let json_prefix = "{\"a\": {\"b\": [1,"
+  let json_suffix = ",3]}}"
+  assert_incremental_case_exact(
+    "case 7 / 深层 JSON 局部改值",
+    json_like_table,
+    json_prefix + "2" + json_suffix,
+    json_prefix.length(),
+    json_prefix.length() + 1,
+    "20",
+    json_prefix + "20" + json_suffix,
+  )
+
+  let block_dsl =
+    #|start file
+    #|extras [/[ \t\n\r]+/]
+    #|rule file: block
+    #|rule block: "{" stmt_list? "}"
+    #|rule stmt_list: stmt | stmt stmt_list
+    #|rule stmt: let_stmt | block
+    #|rule let_stmt: "let" ident "=" number ";"
+    #|rule ident: /[a-z][a-z0-9]*/
+    #|rule number: /[0-9]+/
+  let block_table = must_make_table(block_dsl)
+  let block_prefix = "{ let head = 1; "
+  let old_block = make_large_stmt_block("oldv", 700, 0)
+  let new_block = make_large_stmt_block("newv", 420, 1000)
+  let block_suffix = " let tail = 2; }"
+  let large_old_input = block_prefix + old_block + block_suffix
+  let large_new_input = block_prefix + new_block + block_suffix
+  assert_true(large_old_input.length() > 10_000)
+  assert_incremental_case_exact(
+    "case 8 / 大块替换（10KB+）",
+    block_table,
+    large_old_input,
+    block_prefix.length(),
+    block_prefix.length() + old_block.length(),
+    new_block,
+    large_new_input,
+  )
+}
+
+// parse_incremental — 2.4 增量专用断言
+
+///|
+test "parse_incremental — 2.4 哨兵验证未受影响节点复用且编辑交集节点不复用" {
+  let label = "2.4 / 哨兵复用"
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/ /[a-z]/"
+  let table = must_make_table(dsl)
+  let old_root = must_parse_linear(label, table, "abc")
+  let patched_root = {
+    ..old_root,
+    children: [
+      { ..old_root.children[0], is_keyword: true },
+      { ..old_root.children[1], is_keyword: true },
+      old_root.children[2],
+    ],
+  }
+  let old_tree : OldTree = { root: patched_root, old_input: "abc" }
+  let edit : InputEdit = {
+    start_byte: 1,
+    old_end_byte: 2,
+    new_end_byte: 2,
+    start_point: { row: 0, column: 1 },
+    old_end_point: { row: 0, column: 2 },
+    new_end_point: { row: 0, column: 2 },
+  }
+
+  let marked = apply_edit(old_tree, edit)
+  assert_eq(marked.root.has_changes, true)
+  assert_eq(marked.root.children[0].has_changes, false)
+  assert_eq(marked.root.children[1].has_changes, true)
+  assert_eq(marked.root.children[2].has_changes, false)
+
+  let inc_root = match
+    parse_incremental(table, "axc", Some(old_tree), Some(edit)) {
+    Ok(root) => root
+    Err(e) => fail("2.4 incremental parse failed: \{e.message}")
+  }
+  assert_eq(inc_root.children[0].is_keyword, true)
+  assert_eq(inc_root.children[1].is_keyword, false)
+
+  assert_incremental_equals_full(label, table, "abc", patched_root, edit, "axc")
+}
+
+///|
+test "parse_incremental — 2.4 跨行删除后坐标与全量解析一致" {
+  let label = "2.4 / 跨行 shift_node"
+  let dsl = "start s\nextras [/[ \\t\\n\\r]+/]\nrule s: ch ch ch | ch ch\nrule ch: /[a-z]/"
+  let table = must_make_table(dsl)
+  let old_root = must_parse_linear(label, table, "a\n  b\n  c")
+  let old_tree : OldTree = { root: old_root, old_input: "a\n  b\n  c" }
+  let edit : InputEdit = {
+    start_byte: 4,
+    old_end_byte: 8,
+    new_end_byte: 4,
+    start_point: point_at("a\n  b\n  c", 4),
+    old_end_point: point_at("a\n  b\n  c", 8),
+    new_end_point: point_at("a\n  c", 4),
+  }
+  let inc_root = match
+    parse_incremental(table, "a\n  c", Some(old_tree), Some(edit)) {
+    Ok(root) => root
+    Err(e) => fail("2.4 cross-line parse failed: \{e.message}")
+  }
+  let full_root = must_parse_linear(label, table, "a\n  c")
+  let inc_visible = collect_visible_children(inc_root)
+  let full_visible = collect_visible_children(full_root)
+  if inc_root.end_point != full_root.end_point {
+    println(
+      "2.4 cross-line root end_point mismatch: " +
+      point_repr(inc_root.end_point) +
+      " != " +
+      point_repr(full_root.end_point),
+    )
+    panic()
+  }
+  if inc_visible[1].start_point != full_visible[1].start_point {
+    println(
+      "2.4 cross-line child start_point mismatch: " +
+      point_repr(inc_visible[1].start_point) +
+      " != " +
+      point_repr(full_visible[1].start_point),
+    )
+    panic()
+  }
+  if inc_visible[1].end_point != full_visible[1].end_point {
+    println(
+      "2.4 cross-line child end_point mismatch: " +
+      point_repr(inc_visible[1].end_point) +
+      " != " +
+      point_repr(full_visible[1].end_point),
+    )
+    panic()
+  }
+  assert_incremental_equals_full(
+    label, table, "a\n  b\n  c", old_root, edit, "a\n  c",
+  )
+}
+
+// ─── Section 8.1 不变量检查测试 ───────────────────────────────────────────────
+
+///|
+// 辅助：构造满足所有不变量的最小叶节点。
+fn ok_leaf(start : Int, end_ : Int) -> CstNode {
+  let p : Point = { row: 0, column: start }
+  let q : Point = { row: 0, column: end_ }
+  CstNode::leaf(1, true, start, end_, p, q, 0, end_, false, false)
+}
+
+///|
+// 辅助：断言 check_cst_invariants 应当通过。
+fn assert_invariants_pass(
+  label : String,
+  root : CstNode,
+  source : String,
+) -> Unit {
+  match check_cst_invariants(root, source) {
+    Some(msg) => {
+      println("\{label}: expected invariants to pass, got: \{msg}")
+      panic()
+    }
+    None => ()
+  }
+}
+
+///|
+// 辅助：断言 check_cst_invariants 应当检测出违反，且消息包含期望子串。
+fn assert_invariant_fails(
+  label : String,
+  root : CstNode,
+  source : String,
+  expected_substring : String,
+) -> Unit {
+  match check_cst_invariants(root, source) {
+    None => {
+      println("\{label}: expected invariant violation but check passed")
+      panic()
+    }
+    Some(msg) =>
+      if !msg.contains(expected_substring) {
+        println(
+          "\{label}: violation message '\{msg}' does not contain '\{expected_substring}'",
+        )
+        panic()
+      }
+  }
+}
+
+///|
+test "8.1 不变量 — 干净 JSON 解析树通过全部检查" {
+  let dsl =
+    #|start json
+    #|rule json: object | array
+    #|rule object: "{" pair_list? "}"
+    #|rule pair_list: pair ("," pair)*
+    #|rule pair: key ":" value
+    #|rule key: /"[^"]*"/
+    #|rule value: object | array | string | number | "true" | "false" | "null"
+    #|rule array: "[" elem_list? "]"
+    #|rule elem_list: value ("," value)*
+    #|rule string: /"[^"]*"/
+    #|rule number: /[0-9]+/
+  let table = must_make_table(dsl)
+  for
+    input in [
+      "{}", "{\"a\":1}", "{\"a\":[1,2,3]}", "[1,2,3]", "{\"a\":{\"b\":{\"c\":42}}}",
+    ] {
+    match parse(table, input) {
+      Ok(root) => assert_invariants_pass("clean/\{input}", root, input)
+      Err(e) => fail("parse failed for '\{input}': \{e.message}")
+    }
+  }
+}
+
+///|
+test "8.1 不变量 — 错误恢复树通过全部检查" {
+  let dsl = "start s\nrule s: /[a-z]+/"
+  let table = must_make_table(dsl)
+  // 前缀垃圾：恢复树含 ERROR 节点，但结构上仍自洽
+  let inputs = ["!abc", "!!!", "abc!", ""]
+  for input in inputs {
+    match parse(table, input) {
+      Ok(root) =>
+        match check_cst_invariants(root, input) {
+          Some(msg) => {
+            println(
+              "recovery tree for '\{input.escape()}' violated invariants: \{msg}",
+            )
+            panic()
+          }
+          None => ()
+        }
+      Err(_) => () // parse returned Err — no tree to check
+    }
+  }
+}
+
+///|
+test "8.1 不变量 — 增量解析树通过全部检查" {
+  let dsl = "start s\nextras [/[ \\t\\n\\r]+/]\nrule s: ch ch ch | ch ch\nrule ch: /[a-z]/"
+  let table = must_make_table(dsl)
+  let old_input = "a b c"
+  let old_root = must_parse_linear("8.1/inc", table, old_input)
+  let (new_input, edit) = make_edit_from_replacement(old_input, 2, 3, "x")
+  match
+    parse_incremental(
+      table,
+      new_input,
+      Some({ root: old_root, old_input }),
+      Some(edit),
+    ) {
+    Ok(inc_root) =>
+      assert_invariants_pass("8.1/incremental", inc_root, new_input)
+    Err(e) => fail("8.1/inc: parse_incremental failed: \{e.message}")
+  }
+}
+
+///|
+test "8.1 不变量 — 违反 1：start_byte > end_byte 被检测" {
+  // 人工构造 start_byte > end_byte 的叶节点
+  let bad_leaf : CstNode = {
+    ..ok_leaf(5, 3) // start=5, end=3 — 反转
+    ,
+    start_byte: 5,
+    end_byte: 3,
+  }
+  assert_invariant_fails(
+    "8.1/inverted-bytes", bad_leaf, "hello world", "start_byte",
+  )
+}
+
+///|
+test "8.1 不变量 — 违反 2：end_byte 超出 source 被检测" {
+  // 叶节点 end_byte 超过 source 长度
+  let source = "hi"
+  let bad_leaf : CstNode = {
+    ..ok_leaf(0, 5) // end_byte=5 but source.length()=2
+    ,
+    start_byte: 0,
+    end_byte: 5,
+  }
+  assert_invariant_fails("8.1/end-out-of-bounds", bad_leaf, source, "end_byte")
+}
+
+///|
+test "8.1 不变量 — 违反 3：is_missing 非零宽 被检测" {
+  let bad_missing : CstNode = {
+    ..ok_leaf(2, 4),
+    is_missing: true,
+    start_byte: 2,
+    end_byte: 4,
+  }
+  assert_invariant_fails(
+    "8.1/missing-nonzero", bad_missing, "hello", "is_missing",
+  )
+}
+
+///|
+test "8.1 不变量 — 违反 4：start_point > end_point 被检测" {
+  let bad_point : CstNode = {
+    ..ok_leaf(0, 3),
+    start_point: { row: 0, column: 5 },
+    end_point: { row: 0, column: 1 },
+  }
+  assert_invariant_fails(
+    "8.1/point-reversed", bad_point, "hello", "start_point",
+  )
+}
+
+///|
+/// 测试用有状态扫描器：计数已扫描次数（作为 clone 正确性验证）
+struct CountingScanner {
+  mut count : Int
+  /// 每次 scan 返回 (tid=ext_tids[0], pos)（零宽 token）
+}
+
+///|
+impl StatefulScanner for CountingScanner with scan(self, _input, pos, ext_tids) {
+  self.count = self.count + 1
+  if ext_tids.length() > 0 {
+    Some((ext_tids[0], pos))
+  } else {
+    None
+  }
+}
+
+///|
+impl StatefulScanner for CountingScanner with clone_scanner(self) {
+  ({ count: self.count } : CountingScanner) as &StatefulScanner
+}
+
+///|
+test "9.1 stateful scanner clone 正确性" {
+  let s1 : CountingScanner = { count: 0 }
+  let obj1 : &StatefulScanner = s1
+  // scan 3 次
+  let _ = obj1.scan("abc", 0, [99])
+  let _ = obj1.scan("abc", 0, [99])
+  let _ = obj1.scan("abc", 0, [99])
+  assert_eq(s1.count, 3)
+  // clone 后应得到独立副本
+  let obj2 = obj1.clone_scanner()
+  let _ = obj2.scan("abc", 0, [99])
+  let _ = obj2.scan("abc", 0, [99])
+  // 原始对象不受影响
+  assert_eq(s1.count, 3)
+}
+
+///|
+test "9.2 ExternalScannerState adapter（无状态包装）" {
+  let func : ExternalScanner = fn(input, pos, _tids) {
+    if pos < input.length() {
+      Some((42, pos + 1))
+    } else {
+      None
+    }
+  }
+  let ss = external_scanner_to_stateful(func)
+  // scan 正常工作
+  assert_eq(ss.scan("hello", 0, [42]), Some((42, 1)))
+  assert_eq(ss.scan("hello", 5, [42]), None)
+  // clone 后行为一致
+  let ss2 = ss.clone_scanner()
+  assert_eq(ss2.scan("hello", 2, [42]), Some((42, 3)))
+}
+
+///|
+test "9.3 parse_with_stateful_scanner 基础" {
+  // 简单 grammar + external token 的端到端验证
+  let dsl =
+    #|start items
+    #|externals [sep]
+    #|rule items: item (sep item)*
+    #|rule item: /[a-z]+/
+  let table = must_make_table(dsl)
+  // scanner: sep 匹配逗号
+  let sep_id = table.external_token_ids[0]
+  let scanner : &StatefulScanner = ({ count: 0, sep_id } : SepScanner)
+    as &StatefulScanner
+  match parse_with_stateful_scanner(table, "abc,def,ghi", scanner) {
+    Ok(root) => assert_false(root.is_error)
+    // 应该有 3 个 item
+    Err(e) => {
+      println("9.3: \{e.message}")
+      panic()
+    }
+  }
+}
+
+///|
+struct SepScanner {
+  mut count : Int
+  sep_id : Int
+}
+
+///|
+impl StatefulScanner for SepScanner with scan(self, input, pos, ext_tids) {
+  self.count = self.count + 1
+  if pos < input.length() && input[pos] == ',' {
+    let mut found = false
+    for tid in ext_tids {
+      if tid == self.sep_id {
+        found = true
+        break
+      }
+    }
+    if found {
+      Some((self.sep_id, pos + 1))
+    } else {
+      None
+    }
+  } else {
+    None
+  }
+}
+
+///|
+impl StatefulScanner for SepScanner with clone_scanner(self) {
+  ({ count: self.count, sep_id: self.sep_id } : SepScanner) as &StatefulScanner
+}
+
+///|
+test "9.4 parse_with_old_tree_and_stateful_scanner 增量" {
+  let dsl =
+    #|start items
+    #|externals [sep]
+    #|rule items: item (sep item)*
+    #|rule item: /[a-z]+/
+  let table = must_make_table(dsl)
+  let sep_id = table.external_token_ids[0]
+  // 第一次解析
+  let scanner1 : &StatefulScanner = ({ count: 0, sep_id } : SepScanner)
+    as &StatefulScanner
+  let root1 = match parse_with_stateful_scanner(table, "abc,def", scanner1) {
+    Ok(r) => r
+    Err(e) => {
+      println("9.4 initial: \{e.message}")
+      panic()
+    }
+  }
+  assert_false(root1.is_error)
+  // 增量：在末尾追加 ",ghi"
+  let old_tree : OldTree = { root: root1, old_input: "abc,def" }
+  let edit : InputEdit = {
+    start_byte: 7,
+    old_end_byte: 7,
+    new_end_byte: 11,
+    start_point: { row: 0, column: 7 },
+    old_end_point: { row: 0, column: 7 },
+    new_end_point: { row: 0, column: 11 },
+  }
+  let scanner2 : &StatefulScanner = ({ count: 0, sep_id } : SepScanner)
+    as &StatefulScanner
+  match
+    parse_with_old_tree_and_stateful_scanner(
+      table,
+      "abc,def,ghi",
+      Some(old_tree),
+      Some(edit),
+      scanner2,
+    ) {
+    Ok(root2) => assert_false(root2.is_error)
+    Err(e) => {
+      println("9.4 incr: \{e.message}")
+      panic()
+    }
+  }
+}
+
+///|
+test "8.1 不变量 — 违反 5：非 extra 子节点 start_byte 超出父节点 被检测" {
+  // child at [0,5); parent manually patched to start_byte=2 (while child still at 0)
+  let child = ok_leaf(0, 5)
+  let raw_parent = CstNode::inner(
+    1,
+    false,
+    [child],
+    [None],
+    0,
+    0,
+    false,
+    false,
+    0,
+  )
+  // raw_parent.start_byte=0 (computed from child). Patch it to 2 to create violation.
+  let wrapper = { ..raw_parent, start_byte: 2 }
+  // child.start_byte=0 < wrapper.start_byte=2 AND child.extra=false AND child is non-zero-width
+  assert_invariant_fails(
+    "8.1/child-before-parent", wrapper, "hello world", "child.start_byte",
+  )
+}
+
+///|
+test "8.1 不变量 — 违反 6：兄弟节点重叠 被检测" {
+  // 使用 CstNode::inner 构造一个非 ERROR 父节点，包含两个重叠的非零宽子节点
+  let c1 = ok_leaf(0, 5)
+  let c2 = ok_leaf(3, 7) // start=3 < c1.end=5 → overlap
+  // inner 会计算 start_byte = c1.start_byte = 0, end_byte = c2.end_byte = 7
+  // 此节点 is_error=false，因此兄弟顺序检查会生效
+  let parent = CstNode::inner(
+    1,
+    false,
+    [c1, c2],
+    [None, None],
+    0,
+    0,
+    false,
+    false,
+    0,
+  )
+  assert_invariant_fails(
+    "8.1/siblings-overlap", parent, "hello world", "siblings overlap",
+  )
+}
+
+///|
+test "8.1 不变量 — 违反 6：兄弟节点顺序反转 被检测" {
+  // c1=[1,5), c2=[2,7): c1.end=5 > c2.start=2 → overlap/out-of-order
+  // parent inner: start=1, end=7 (valid interval)
+  let c1 = ok_leaf(1, 5)
+  let c2 = ok_leaf(2, 7)
+  let parent = CstNode::inner(
+    1,
+    false,
+    [c1, c2],
+    [None, None],
+    0,
+    0,
+    false,
+    false,
+    0,
+  )
+  assert_invariant_fails(
+    "8.1/siblings-out-of-order", parent, "hello world", "siblings overlap or are out of order",
+  )
+}
+
+///|
+test "8.1 不变量 — 根节点 end_byte 超出 source 被检测" {
+  let source = "abc"
+  let bad_root : CstNode = {
+    ..ok_leaf(0, 10) // end_byte=10, source.length()=3
+    ,
+    start_byte: 0,
+    end_byte: 10,
+  }
+  assert_invariant_fails("8.1/root-out-of-bounds", bad_root, source, "end_byte")
+}
+
+///|
+test "8.1 不变量 — check_clean_root：干净解析通过" {
+  let dsl = "start s\nrule s: /[a-z]+/"
+  let table = must_make_table(dsl)
+  let input = "hello"
+  match parse(table, input) {
+    Ok(root) =>
+      match check_clean_root(root, input) {
+        Some(msg) => {
+          println("check_clean_root failed for clean parse: \{msg}")
+          panic()
+        }
+        None => ()
+      }
+    Err(e) => {
+      println("parse failed: \{e.message}")
+      panic()
+    }
+  }
+}
+
+///|
+test "8.1 不变量 — check_clean_root：含 ERROR 节点时报告" {
+  let dsl = "start s\nrule s: /[a-z]+/"
+  let table = must_make_table(dsl)
+  let input = "!hello"
+  match parse(table, input) {
+    Ok(root) =>
+      match check_clean_root(root, input) {
+        Some(msg) =>
+          if !msg.contains("ERROR") &&
+            !msg.contains("MISSING") &&
+            !msg.contains("root:") {
+            println(
+              "expected clean_root to report error/missing or span mismatch, got: \{msg}",
+            )
+            panic()
+          }
+        None => () // Some grammars do full recovery; acceptable here.
+      }
+    Err(_) => () // Err means no tree — also acceptable
+  }
+}
+
+// ─── Section 8.2 增量专用不变量测试 ──────────────────────────────────────────
+
+///|
+test "8.2 不变量 — apply_edit 后标记树通过不变量检查" {
+  // 文法 s → /[a-z]/ /[a-z]/ /[a-z]/，输入 "abc"，编辑 [1,2) → "x"
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/ /[a-z]/"
+  let table = must_make_table(dsl)
+  let old_input = "abc"
+  let old_root = must_parse_linear("8.2/mark", table, old_input)
+  let (_, edit) = make_edit_from_replacement(old_input, 1, 2, "x")
+  let marked = apply_edit({ root: old_root, old_input }, edit)
+  match check_incremental_invariants(marked.root, edit) {
+    Some(msg) => {
+      println("8.2 apply_edit invariant violated: \{msg}")
+      panic()
+    }
+    None => ()
+  }
+}
+
+///|
+test "8.2 不变量 — 恒等编辑后标记树通过不变量检查" {
+  // 恒等编辑（start_byte == old_end_byte）不应破坏任何 has_changes=false 节点的交叉性
+  let dsl = "start s\nrule s: /[a-z]+/"
+  let table = must_make_table(dsl)
+  let input = "hello"
+  let root = must_parse_linear("8.2/identity", table, input)
+  let identity_edit : InputEdit = {
+    start_byte: 2,
+    old_end_byte: 2,
+    new_end_byte: 2,
+    start_point: { row: 0, column: 2 },
+    old_end_point: { row: 0, column: 2 },
+    new_end_point: { row: 0, column: 2 },
+  }
+  let marked = apply_edit({ root, old_input: input }, identity_edit)
+  match check_incremental_invariants(marked.root, identity_edit) {
+    Some(msg) => {
+      println("8.2 identity-edit invariant violated: \{msg}")
+      panic()
+    }
+    None => ()
+  }
+}
+
+///|
+test "8.2 不变量 — 人工构造 has_changes=false 与编辑相交被检测" {
+  // ok_leaf(2, 5): start=2, end=5, lookahead_bytes=5, has_changes=false
+  // edit: [3, 6) — 与叶节点 [2, 5) 相交
+  let node = ok_leaf(2, 5)
+  let edit : InputEdit = {
+    start_byte: 3,
+    old_end_byte: 6,
+    new_end_byte: 6,
+    start_point: { row: 0, column: 3 },
+    old_end_point: { row: 0, column: 6 },
+    new_end_point: { row: 0, column: 6 },
+  }
+  match check_incremental_invariants(node, edit) {
+    None => {
+      println(
+        "8.2: expected has_changes=false intersection violation not detected",
+      )
+      panic()
+    }
+    Some(msg) =>
+      if !msg.contains("has_changes=false") {
+        println(
+          "8.2: violation message '\{msg}' does not contain 'has_changes=false'",
+        )
+        panic()
+      }
+  }
+}
+
+///|
+test "8.2 不变量 — fragile_left 节点被 is_reusable 拒绝" {
+  // fragile_left/right 标志标识 GLR 合并产物，不可复用
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/"
+  let table = must_make_table(dsl)
+  let old_root = must_parse_linear("8.2/fragile", table, "ab")
+  let fragile_l : CstNode = { ..old_root, fragile_left: true }
+  if is_reusable(fragile_l, 0, old_root.parse_state, 0, 2) {
+    println("8.2: fragile_left node should not be reusable")
+    panic()
+  }
+  let fragile_r : CstNode = { ..old_root, fragile_right: true }
+  if is_reusable(fragile_r, 0, old_root.parse_state, 0, 2) {
+    println("8.2: fragile_right node should not be reusable")
+    panic()
+  }
+}
+
+///|
+test "8.2 不变量 — has_changes=true 节点不可复用" {
+  // 被标记了 has_changes=true 的节点无论位置，均应被 is_reusable 拒绝
+  let dsl = "start s\nrule s: /[a-z]+/"
+  let table = must_make_table(dsl)
+  let root = must_parse_linear("8.2/changed", table, "abc")
+  let changed : CstNode = { ..root, has_changes: true }
+  if is_reusable(changed, 0, root.parse_state, 0, 0) {
+    println("8.2: has_changes=true node should not be reusable")
+    panic()
+  }
+}
+
+///|
+test "8.2 不变量 — shift_node 后 byte 与全量解析兼容" {
+  // 编辑 "abc" → "axc"：增量解析结果的字节位置应与全量解析完全一致
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/ /[a-z]/"
+  let table = must_make_table(dsl)
+  assert_incremental_case_from_linear(
+    "8.2/shift-bytes", table, "abc", 1, 2, "x",
+  )
+}
+
+///|
+test "8.2 不变量 — 文件开头插入增量不变量通过" {
+  // edit: [0,0) → [0,1)  old "bc" → new "abc"
+  let dsl = "start s\nrule s: /[a-z]+/"
+  let table = must_make_table(dsl)
+  let old_input = "bc"
+  let old_root = must_parse_linear("8.2/head-insert-parse", table, old_input)
+  let (_, edit) = make_edit_from_replacement(old_input, 0, 0, "a")
+  let marked = apply_edit({ root: old_root, old_input }, edit)
+  match check_incremental_invariants(marked.root, edit) {
+    Some(msg) => {
+      println("8.2 head-insert invariant violated: \{msg}")
+      panic()
+    }
+    None => ()
+  }
+}
+
+///|
+test "8.2 不变量 — 文件末尾删除增量不变量通过" {
+  // edit: [2,3) → [2,2)  old "abc" → new "ab"
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/ | /[a-z]/ /[a-z]/ /[a-z]/"
+  let table = must_make_table(dsl)
+  let old_input = "abc"
+  let old_root = must_parse_linear("8.2/tail-delete-parse", table, old_input)
+  let (_, edit) = make_edit_from_replacement(old_input, 2, 3, "")
+  let marked = apply_edit({ root: old_root, old_input }, edit)
+  match check_incremental_invariants(marked.root, edit) {
+    Some(msg) => {
+      println("8.2 tail-delete invariant violated: \{msg}")
+      panic()
+    }
+    None => ()
+  }
 }

@@ -22,6 +22,19 @@ priv struct ParserState {
 ///|
 /// 解析 Grammar DSL 字符串，返回完整的 Grammar 对象
 pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
+  let (grammar, errors) = parse_grammar_lenient(dsl)
+  if errors.is_empty() {
+    Success(grammar)
+  } else {
+    Error(errors[0])
+  }
+}
+
+///|
+/// 解析 Grammar DSL 字符串，支持 panic-mode 错误恢复。
+/// 遇到顶层语句的解析错误时，跳到下一个顶层关键字继续解析，
+/// 返回部分构建的 Grammar 以及收集到的所有解析错误。
+pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
   let tokens = tokenize(dsl)
   let state = { tokens, pos: 0 }
   let grammar : Grammar = {
@@ -30,15 +43,149 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
     precedences: [],
     extras: [],
     externals: [],
+    duplicate_rule_names: [],
+    word: None,
+    conflicts: [],
+    supertypes: [],
   }
+  let errors : Array[ParseError] = []
 
   while state.pos < state.tokens.length() {
     match state.tokens[state.pos].token {
       Keyword("rule") => {
         state.pos = state.pos + 1
-        match parse_rule(state) {
-          Success(rule) => grammar.rules.set(rule.name, rule)
-          Error(err) => return Error(err)
+        match parse_rule(state, false, []) {
+          Success(rule) => {
+            if grammar.rules.contains(rule.name) {
+              grammar.duplicate_rule_names.push(rule.name)
+            }
+            grammar.rules.set(rule.name, rule)
+          }
+          Error(err) => {
+            errors.push(err)
+            skip_to_next_toplevel(state)
+          }
+        }
+      }
+      // token rule name: pattern — 声明词法规则（仅含终结符）
+      Identifier("token") => {
+        state.pos = state.pos + 1
+        if state.pos < state.tokens.length() &&
+          state.tokens[state.pos].token is Keyword("rule") {
+          state.pos = state.pos + 1
+          match parse_rule(state, true, []) {
+            Success(rule) => {
+              if grammar.rules.contains(rule.name) {
+                grammar.duplicate_rule_names.push(rule.name)
+              }
+              grammar.rules.set(rule.name, rule)
+            }
+            Error(err) => {
+              errors.push(err)
+              skip_to_next_toplevel(state)
+            }
+          }
+        } else {
+          let loc = if state.pos < state.tokens.length() {
+            state.tokens[state.pos].location
+          } else {
+            state.tokens[state.tokens.length() - 1].location
+          }
+          errors.push({
+            message: "Expected 'rule' after 'token'",
+            location: loc,
+          })
+          skip_to_next_toplevel(state)
+        }
+      }
+      // word name — 指定关键字提升规则（类 Tree-sitter word 属性）
+      Identifier("word") => {
+        state.pos = state.pos + 1
+        if state.pos < state.tokens.length() {
+          match state.tokens[state.pos].token {
+            Identifier(name) => {
+              grammar.word = Some(name)
+              state.pos = state.pos + 1
+            }
+            _ => {
+              errors.push({
+                message: "Expected identifier after 'word'",
+                location: state.tokens[state.pos].location,
+              })
+              skip_to_next_toplevel(state)
+            }
+          }
+        } else {
+          errors.push({
+            message: "Unexpected end of input after 'word'",
+            location: state.tokens[state.tokens.length() - 1].location,
+          })
+        }
+      }
+      // @inline rule / @hide rule — 规则属性标注
+      Symbol("@") => {
+        let attrs = collect_rule_attributes(state)
+        // 属性之后必须跟 rule 或 token rule
+        if state.pos < state.tokens.length() {
+          match state.tokens[state.pos].token {
+            Keyword("rule") => {
+              state.pos = state.pos + 1
+              match parse_rule(state, false, attrs) {
+                Success(rule) => {
+                  if grammar.rules.contains(rule.name) {
+                    grammar.duplicate_rule_names.push(rule.name)
+                  }
+                  grammar.rules.set(rule.name, rule)
+                }
+                Error(err) => {
+                  errors.push(err)
+                  skip_to_next_toplevel(state)
+                }
+              }
+            }
+            Identifier("token") => {
+              state.pos = state.pos + 1
+              if state.pos < state.tokens.length() &&
+                state.tokens[state.pos].token is Keyword("rule") {
+                state.pos = state.pos + 1
+                match parse_rule(state, true, attrs) {
+                  Success(rule) => {
+                    if grammar.rules.contains(rule.name) {
+                      grammar.duplicate_rule_names.push(rule.name)
+                    }
+                    grammar.rules.set(rule.name, rule)
+                  }
+                  Error(err) => {
+                    errors.push(err)
+                    skip_to_next_toplevel(state)
+                  }
+                }
+              } else {
+                let loc = if state.pos < state.tokens.length() {
+                  state.tokens[state.pos].location
+                } else {
+                  state.tokens[state.tokens.length() - 1].location
+                }
+                errors.push({
+                  message: "Expected 'rule' after '@... token'",
+                  location: loc,
+                })
+                skip_to_next_toplevel(state)
+              }
+            }
+            _ => {
+              errors.push({
+                message: "Expected 'rule' or 'token rule' after rule attributes",
+                location: state.tokens[state.pos].location,
+              })
+              skip_to_next_toplevel(state)
+            }
+          }
+        } else {
+          errors.push({
+            message: "Unexpected end of input after rule attributes",
+            location: state.tokens[state.tokens.length() - 1].location,
+          })
         }
       }
       Keyword("start") => {
@@ -49,29 +196,32 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
               grammar.start = Some(name)
               state.pos = state.pos + 1
             }
-            _ =>
-              return Error({
+            _ => {
+              errors.push({
                 message: "Expected identifier after 'start'",
                 location: state.tokens[state.pos].location,
               })
+              skip_to_next_toplevel(state)
+            }
           }
         } else {
-          return Error({
+          errors.push({
             message: "Unexpected end of input after 'start'",
             location: state.tokens[state.tokens.length() - 1].location,
           })
         }
       }
-      // 优先级声明：记录到 grammar.precedences
       Keyword("precedence") => {
         state.pos = state.pos + 1
         let level = grammar.precedences.length() + 1
         match parse_prec_decl(state, level) {
           Success(decl) => grammar.precedences.push(decl)
-          Error(err) => return Error(err)
+          Error(err) => {
+            errors.push(err)
+            skip_to_next_toplevel(state)
+          }
         }
       }
-      // extras 声明：extras [pattern, ...]
       Keyword("extras") => {
         state.pos = state.pos + 1
         match parse_extras(state) {
@@ -79,10 +229,12 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
             for p in patterns {
               grammar.extras.push(p)
             }
-          Error(err) => return Error(err)
+          Error(err) => {
+            errors.push(err)
+            skip_to_next_toplevel(state)
+          }
         }
       }
-      // externals 声明：externals [name1, name2, ...]
       Keyword("externals") => {
         state.pos = state.pos + 1
         match parse_externals(state) {
@@ -90,13 +242,123 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
             for n in names {
               grammar.externals.push(n)
             }
-          Error(err) => return Error(err)
+          Error(err) => {
+            errors.push(err)
+            skip_to_next_toplevel(state)
+          }
+        }
+      }
+      // conflicts [[rule_a, rule_b], [rule_c, rule_d]] — 声明 GLR 歧义规则组
+      Identifier("conflicts") => {
+        state.pos = state.pos + 1
+        match parse_conflicts(state) {
+          Success(groups) =>
+            for g in groups {
+              grammar.conflicts.push(g)
+            }
+          Error(err) => {
+            errors.push(err)
+            skip_to_next_toplevel(state)
+          }
+        }
+      }
+      // supertypes [expr, stmt, ...] — 声明抽象超类型列表，供查询 API 使用
+      Identifier("supertypes") => {
+        state.pos = state.pos + 1
+        match parse_name_list(state, "supertypes") {
+          Success(names) =>
+            for n in names {
+              grammar.supertypes.push(n)
+            }
+          Error(err) => {
+            errors.push(err)
+            skip_to_next_toplevel(state)
+          }
         }
       }
       _ => state.pos = state.pos + 1
     }
   }
-  Success(grammar)
+  (grammar, errors)
+}
+
+///|
+/// 收集 `@inline` / `@hide` 序列，返回属性列表（同时消耗 token）
+fn collect_rule_attributes(state : ParserState) -> Array[RuleAttribute] {
+  let attrs : Array[RuleAttribute] = []
+  while state.pos < state.tokens.length() {
+    match state.tokens[state.pos].token {
+      Symbol("@") => {
+        state.pos = state.pos + 1
+        if state.pos < state.tokens.length() {
+          match state.tokens[state.pos].token {
+            Identifier("inline") => {
+              attrs.push(RuleAttribute::Inline)
+              state.pos = state.pos + 1
+            }
+            Identifier("hide") => {
+              attrs.push(RuleAttribute::Hide)
+              state.pos = state.pos + 1
+            }
+            Identifier("deprecated") => {
+              attrs.push(RuleAttribute::Deprecated)
+              state.pos = state.pos + 1
+            }
+            _ => break
+          }
+        }
+      }
+      _ => break
+    }
+  }
+  attrs
+}
+
+///|
+/// panic-mode 恢复辅助：跳过 token 直到遇到下一个顶层关键字（不消耗该关键字）
+fn skip_to_next_toplevel(state : ParserState) -> Unit {
+  while state.pos < state.tokens.length() {
+    match state.tokens[state.pos].token {
+      Keyword("rule")
+      | Keyword("start")
+      | Keyword("precedence")
+      | Keyword("extras")
+      | Keyword("externals")
+      | Symbol("@") => break
+      // 上下文关键字：只有当前一个 token 不是 pattern 内部操作符时才视为顶层声明起始
+      Identifier("token")
+      | Identifier("word")
+      | Identifier("conflicts")
+      | Identifier("supertypes") => {
+        let prev_is_pattern_ctx = if state.pos > 0 {
+          match state.tokens[state.pos - 1].token {
+            Symbol(":")
+            | Symbol("|")
+            | Symbol("(")
+            | Symbol("[")
+            | Symbol("*")
+            | Symbol("+")
+            | Symbol("?")
+            | Symbol(",")
+            | Symbol(".")
+            | Symbol("@")
+            | Symbol("!")
+            | Symbol("&") => true
+            Identifier(_) | StringLiteral(_) | RegexLiteral(_) => true
+            _ => false
+          }
+        } else {
+          false
+        }
+        if prev_is_pattern_ctx {
+          state.pos = state.pos + 1
+        } else {
+          break
+        }
+      }
+      _ => state.pos = state.pos + 1
+    }
+  }
 }
 
 // 规则层
@@ -115,7 +377,11 @@ fn parse_prec_decl(state : ParserState, level : Int) -> ParseResult[PrecDecl] {
         state.pos = state.pos + 1
         PrecKind::Right
       }
-      Identifier("dynamic") => {
+      Keyword("nonassoc") => {
+        state.pos = state.pos + 1
+        PrecKind::Nonassoc
+      }
+      Keyword("dynamic") => {
         state.pos = state.pos + 1
         PrecKind::Dynamic
       }
@@ -159,8 +425,13 @@ fn parse_prec_decl(state : ParserState, level : Int) -> ParseResult[PrecDecl] {
 }
 
 ///|
-/// 解析单条规则：`rule name: pattern`
-fn parse_rule(state : ParserState) -> ParseResult[Rule] {
+/// 解析单条规则：`[token] rule name[params]: pattern`
+/// is_token: 由 `token rule` 语法触发；attributes: 由 `@inline`/`@hide` 语法触发
+fn parse_rule(
+  state : ParserState,
+  is_token : Bool,
+  attributes : Array[RuleAttribute],
+) -> ParseResult[Rule] {
   if state.pos >= state.tokens.length() {
     return Error({
       message: "Unexpected end of input, expected rule name",
@@ -177,13 +448,47 @@ fn parse_rule(state : ParserState) -> ParseResult[Rule] {
           location: name_loc,
         })
       }
+      // 检查是否有模板参数 [T, U, ...]
+      let params : Array[String] = []
+      if state.tokens[state.pos].token is Symbol("[") {
+        state.pos = state.pos + 1
+        while state.pos < state.tokens.length() {
+          match state.tokens[state.pos].token {
+            Identifier(param) => {
+              params.push(param)
+              state.pos = state.pos + 1
+              if state.pos < state.tokens.length() &&
+                state.tokens[state.pos].token is Symbol(",") {
+                state.pos = state.pos + 1
+              }
+            }
+            Symbol("]") => {
+              state.pos = state.pos + 1
+              break
+            }
+            _ =>
+              return Error({
+                message: "Expected template parameter name or ']'",
+                location: state.tokens[state.pos].location,
+              })
+          }
+        }
+      }
       match state.tokens[state.pos].token {
         Symbol(":") => {
           state.pos = state.pos + 1
-          let is_named = name.length() == 0 || name[0] != '_'
+          let is_named = !name.has_prefix("_")
           match parse_pattern(state) {
             Success(pattern) =>
-              Success({ name, pattern, is_named, location: Some(name_loc) })
+              Success({
+                name,
+                pattern,
+                is_named,
+                is_token,
+                params,
+                attributes,
+                location: Some(name_loc),
+              })
             Error(err) => Error(err)
           }
         }
@@ -241,6 +546,23 @@ fn parse_sequence(state : ParserState) -> ParseResult[Pattern] {
 
   while state.pos < state.tokens.length() {
     match state.tokens[state.pos].token {
+      // `token rule` starts a new top-level declaration; stop the sequence here.
+      Identifier("token") => {
+        let is_token_rule = state.pos + 1 < state.tokens.length() &&
+          state.tokens[state.pos + 1].token is Keyword("rule")
+        if is_token_rule {
+          break
+        } else {
+          match parse_unary(state) {
+            Success(p) => seqs.push(p)
+            Error(err) => {
+              has_error = true
+              error = err
+              break
+            }
+          }
+        }
+      }
       Identifier(_)
       | StringLiteral(_)
       | RegexLiteral(_)
@@ -420,7 +742,10 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
     })
   }
   match state.tokens[state.pos].token {
-    // 标识符：下一个 token 为 `:` 则是命名字段，否则是规则引用
+    // 标识符：下一个 token 为 `:` 则是命名字段，`[` 则是模板实例化，否则是规则引用
+    // 注意：Field 只绑定紧邻的 primary（不包含后续序列元素）。
+    // 即 `name: A B C` 解析为 `Seq([Field(name, A), B, C])`。
+    // 若需 field 覆盖整个序列，请用分组：`name: (A B C)`。
     Identifier(name) => {
       state.pos = state.pos + 1
       if state.pos < state.tokens.length() {
@@ -431,6 +756,26 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
               Success(inner) => Success(Field(name, inner))
               Error(err) => Error(err)
             }
+          }
+          Symbol("[") => {
+            // 模板实例化：name[arg1, arg2, ...]
+            state.pos = state.pos + 1
+            let args : Array[Pattern] = []
+            while state.pos < state.tokens.length() {
+              match state.tokens[state.pos].token {
+                Symbol("]") => {
+                  state.pos = state.pos + 1
+                  break
+                }
+                Symbol(",") => state.pos = state.pos + 1
+                _ =>
+                  match parse_pattern(state) {
+                    Success(p) => args.push(p)
+                    Error(err) => return Error(err)
+                  }
+              }
+            }
+            Success(RuleApp(name, args))
           }
           _ => Success(RuleRef(name))
         }
@@ -539,7 +884,7 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
                 state.pos = state.pos + 1
                 PrecKind::Right
               }
-              Identifier("dynamic") => {
+              Keyword("dynamic") => {
                 state.pos = state.pos + 1
                 PrecKind::Dynamic
               }
@@ -719,7 +1064,6 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
   }
 }
 
-
 ///|
 /// 解析 `extras [pattern, pattern, ...]` 声明
 /// 'extras' 关键字已被调用方消费，当前 token 应为 '['
@@ -802,6 +1146,116 @@ fn parse_externals(state : ParserState) -> ParseResult[Array[String]] {
   }
   Error({
     message: "Unexpected end of input, expected ']' to close 'externals'",
+    location: state.tokens[state.tokens.length() - 1].location,
+  })
+}
+
+///|
+/// 解析 conflicts 声明：`conflicts [[rule_a, rule_b], [rule_c, rule_d]]`
+/// 返回规则名组的列表（每组对应一个嵌套列表）
+fn parse_conflicts(state : ParserState) -> ParseResult[Array[Array[String]]] {
+  if state.pos >= state.tokens.length() {
+    return Error({
+      message: "Expected '[' after 'conflicts'",
+      location: state.tokens[state.tokens.length() - 1].location,
+    })
+  }
+  // 消耗外层 '['
+  match state.tokens[state.pos].token {
+    Symbol("[") => state.pos = state.pos + 1
+    _ =>
+      return Error({
+        message: "Expected '[' after 'conflicts'",
+        location: state.tokens[state.pos].location,
+      })
+  }
+  let groups : Array[Array[String]] = []
+  while state.pos < state.tokens.length() {
+    match state.tokens[state.pos].token {
+      Symbol("]") => {
+        state.pos = state.pos + 1
+        return Success(groups)
+      }
+      Symbol(",") => state.pos = state.pos + 1
+      // 内层 '[' — 解析一个规则名组
+      Symbol("[") => {
+        state.pos = state.pos + 1
+        let group : Array[String] = []
+        while state.pos < state.tokens.length() {
+          match state.tokens[state.pos].token {
+            Symbol("]") => {
+              state.pos = state.pos + 1
+              break
+            }
+            Symbol(",") => state.pos = state.pos + 1
+            Identifier(name) => {
+              group.push(name)
+              state.pos = state.pos + 1
+            }
+            _ =>
+              return Error({
+                message: "Expected rule name or ']' in conflicts group",
+                location: state.tokens[state.pos].location,
+              })
+          }
+        }
+        groups.push(group)
+      }
+      _ =>
+        return Error({
+          message: "Expected '[' or ']' in conflicts declaration",
+          location: state.tokens[state.pos].location,
+        })
+    }
+  }
+  Error({
+    message: "Unexpected end of input, expected ']' to close 'conflicts'",
+    location: state.tokens[state.tokens.length() - 1].location,
+  })
+}
+
+///|
+/// 解析简单标识符列表：`keyword [name1, name2, ...]`
+/// 用于 supertypes 等声明（重用，避免重复代码）
+fn parse_name_list(
+  state : ParserState,
+  keyword : String,
+) -> ParseResult[Array[String]] {
+  if state.pos >= state.tokens.length() {
+    return Error({
+      message: "Expected '[' after '\{keyword}'",
+      location: state.tokens[state.tokens.length() - 1].location,
+    })
+  }
+  match state.tokens[state.pos].token {
+    Symbol("[") => state.pos = state.pos + 1
+    _ =>
+      return Error({
+        message: "Expected '[' after '\{keyword}'",
+        location: state.tokens[state.pos].location,
+      })
+  }
+  let names : Array[String] = []
+  while state.pos < state.tokens.length() {
+    match state.tokens[state.pos].token {
+      Symbol("]") => {
+        state.pos = state.pos + 1
+        return Success(names)
+      }
+      Symbol(",") => state.pos = state.pos + 1
+      Identifier(name) => {
+        names.push(name)
+        state.pos = state.pos + 1
+      }
+      _ =>
+        return Error({
+          message: "Expected identifier or ']' in '\{keyword}' declaration",
+          location: state.tokens[state.pos].location,
+        })
+    }
+  }
+  Error({
+    message: "Unexpected end of input, expected ']' to close '\{keyword}'",
     location: state.tokens[state.tokens.length() - 1].location,
   })
 }

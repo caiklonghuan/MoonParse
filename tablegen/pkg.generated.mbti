@@ -3,6 +3,7 @@ package "caiklonghuan/MoonParse/tablegen"
 
 import {
   "caiklonghuan/MoonParse/grammar",
+  "moonbitlang/core/debug",
   "moonbitlang/core/set",
 }
 
@@ -50,8 +51,7 @@ pub(all) enum Action {
   Shift(Int)
   Reduce(Int)
   Accept
-}
-pub impl Eq for Action
+} derive(Eq, @debug.Debug)
 pub impl Show for Action
 
 pub(all) struct AugmentedGrammar {
@@ -64,44 +64,39 @@ pub(all) struct AugmentedGrammar {
   prec_table : Map[Int, (Int, @grammar.PrecKind)]
   nt_metas : Array[SymbolMeta]
   external_ids : Array[Int]
+  word_token : Int?
+  declared_conflicts : Array[Array[String]]
 }
 
 pub(all) struct BodySymbol {
   symbol : Symbol
   field_name : String?
-}
-pub impl Show for BodySymbol
+} derive(@debug.Debug)
 
 pub(all) struct ConflictReport {
   state : Int
   terminal : Int
   actions : Array[Action]
   severity : ConflictSeverity
-}
-pub impl Show for ConflictReport
+} derive(@debug.Debug)
 
 pub(all) enum ConflictSeverity {
   Warn(String)
   Ambiguous(String)
   DynamicConflict(Int)
-}
-pub impl Show for ConflictSeverity
+  Declared(String)
+} derive(@debug.Debug)
 
 pub(all) struct DfaState {
   id : Int
   transitions : Map[Char, Int]
   accept : Int?
-}
-pub impl Show for DfaState
+} derive(@debug.Debug)
 
 pub(all) struct LRItem {
   prod : Int
   dot : Int
-}
-pub impl Compare for LRItem
-pub impl Eq for LRItem
-pub impl Hash for LRItem
-pub impl Show for LRItem
+} derive(Compare, Eq, Hash, @debug.Debug)
 
 pub(all) struct LexerDfa {
   states : Array[DfaState]
@@ -112,8 +107,7 @@ pub(all) struct LexerDfa {
 pub(all) enum LookaheadConstraint {
   NotFollowedBy(Array[Int])
   FollowedBy(Array[Int])
-}
-pub impl Show for LookaheadConstraint
+} derive(@debug.Debug)
 
 pub(all) struct ParseTable {
   states : Int
@@ -126,6 +120,8 @@ pub(all) struct ParseTable {
   terminal_names : Map[Int, String]
   extras : Array[Int]
   external_token_ids : Array[Int]
+  word_token : Int?
+  keyword_map : Map[String, Int]
 }
 
 pub(all) struct Production {
@@ -137,31 +133,28 @@ pub(all) struct Production {
   rule_name : String
   lookahead : LookaheadConstraint?
   mut alias_name : String?
-}
-pub impl Show for Production
+} derive(@debug.Debug)
 
 pub(all) enum Symbol {
   Terminal(Int)
   NonTerminal(Int)
   EndOfInput
-}
-pub impl Eq for Symbol
-pub impl Hash for Symbol
+} derive(Eq, Hash, @debug.Debug)
 pub impl Show for Symbol
 
 pub(all) struct SymbolMeta {
   name : String
   is_named : Bool
-}
-pub impl Show for SymbolMeta
+  is_synthetic : Bool
+  field_slots : Array[String]
+} derive(@debug.Debug)
 
 pub(all) enum TerminalDef {
   Literal(String)
   Regex(String)
   AnyChar
   External(String)
-}
-pub impl Eq for TerminalDef
+} derive(Eq, @debug.Debug)
 pub impl Show for TerminalDef
 
 // Type aliases

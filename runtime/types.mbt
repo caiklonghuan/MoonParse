@@ -7,7 +7,7 @@
 pub(all) struct Point {
   row : Int
   column : Int
-} derive(Eq, Show)
+} derive(Eq, Debug)
 
 ///|
 /// 将 UTF-8 字节偏移列号转换为 Unicode 代码点列号（LSP UTF-8 位置编码集成用）
@@ -69,7 +69,7 @@ pub(all) struct InputEdit {
   start_point : Point
   old_end_point : Point
   new_end_point : Point
-} derive(Show)
+} derive(Debug)
 
 ///|
 // CST 节点
@@ -82,14 +82,11 @@ pub let sym_end : Int = 0 // EOF
 pub let sym_error : Int = -1 // ERROR 节点
 
 ///|
-pub let sym_error_repeat : Int = -2 // 错误恢复中间节点（内部用）
-
-///|
 /// CST 节点（叶节点和内部节点共用同一结构体）
 pub(all) struct CstNode {
   // 标识
   /// TerminalId（叶）或 NonTerminalId（内部节点）
-  /// 负值为特殊节点：sym_error / sym_error_repeat
+  /// 负值为特殊节点：sym_error
   symbol : Int
   /// true = 命名节点（对应 is_named=true 的规则）；false = 匿名/标点节点
   is_named : Bool
@@ -129,7 +126,20 @@ pub(all) struct CstNode {
   /// true = GLR 多路径合并产物，不可增量复用
   fragile_left : Bool
   fragile_right : Bool
-} derive(Show)
+} derive(Debug)
+
+///|
+pub impl Show for CstNode with output(self, logger) {
+  if self.children.is_empty() {
+    logger.write_string(
+      "CstNode(symbol: \{self.symbol}, is_named: \{self.is_named}, start_byte: \{self.start_byte}, end_byte: \{self.end_byte}, extra: \{self.extra}, is_missing: \{self.is_missing}, is_error: \{self.is_error})",
+    )
+  } else {
+    logger.write_string(
+      "CstNode(symbol: \{self.symbol}, is_named: \{self.is_named}, start_byte: \{self.start_byte}, end_byte: \{self.end_byte}, field_names: \{self.field_names}, children: \{self.children}, extra: \{self.extra}, is_missing: \{self.is_missing}, is_error: \{self.is_error})",
+    )
+  }
+}
 
 ///|
 /// 构造叶节点（内部用）
@@ -170,6 +180,7 @@ pub fn CstNode::leaf(
 
 ///|
 /// 构造内部节点（内部用）
+/// parse_state：归约时 goto 查表前的栈顶 LR 状态（base_state），增量复用匹配用。
 pub fn CstNode::inner(
   symbol : Int,
   is_named : Bool,
@@ -179,8 +190,23 @@ pub fn CstNode::inner(
   dynamic_precedence : Int,
   fragile_left : Bool,
   fragile_right : Bool,
+  parse_state : Int,
 ) -> CstNode {
-  let start_byte = if children.is_empty() { 0 } else { children[0].start_byte }
+  let start_byte = if children.is_empty() {
+    0
+  } else {
+    // 跳过前置 extra 节点（如注释、空白），以第一个非 extra 子节点确定语义起始位置。
+    // extra 子节点出现在 children 列表中，但不影响产生节点的 start 坐标。
+    let mut i = 0
+    while i < children.length() && children[i].extra {
+      i = i + 1
+    }
+    if i < children.length() {
+      children[i].start_byte
+    } else {
+      children[0].start_byte
+    }
+  }
   let end_byte = if children.is_empty() {
     0
   } else {
@@ -189,7 +215,15 @@ pub fn CstNode::inner(
   let start_point = if children.is_empty() {
     { row: 0, column: 0 }
   } else {
-    children[0].start_point
+    let mut i = 0
+    while i < children.length() && children[i].extra {
+      i = i + 1
+    }
+    if i < children.length() {
+      children[i].start_point
+    } else {
+      children[0].start_point
+    }
   }
   let end_point = if children.is_empty() {
     { row: 0, column: 0 }
@@ -203,7 +237,7 @@ pub fn CstNode::inner(
     end_byte,
     start_point,
     end_point,
-    parse_state: 0,
+    parse_state,
     lookahead_bytes: 0,
     is_keyword: false,
     children,
@@ -294,7 +328,7 @@ struct Token {
   lookahead_bytes : Int // 词法器实际读到的末尾（>= end_byte）
   is_keyword : Bool
   is_extra : Bool // true = 属于 extras
-} derive(Show)
+} derive(Debug)
 
 ///|
 // 解析错误（公开）
@@ -306,26 +340,25 @@ pub(all) struct ParseError {
   position : Int
   point : Point
   message : String
-} derive(Show)
+} derive(Debug)
+
+///|
+pub impl Show for ParseError with output(self, logger) {
+  logger.write_string(
+    "ParseError(position: \{self.position}, point: (\{self.point.row}, \{self.point.column}), message: \{self.message})",
+  )
+}
 
 ///|
 // GLR / 错误恢复内部类型
 
 ///|
-/// 栈帧（单 version 线性 LR 用，GLR 时每个 version 独立持有）
-struct StackFrame {
-  state : Int // StateId
-  node : CstNode? // None 仅用于底部哨兵帧
-} derive(Show)
-
-///|
 /// GLR 并行版本的代价描述（condense_stack 用）
 struct ErrorStatus {
   cost : Int
-  node_count : Int // 自上次错误以来推入的节点数
   dynamic_precedence : Int
   is_in_error : Bool
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// 错误恢复与 GLR 并发版本数的可配置参数

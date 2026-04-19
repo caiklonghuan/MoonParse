@@ -339,3 +339,50 @@ test "build_lalr_table / 歧义文法产生 Shift-Reduce 冲突格" {
   let (_, table) = build_table("start e\nrule e: e \"+\" e | \"n\"")
   assert_eq(has_conflict_cell(table), true)
 }
+
+// LALR(1) 精度
+
+///|
+test "build_lalr_table / LALR(1) 精度：S→Aa|Bb 文法无 Reduce-Reduce 冲突" {
+  // 经典 LALR(1) vs SLR(1) 鉴别文法：
+  //   s → a_nt "a" | b_nt "b"
+  //   a_nt → "c"    b_nt → "c"
+  // SLR(1) 伪阳性：FOLLOW(a_nt) = FOLLOW(b_nt) = {"a","b"}，
+  //   → 在含 [a_nt→"c"•] 和 [b_nt→"c"•] 的同一状态产生 R-R 冲突。
+  // LALR(1) 精确前瞻：LA(a_nt→"c"•) = {"a"}，LA(b_nt→"c"•) = {"b"}，
+  //   两集合不相交 → 无冲突。
+  let dsl = "start s\nrule s: a_nt \"a\" | b_nt \"b\"\nrule a_nt: \"c\"\nrule b_nt: \"c\""
+  let (_, table) = build_table(dsl)
+  assert_eq(has_conflict_cell(table), false)
+}
+
+// Reduce 在多 lookahead 列上的存在性
+
+///|
+test "build_lalr_table / Reduce 在多个 lookahead 列上均存在" {
+  // expr → num "+" num | num
+  // 在 expr→num 体中，[num→/d+/•] 处于 "+" 之前，故 num 的 Reduce
+  // 应同时出现在 "+" 列（expr 继续）和 eoi_id 列（expr 结束）。
+  let (ag, table) = build_table(
+    "start expr\nrule expr: num \"+\" num | num\nrule num: /d+/",
+  )
+  let num_prod = prod_id_by_head(ag, "num")
+  let t_plus = term_id(ag, "lit:+")
+  let mut reduce_on_plus = false
+  let mut reduce_on_eoi = false
+  for key, actions in table.action {
+    let (_, tid) = key
+    for a in actions {
+      if a == Reduce(num_prod) {
+        if tid == eoi_id {
+          reduce_on_eoi = true
+        }
+        if tid == t_plus {
+          reduce_on_plus = true
+        }
+      }
+    }
+  }
+  assert_eq(reduce_on_plus, true)
+  assert_eq(reduce_on_eoi, true)
+}

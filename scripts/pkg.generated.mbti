@@ -1,0 +1,49 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/scripts"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn run_bench_incremental(Array[String]) -> Int
+
+pub fn run_bench_parse(Array[String]) -> Int
+
+pub fn run_bench_serialize(Array[String]) -> Int
+
+// Errors
+
+// Types and methods
+type BenchIncrementalOptions derive(@debug.Debug)
+
+type BenchParseOptions derive(@debug.Debug)
+
+type BenchResult
+
+type BenchSerializeOptions derive(@debug.Debug)
+
+type ExprToken derive(@debug.Debug)
+
+type FuzzIncrementalOptions derive(@debug.Debug)
+
+type FuzzJsonOptions derive(@debug.Debug)
+
+type IncrementalOutcome derive(Eq, @debug.Debug)
+
+type JsonToken derive(@debug.Debug)
+
+type MutateInputOptions derive(@debug.Debug)
+
+type Mutation derive(@debug.Debug)
+
+type MutationKind derive(Eq, @debug.Debug)
+
+type ScriptGrammar derive(Eq, @debug.Debug)
+
+type StabilityOutcome derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits
+

@@ -121,7 +121,7 @@ fn re_class_matches(
   // 首字符为 `]` 时按字面量处理
   if pi < pi_end && pat[pi] == ']' {
     if tc == ']' {
-      return not(negate)
+      return !negate
     }
     pi = pi + 1
   }
@@ -131,11 +131,11 @@ fn re_class_matches(
       let esc = pat[pi + 1]
       let ok = match esc {
         'd' => re_is_digit(tc)
-        'D' => not(re_is_digit(tc))
+        'D' => !re_is_digit(tc)
         'w' => re_is_word(tc)
-        'W' => not(re_is_word(tc))
+        'W' => !re_is_word(tc)
         's' => re_is_space(tc)
-        'S' => not(re_is_space(tc))
+        'S' => !re_is_space(tc)
         'n' => tc == '\n'
         't' => tc == '\t'
         'r' => tc == '\r'
@@ -161,7 +161,7 @@ fn re_class_matches(
     }
   }
   if negate {
-    not(matched)
+    !matched
   } else {
     matched
   }
@@ -197,18 +197,19 @@ fn re_match_one_atom(
       // 分组内容 pat[atom_start+1..atom_end-1)
       re_match_seq(pat, atom_start + 1, atom_end - 1, text, ti, ti_end)
     '\\' => {
-      if atom_start + 1 >= atom_end || ti >= ti_end {
+      // atom_start + 1 >= pat.length()：末尾孤立的 \ 是格式错误的正则，安全地返回失败
+      if atom_start + 1 >= pat.length() || ti >= ti_end {
         return -1
       }
       let esc = pat[atom_start + 1]
       let tc = text[ti]
       let ok = match esc {
         'd' => re_is_digit(tc)
-        'D' => not(re_is_digit(tc))
+        'D' => !re_is_digit(tc)
         'w' => re_is_word(tc)
-        'W' => not(re_is_word(tc))
+        'W' => !re_is_word(tc)
         's' => re_is_space(tc)
-        'S' => not(re_is_space(tc))
+        'S' => !re_is_space(tc)
         'n' => tc == '\n'
         't' => tc == '\t'
         'r' => tc == '\r'
@@ -377,11 +378,6 @@ fn get_field(field_names : Array[String?], child_idx : Int) -> String? {
 
 ///|
 /// match_children 的回溯递归核心。
-///
-/// 从 pattern_children[pc_idx] 开始，在 semantic[sem_idx..] 中寻找匹配位置。
-/// 对每个候选位置先做字段约束和模式匹配，再递归匹配剩余模式；
-/// 若递归失败则回退并尝试下一个候选位置（回溯）。
-/// 成功时将本次捕获追加到 captures，返回 true；穷举所有候选后仍失败返回 false。
 fn match_children_from(
   pattern_children : Array[PatternChild],
   pc_idx : Int,
@@ -398,8 +394,11 @@ fn match_children_from(
     return true
   }
   let pc = pattern_children[pc_idx]
-  let mut i = sem_idx
-  while i < semantic.length() {
+  // anchor_before 约束：不允许跳过，必须从 sem_idx 开始匹配
+  let start = sem_idx
+  let end_excl = if pc.anchor_before { start + 1 } else { semantic.length() }
+  let mut i = start
+  while i < end_excl && i < semantic.length() {
     let (real_idx, child) = semantic[i]
     // 字段约束检查
     let field_ok = match pc.field {
@@ -411,39 +410,187 @@ fn match_children_from(
         }
     }
     if field_ok {
-      // 模式匹配（捕获写入临时缓冲）
-      let this_captures : Array[CaptureResult] = []
-      if try_match(pc.pattern, child, input, table, match_id, this_captures) {
-        match pc.capture {
-          Some(name) =>
-            this_captures.push({ match_id, capture_name: name, node: child })
-          None => ()
+      match pc.quantifier {
+        One => {
+          let this_captures : Array[CaptureResult] = []
+          if try_match(pc.pattern, child, input, table, match_id, this_captures) {
+            match pc.capture {
+              Some(name) =>
+                this_captures.push({ match_id, capture_name: name, node: child })
+              None => ()
+            }
+            let next_sem = i + 1
+            // anchor_after 约束：若此为最后一个 pattern child 且后面还有语义子节点则失败
+            if pc.anchor_after &&
+              pc_idx + 1 >= pattern_children.length() &&
+              next_sem < semantic.length() {
+              // anchor_after 失败，回溯
+            } else {
+              let rest_captures : Array[CaptureResult] = []
+              if match_children_from(
+                  pattern_children,
+                  pc_idx + 1,
+                  semantic,
+                  next_sem,
+                  node,
+                  input,
+                  table,
+                  match_id,
+                  rest_captures,
+                ) {
+                for c in this_captures {
+                  captures.push(c)
+                }
+                for c in rest_captures {
+                  captures.push(c)
+                }
+                return true
+              }
+            }
+          }
         }
-        // 递归匹配剩余模式；失败时回溯，尝试下一个 sem_idx
+        ZeroOrOne => {
+          // 尝试在当前位置匹配一次；失败则继续外层循环扫描下一个位置。
+          // 零次匹配的回退在循环结束后统一处理（见函数末尾）。
+          let this_captures : Array[CaptureResult] = []
+          if try_match(pc.pattern, child, input, table, match_id, this_captures) {
+            match pc.capture {
+              Some(name) =>
+                this_captures.push({ match_id, capture_name: name, node: child })
+              None => ()
+            }
+            let next_sem = i + 1
+            // anchor_after 约束：若此为最后一个子模式，匹配后不允许有剩余语义子节点
+            if pc.anchor_after &&
+              pc_idx + 1 >= pattern_children.length() &&
+              next_sem < semantic.length() {
+              // anchor_after 失败，回溯继续
+            } else {
+              let rest_captures : Array[CaptureResult] = []
+              if match_children_from(
+                  pattern_children,
+                  pc_idx + 1,
+                  semantic,
+                  next_sem,
+                  node,
+                  input,
+                  table,
+                  match_id,
+                  rest_captures,
+                ) {
+                for c in this_captures {
+                  captures.push(c)
+                }
+                for c in rest_captures {
+                  captures.push(c)
+                }
+                return true
+              }
+            }
+          }
+          // 回溯继续
+        }
+        ZeroOrMore | OneOrMore => {
+          let min_count = if pc.quantifier == OneOrMore { 1 } else { 0 }
+          // 贪心匹配：在 semantic[i..] 中找尽量多的匹配（允许跳过不匹配的子节点）
+          let all_captures : Array[Array[CaptureResult]] = []
+          let positions : Array[Int] = [i]
+          let mut cur = i
+          while cur < semantic.length() {
+            let (_, sem_child) = semantic[cur]
+            let step_captures : Array[CaptureResult] = []
+            if try_match(
+                pc.pattern,
+                sem_child,
+                input,
+                table,
+                match_id,
+                step_captures,
+              ) {
+              match pc.capture {
+                Some(name) =>
+                  step_captures.push({
+                    match_id,
+                    capture_name: name,
+                    node: sem_child,
+                  })
+                None => ()
+              }
+              all_captures.push(step_captures)
+              cur = cur + 1
+              positions.push(cur)
+            } else {
+              cur = cur + 1
+            }
+          }
+          // 从最长到最短尝试
+          let mut k = positions.length() - 1
+          while k >= min_count {
+            // anchor_after 约束：若此为最后一个子模式，匹配后不允许有剩余语义子节点
+            let anchor_ok = !(pc.anchor_after &&
+              pc_idx + 1 >= pattern_children.length() &&
+              positions[k] < semantic.length())
+            if anchor_ok {
+              let rest_captures : Array[CaptureResult] = []
+              if match_children_from(
+                  pattern_children,
+                  pc_idx + 1,
+                  semantic,
+                  positions[k],
+                  node,
+                  input,
+                  table,
+                  match_id,
+                  rest_captures,
+                ) {
+                for j in 0..<k {
+                  for c in all_captures[j] {
+                    captures.push(c)
+                  }
+                }
+                for c in rest_captures {
+                  captures.push(c)
+                }
+                return true
+              }
+            }
+            k = k - 1
+          }
+          // 回溯继续
+        }
+      }
+    }
+    i = i + 1
+  }
+  // 对于 ZeroOrOne / ZeroOrMore，若循环未进入（sem_idx >= semantic.length())，
+  // 仍需尝试匹配零次
+  match pc.quantifier {
+    ZeroOrOne | ZeroOrMore =>
+      // anchor_after 约束：零次匹配时，若此为最后一个子模式且仍有剩余子节点则失败
+      if pc.anchor_after &&
+        pc_idx + 1 >= pattern_children.length() &&
+        sem_idx < semantic.length() {
+        // 零次匹配 + 尾锚 + 有剩余子节点：不合法
+      } else {
         let rest_captures : Array[CaptureResult] = []
         if match_children_from(
             pattern_children,
             pc_idx + 1,
             semantic,
-            i + 1,
+            sem_idx,
             node,
             input,
             table,
             match_id,
             rest_captures,
           ) {
-          for c in this_captures {
-            captures.push(c)
-          }
           for c in rest_captures {
             captures.push(c)
           }
           return true
         }
-        // 回溯：当前位置不行，继续尝试下一个候选
       }
-    }
-    i = i + 1
+    _ => ()
   }
   false
 }
@@ -462,11 +609,20 @@ fn match_children(
   let semantic : Array[(Int, @runtime.CstNode)] = []
   for i in 0..<node.children.length() {
     let child = node.children[i]
-    if not(child.extra) {
+    if !child.extra {
       semantic.push((i, child))
     }
   }
-  if pattern_children.length() > semantic.length() {
+  // 快速剪枝：计算模式要求的最少子节点数
+  let mut min_required = 0
+  for pc in pattern_children {
+    match pc.quantifier {
+      One => min_required = min_required + 1
+      OneOrMore => min_required = min_required + 1
+      ZeroOrOne | ZeroOrMore => ()
+    }
+  }
+  if min_required > semantic.length() {
     return false
   }
   let sub_captures : Array[CaptureResult] = []
@@ -510,6 +666,18 @@ fn try_match(
       // 有子节点约束则递归匹配
       match_children(children, node, input, table, match_id, captures)
     }
+    Alternation(alternatives) => {
+      for alt in alternatives {
+        let alt_captures : Array[CaptureResult] = []
+        if try_match(alt, node, input, table, match_id, alt_captures) {
+          for c in alt_captures {
+            captures.push(c)
+          }
+          return true
+        }
+      }
+      false
+    }
   }
 }
 
@@ -530,7 +698,7 @@ fn try_match_top(
   results : Array[CaptureResult],
 ) -> Bool {
   let captures : Array[CaptureResult] = []
-  if not(try_match(pattern, node, input, table, match_id, captures)) {
+  if !try_match(pattern, node, input, table, match_id, captures) {
     return false
   }
   // 顶层 @capture 标注：将 node 本身加入捕获
@@ -552,7 +720,7 @@ fn try_match_top(
               break
             }
           }
-          if not(ok) {
+          if !ok {
             return false
           }
         }
@@ -566,7 +734,53 @@ fn try_match_top(
               break
             }
           }
-          if not(ok) {
+          if !ok {
+            return false
+          }
+        }
+        NotEq(cap_name, expected) => {
+          let mut ok = false
+          for c in captures {
+            if c.capture_name == cap_name {
+              if node_text(c.node, input) != expected {
+                ok = true
+              }
+              break
+            }
+          }
+          if !ok {
+            return false
+          }
+        }
+        NotMatch(cap_name, pattern_str) => {
+          let mut ok = false
+          for c in captures {
+            if c.capture_name == cap_name {
+              if !regex_search(pattern_str, node_text(c.node, input)) {
+                ok = true
+              }
+              break
+            }
+          }
+          if !ok {
+            return false
+          }
+        }
+        AnyOf(cap_name, values) => {
+          let mut ok = false
+          for c in captures {
+            if c.capture_name == cap_name {
+              let text = node_text(c.node, input)
+              for v in values {
+                if text == v {
+                  ok = true
+                  break
+                }
+              }
+              break
+            }
+          }
+          if !ok {
             return false
           }
         }

@@ -34,3 +34,11 @@ pub fn parse_json5(
 ) -> Result[@runtime.CstNode, @runtime.ParseError] {
   @runtime.parse(json5_table, source)
 }
+
+///|
+pub fn json5_sexp(source : String) -> String {
+  match @runtime.parse(json5_table, source) {
+    Ok(root) => cst_to_sexp(root, source, json5_table)
+    Err(_) => "(ERROR)"
+  }
+}

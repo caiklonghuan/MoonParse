@@ -1,22 +1,7 @@
 ///|
 // 增量解析
-//
 // 增量解析允许在输入发生局部修改后，重用上一次解析结果中未受影响的子树，
 // 从而避免完整地重新解析整个文件。
-//
-// 核心思路（对标 tree-sitter）：
-// 用户提供 InputEdit（start_byte, old_end_byte, new_end_byte）
-// 遍历旧 CST，对每个节点打上 has_changes = true（如果在编辑区间内）
-// 解析新输入时：
-//      · 在 Shift 前，先尝试从旧 CST 中找到一个可复用节点（reuse_node）
-//      · 复用条件：
-//          - node.start_byte == cur_pos（位置对齐）
-//          - node.parse_state == cur_lr_state（LR 状态一致）
-//          - not node.has_changes（不在编辑区间内）
-//          - not node.fragile_left / fragile_right（非 GLR 产物）
-//          - node.lookahead_bytes <= new_edit_start（前瞻不越过编辑边界）
-//      · 复用时直接将旧节点推栈，跳过重新词法/语法分析
-// 非复用节点正常走 glr_parse 路径
 
 ///|
 /// 增量解析的旧树快照（包含一次或多次编辑的累积状态）
@@ -25,14 +10,19 @@ pub(all) struct OldTree {
   root : CstNode
   /// 该根节点对应的完整输入字符串（用于 lookahead_bytes 比对）
   old_input : String
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// 深度优先遍历，对与 [start, old_end) 相交的节点打 has_changes。
 /// 不相交的节点原样返回（共享），相交的节点 copy-on-write。
 fn mark_changes(node : CstNode, start : Int, old_end : Int) -> CstNode {
   // 不相交：直接返回原节点（零复制）
-  if node.start_byte >= old_end || node.end_byte <= start {
+  // 节点整体在编辑区间右侧：不相交，直接返回
+  if node.start_byte >= old_end {
+    return node
+  }
+  // 节点整体在编辑区间左侧：
+  if node.end_byte <= start && node.lookahead_bytes <= start {
     return node
   }
   // 叶节点：标记 has_changes
@@ -58,11 +48,6 @@ pub fn apply_edit(tree : OldTree, edit : InputEdit) -> OldTree {
 
 ///|
 /// 将 Point 坐标按编辑偏移校正（仅用于位置在 old_end_point 之后的节点）
-///
-/// 规则（对标 tree-sitter）：
-///   · p.row >  old_end_point.row → 行号移 row_delta，列号不变
-///   · p.row == old_end_point.row → 行号移 row_delta，列号移 col_delta
-///   · p.row <  old_end_point.row → 编辑前节点，不应出现，防御性保持原值
 fn shift_point(
   p : Point,
   old_end_point : Point,
@@ -82,13 +67,7 @@ fn shift_point(
 }
 
 ///|
-/// 将节点（及子树）的字节位置和行列坐标按编辑偏移全量校正。
-///
-/// 参数：
-///   byte_delta    = new_end_byte - old_end_byte
-///   old_end_point = edit.old_end_point（Point 偏移的行列分界线）
-///   row_delta     = new_end_point.row    - old_end_point.row
-///   col_delta     = new_end_point.column - old_end_point.column
+/// 将节点（及子树）的字节位置和行列坐标按编辑偏移全量校正
 fn shift_node(
   node : CstNode,
   byte_delta : Int,
@@ -130,19 +109,13 @@ fn shift_node(
 }
 
 ///|
-/// 深度优先搜索旧树，返回第一个满足 is_reusable 的节点。
-///
-/// 搜索策略：
-///   · node.start_byte > new_pos → 剪枝（后续节点更靠后，不可能对齐）
-///   · node.start_byte == new_pos → 先尝试本节点（叶或内部节点均可），
-///     不满足则进子节点（父子 start_byte 可能相同，可找到更细粒度的叶节点）
-///   · node.start_byte < new_pos → 直接进子节点递归
-/// children 按 start_byte 升序，遇到 child.start_byte > new_pos 时即可 break。
+/// 深度优先搜索旧树，返回第一个满足 is_reusable 的节点
 fn search_reusable(
   node : CstNode,
   new_pos : Int,
   lr_state : Int,
   edit_start : Int,
+  old_end_byte : Int,
 ) -> CstNode? {
   // 剪枝：节点整体在 new_pos 之后
   if node.start_byte > new_pos {
@@ -150,7 +123,7 @@ fn search_reusable(
   }
   // 尝试本节点（start_byte == new_pos 时才有可能通过 is_reusable）
   if node.start_byte == new_pos &&
-    is_reusable(node, new_pos, lr_state, edit_start) {
+    is_reusable(node, new_pos, lr_state, edit_start, old_end_byte) {
     return Some(node)
   }
   // 递归子节点
@@ -158,7 +131,7 @@ fn search_reusable(
     if child.start_byte > new_pos {
       break
     }
-    match search_reusable(child, new_pos, lr_state, edit_start) {
+    match search_reusable(child, new_pos, lr_state, edit_start, old_end_byte) {
       Some(n) => return Some(n)
       None => ()
     }
@@ -169,22 +142,20 @@ fn search_reusable(
 ///|
 /// 尝试从旧 CST 中找到可复用的子树。
 ///
-/// 返回 Some(node) 表示找到位置对齐、LR 状态一致、未受编辑影响的节点；
-/// 返回 None 表示无可复用节点，需重新解析当前位置。
+/// old_end_byte：编辑结束字节（旧坐标，= edit.new_end_byte - byte_delta）。
+/// 对编辑区间后（new_pos >= old_end_byte）的节点，放宽 lookahead 约束。
 pub fn find_reusable_node(
   old_tree : OldTree,
   new_pos : Int,
   lr_state : Int,
   edit_start : Int,
+  old_end_byte : Int,
 ) -> CstNode? {
-  search_reusable(old_tree.root, new_pos, lr_state, edit_start)
+  search_reusable(old_tree.root, new_pos, lr_state, edit_start, old_end_byte)
 }
 
 ///|
 /// 增量版 GLR 解析（内部入口）
-///
-/// apply_edit 标记 has_changes → 构造带增量上下文的 GlrEngine → engine.run
-/// 与 glr_parse 执行路径完全一致，区别仅在于 run_shift 内各路径独立查复用。
 fn glr_parse_incremental(
   table : @tablegen.ParseTable,
   input : String,
@@ -277,15 +248,87 @@ pub fn parse_incremental_with_external_scanner(
 }
 
 ///|
+/// 带有状态词法器的增量解析入口
+pub fn parse_incremental_with_stateful_scanner(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree?,
+  edit : InputEdit?,
+  scanner : &StatefulScanner,
+) -> Result[CstNode, ParseError] {
+  parse_incremental_with_stateful_scanner_and_config(
+    table,
+    input,
+    old_tree,
+    edit,
+    scanner,
+    ParseConfig::default(),
+  )
+}
+
+///|
+/// 带有状态词法器 + 自定义配置的增量解析入口
+pub fn parse_incremental_with_stateful_scanner_and_config(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree?,
+  edit : InputEdit?,
+  scanner : &StatefulScanner,
+  config : ParseConfig,
+) -> Result[CstNode, ParseError] {
+  match (old_tree, edit) {
+    (Some(ot), Some(e)) => {
+      let marked = apply_edit(ot, e)
+      let delta = e.new_end_byte - e.old_end_byte
+      let row_delta = e.new_end_point.row - e.old_end_point.row
+      let col_delta = e.new_end_point.column - e.old_end_point.column
+      let lexer = LexerEngine::new_with_stateful(table.lexer_dfa, scanner)
+      let engine = {
+        ..GlrEngine::new(lexer, config),
+        old_tree: Some(marked),
+        byte_delta: delta,
+        edit_start: e.start_byte,
+        new_end_byte: e.new_end_byte,
+        old_end_point: e.old_end_point,
+        row_delta,
+        col_delta,
+      }
+      // 为初始栈顶（哨兵节点 0）设置初始 scanner 状态
+      engine.scanner_states[0] = scanner
+      engine.run(table, input)
+    }
+    _ =>
+      glr_parse_with_stateful_scanner_and_config(table, input, scanner, config)
+  }
+}
+
+///|
 /// 判断一个节点在新编辑后是否仍然可复用
 ///
-/// 外部调用（Parser 内部在 Shift 前调用）
+/// cur_pos     ：在旧树坐标中的搜索位置（= search_pos）
+/// edit_start  ：编辑起始字节（旧坐标）
+/// old_end_byte：编辑结束字节（旧坐标，= new_end_byte - byte_delta）
+///
+/// 前瞻规则：
+///   · 编辑区间前的节点（cur_pos < old_end_byte）：
+///       lookahead_bytes > edit_start 说明词法器"看穿"了编辑起点，不可复用。
+///   · 编辑区间后的节点（cur_pos >= old_end_byte）：
+///       完全在编辑之后，has_changes=false 即可安全复用（前瞻不做约束）。
 pub fn is_reusable(
   node : CstNode,
   cur_pos : Int,
   lr_state : Int,
   edit_start : Int,
+  old_end_byte : Int,
 ) -> Bool {
+  // 错误节点和缺失节点不可复用
+  if node.is_missing || node.is_error {
+    return false
+  }
+  // extra 节点（空白/注释等）不参与归约，不可复用（parse_state=0 无意义）
+  if node.extra {
+    return false
+  }
   // 位置对齐
   if node.start_byte != cur_pos {
     return false
@@ -302,8 +345,9 @@ pub fn is_reusable(
   if node.fragile_left || node.fragile_right {
     return false
   }
-  // 前瞻不越过编辑起点
-  if node.lookahead_bytes > edit_start {
+  // 前瞻边界检查：仅对编辑区间前的节点有效；
+  // 编辑区间后（cur_pos >= old_end_byte）的节点不受 edit_start 约束
+  if cur_pos < old_end_byte && node.lookahead_bytes > edit_start {
     return false
   }
   true

@@ -13,8 +13,7 @@ fn node_type_name(
   if node.is_error {
     return "ERROR"
   }
-  if node.symbol == @runtime.sym_error ||
-    node.symbol == @runtime.sym_error_repeat {
+  if node.symbol == @runtime.sym_error {
     return "ERROR"
   }
   if node.children.is_empty() {
@@ -122,7 +121,7 @@ fn write_node(
   }
 
   // "children"：递归序列化子节点
-  if not(node.children.is_empty()) {
+  if !node.children.is_empty() {
     buf.write_char(',')
     write_jstr(buf, "children")
     buf.write_char(':')

@@ -35,69 +35,60 @@ fn build_ag(dsl : String) -> AugmentedGrammar {
 // nullable 测试
 
 ///|
-test "nullable / 空序列恒为 true" {
-  let ag = build_ag("start s\nrule s: \"a\"")
-  // 空序列 = ε，null
-  assert_eq(nullable(ag, []), true)
-}
-
-///|
-test "nullable / 含终结符序列为 false" {
-  let ag = build_ag("start s\nrule s: \"a\"")
-  let t = term_id(ag, "lit:a")
-  assert_eq(nullable(ag, [Symbol::Terminal(t)]), false)
-}
-
-///|
-test "nullable / 不可 nullable 的 NT 序列为 false" {
-  // s → "a"，s 不可 nullable
-  let ag = build_ag("start s\nrule s: \"a\"")
-  let s = nt_id(ag, "s")
-  assert_eq(nullable(ag, [Symbol::NonTerminal(s)]), false)
-}
-
-///|
-test "nullable / Optional 展开后 NT 可 nullable" {
-  // s → "a"?  展开为 s → ε | s → "a"，s 可 nullable
-  let ag = build_ag("start s\nrule s: \"a\"?")
-  let s = nt_id(ag, "s")
-  assert_eq(nullable(ag, [Symbol::NonTerminal(s)]), true)
-}
-
-///|
-test "nullable / Repeat 展开后 NT 可 nullable" {
-  // items → "x"*  展开含 items → ε
-  let ag = build_ag("start items\nrule items: \"x\"*")
-  let items = nt_id(ag, "items")
-  assert_eq(nullable(ag, [Symbol::NonTerminal(items)]), true)
-}
-
-///|
-test "nullable / Plus 展开后 NT 不可 nullable" {
-  // digits → /d/+  展开为 digits → /d/ | digits → digits /d/，无 ε
-  let ag = build_ag("start digits\nrule digits: /d/+")
-  let digits = nt_id(ag, "digits")
-  assert_eq(nullable(ag, [Symbol::NonTerminal(digits)]), false)
-}
-
-///|
-test "nullable / 含可 nullable NT 的混合序列" {
-  // s → A B，A 可 nullable，B 可 nullable → 序列 [A, B] 可 nullable
-  // 文法：s → a? b?，展开后 a_opt/b_opt 可 nullable
-  let ag = build_ag("start s\nrule s: \"a\"? \"b\"?")
-  // 找 s 的产生式，body 全是可 nullable 的辅助 NT
-  let s = nt_id(ag, "s")
-  // 从 s 的某条非空产生式读出 body
-  let mut found_body : Array[Symbol] = []
-  for prod in ag.productions {
-    if prod.head == s && prod.body.length() == 2 {
-      found_body = prod.body.map(fn(bs) { bs.symbol })
-    }
+test "nullable / 表驱动" {
+  let cases : Array[(String, (AugmentedGrammar) -> Array[Symbol], Bool)] = [
+    // 空序列恒为 true
+    ("start s\nrule s: \"a\"", fn(_ag) { [] }, true),
+    // 含终结符序列为 false
+    (
+      "start s\nrule s: \"a\"",
+      fn(ag) { [Symbol::Terminal(term_id(ag, "lit:a"))] },
+      false,
+    ),
+    // 不可 nullable 的 NT 序列为 false（s → "a" 无 ε 产生式）
+    (
+      "start s\nrule s: \"a\"",
+      fn(ag) { [Symbol::NonTerminal(nt_id(ag, "s"))] },
+      false,
+    ),
+    // Optional 展开后 NT 可 nullable
+    (
+      "start s\nrule s: \"a\"?",
+      fn(ag) { [Symbol::NonTerminal(nt_id(ag, "s"))] },
+      true,
+    ),
+    // Repeat 展开后 NT 可 nullable
+    (
+      "start items\nrule items: \"x\"*",
+      fn(ag) { [Symbol::NonTerminal(nt_id(ag, "items"))] },
+      true,
+    ),
+    // Plus 展开后 NT 不可 nullable
+    (
+      "start digits\nrule digits: /d/+",
+      fn(ag) { [Symbol::NonTerminal(nt_id(ag, "digits"))] },
+      false,
+    ),
+    // 含可 nullable NT 的混合序列（s → "a"? "b"? 的二元体）
+    (
+      "start s\nrule s: \"a\"? \"b\"?",
+      fn(ag) {
+        let s = nt_id(ag, "s")
+        let mut found : Array[Symbol] = []
+        for prod in ag.productions {
+          if prod.head == s && prod.body.length() == 2 {
+            found = prod.body.map(fn(bs) { bs.symbol })
+          }
+        }
+        found
+      },
+      true,
+    ),
+  ]
+  for item in cases {
+    let ag = build_ag(item.0)
+    assert_eq(nullable(ag, (item.1)(ag)), item.2)
   }
-  if found_body.length() == 0 {
-    fail("未找到 s 的二元体产生式")
-  }
-  assert_eq(nullable(ag, found_body), true)
 }
 
 // first_set 测试
@@ -250,6 +241,24 @@ test "follow_set / A → α B C 且 C nullable 时 FOLLOW(A) ⊆ FOLLOW(B)" {
   assert_eq(fow.contains(t_c), true)
   // opt nullable，故 FOLLOW(s) 即 eoi 也应传播到 FOLLOW(main)
   assert_eq(fow.contains(eoi_id), true)
+}
+
+///|
+test "follow_set / 互递归 NT 的 FOLLOW 通过不动点正确传播" {
+  // a_nt → b_nt | "a"，b_nt → a_nt | "b"
+  // s → a_nt，故 FOLLOW(a_nt) ⊇ {eoi_id}
+  // a_nt → b_nt（b_nt 在尾部）→ FOLLOW(b_nt) ⊇ FOLLOW(a_nt) ⊇ {eoi_id}
+  // b_nt → a_nt（a_nt 在尾部）→ FOLLOW(a_nt) ⊇ FOLLOW(b_nt) ⊇ {eoi_id}
+  // 不动点收敛后两者均含 eoi_id
+  let ag = build_ag(
+    "start s\nrule s: a_nt\nrule a_nt: b_nt | \"a\"\nrule b_nt: a_nt | \"b\"",
+  )
+  let a = nt_id(ag, "a_nt")
+  let b = nt_id(ag, "b_nt")
+  let fow_a = follow_set(ag, a)
+  let fow_b = follow_set(ag, b)
+  assert_eq(fow_a.contains(eoi_id), true)
+  assert_eq(fow_b.contains(eoi_id), true)
 }
 
 ///|

@@ -15,7 +15,7 @@ pub struct GenerateArgs {
   /// 是否打印 LR 项目集和 GOTO 表到 stderr
   diagnostic : Bool
   force : Bool
-} derive(Show)
+} derive(Debug)
 
 ///|
 pub struct ParseArgs {
@@ -31,13 +31,13 @@ pub struct ParseArgs {
   tokens : Bool
   /// 是否只输出 ERROR 节点摘要
   error_summary : Bool
-} derive(Show)
+} derive(Debug)
 
 ///|
 pub struct CheckArgs {
   /// 语法文件路径
   grammar_file : String
-} derive(Show)
+} derive(Debug)
 
 ///|
 pub struct FmtArgs {
@@ -47,7 +47,7 @@ pub struct FmtArgs {
   check : Bool
   /// 输出到 stdout 而非原地修改
   stdout : Bool
-} derive(Show)
+} derive(Debug)
 
 ///|
 pub struct QueryArgs {
@@ -63,13 +63,23 @@ pub struct QueryArgs {
   json : Bool
   /// 是否只输出匹配数量
   count : Bool
-} derive(Show)
+} derive(Debug)
 
 ///|
 pub struct TestArgs {
-  /// 测试目录路径（默认 grammars/tests/）
+  /// 测试目标规范字符串，支持 "grammar:corpus" 或单独 corpus 路径（自动旁推 .grammar）
   test_dir : String?
-} derive(Show)
+} derive(Debug)
+
+///|
+pub struct GenerateTypesArgs {
+  /// 语法文件路径（.grammar）
+  grammar_file : String
+  /// 输出文件路径（None = 输出到 stdout）
+  output : String?
+  /// 生成代码头部的模块名（None = 取文件 basename）
+  module_name : String?
+} derive(Debug)
 
 ///|
 pub enum OutputFormat {
@@ -77,7 +87,48 @@ pub enum OutputFormat {
   Json
   /// Graphviz DOT 格式，输出后可用 `dot -Tsvg` 渲染为 SVG
   Dot
-} derive(Show, Eq)
+} derive(Debug, Eq)
+
+///|
+pub struct BuildArgs {
+  /// 输入文件（.grammar 或 .parse_table）
+  input : String
+  /// 输出目录（默认 build/）
+  outdir : String?
+  /// 是否同时输出 wasm 扩展名产物
+  wasm : Bool
+} derive(Debug)
+
+///|
+pub struct WasmArgs {
+  /// 语法文件路径（.grammar），与 table_file 互斥
+  grammar_file : String?
+  /// 解析表文件路径（.parse_table），与 grammar_file 互斥
+  table_file : String?
+  /// 输出目录（默认 dist/）
+  outdir : String?
+} derive(Debug)
+
+///|
+pub enum DumpTarget {
+  Ir
+  Table
+  Automaton
+} derive(Debug)
+
+///|
+pub struct DumpArgs {
+  /// 子目标：ir / table / automaton
+  target : DumpTarget
+  /// 输入文件（.grammar 或 .parse_table）
+  input : String
+} derive(Debug)
+
+///|
+pub struct CleanArgs {
+  /// 是否跳过确认，直接执行（保留字段，当前始终直接执行）
+  force : Bool
+} derive(Debug)
 
 ///|
 /// 解析后的顶层命令
@@ -88,10 +139,121 @@ pub enum Command {
   Fmt(FmtArgs)
   Query(QueryArgs)
   Test(TestArgs)
+  GenerateTypes(GenerateTypesArgs)
+  Build(BuildArgs)
+  Wasm(WasmArgs)
+  Dump(DumpArgs)
+  Clean(CleanArgs)
   /// None = 全局帮助，Some(cmd_name) = 子命令帮助
   Help(String?)
   Version
-} derive(Show)
+} derive(Debug)
+
+///|
+pub impl Show for GenerateArgs with output(self, logger) {
+  logger.write_string(
+    "GenerateArgs(grammar_file: \{self.grammar_file}, output: \{self.output}, json: \{self.json}, diagnostic: \{self.diagnostic}, force: \{self.force})",
+  )
+}
+
+///|
+pub impl Show for ParseArgs with output(self, logger) {
+  logger.write_string(
+    "ParseArgs(grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, input_file: \{self.input_file}, format: \{self.format}, tokens: \{self.tokens}, error_summary: \{self.error_summary})",
+  )
+}
+
+///|
+pub impl Show for CheckArgs with output(self, logger) {
+  logger.write_string("CheckArgs(grammar_file: \{self.grammar_file})")
+}
+
+///|
+pub impl Show for FmtArgs with output(self, logger) {
+  logger.write_string(
+    "FmtArgs(grammar_file: \{self.grammar_file}, check: \{self.check}, stdout: \{self.stdout})",
+  )
+}
+
+///|
+pub impl Show for QueryArgs with output(self, logger) {
+  logger.write_string(
+    "QueryArgs(pattern: \{self.pattern}, input_file: \{self.input_file}, grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, json: \{self.json}, count: \{self.count})",
+  )
+}
+
+///|
+pub impl Show for TestArgs with output(self, logger) {
+  logger.write_string("TestArgs(test_dir: \{self.test_dir})")
+}
+
+///|
+pub impl Show for GenerateTypesArgs with output(self, logger) {
+  logger.write_string(
+    "GenerateTypesArgs(grammar_file: \{self.grammar_file}, output: \{self.output}, module_name: \{self.module_name})",
+  )
+}
+
+///|
+pub impl Show for BuildArgs with output(self, logger) {
+  logger.write_string(
+    "BuildArgs(input: \{self.input}, outdir: \{self.outdir}, wasm: \{self.wasm})",
+  )
+}
+
+///|
+pub impl Show for WasmArgs with output(self, logger) {
+  logger.write_string(
+    "WasmArgs(grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, outdir: \{self.outdir})",
+  )
+}
+
+///|
+pub impl Show for DumpTarget with output(self, logger) {
+  match self {
+    Ir => logger.write_string("Ir")
+    Table => logger.write_string("Table")
+    Automaton => logger.write_string("Automaton")
+  }
+}
+
+///|
+pub impl Show for DumpArgs with output(self, logger) {
+  logger.write_string("DumpArgs(target: \{self.target}, input: \{self.input})")
+}
+
+///|
+pub impl Show for CleanArgs with output(self, logger) {
+  logger.write_string("CleanArgs(force: \{self.force})")
+}
+
+///|
+pub impl Show for OutputFormat with output(self, logger) {
+  match self {
+    Sexp => logger.write_string("Sexp")
+    Json => logger.write_string("Json")
+    Dot => logger.write_string("Dot")
+  }
+}
+
+///|
+pub impl Show for Command with output(self, logger) {
+  match self {
+    Generate(args) => logger.write_string("Generate(\{args})")
+    Parse(args) => logger.write_string("Parse(\{args})")
+    Check(args) => logger.write_string("Check(\{args})")
+    Fmt(args) => logger.write_string("Fmt(\{args})")
+    Query(args) => logger.write_string("Query(\{args})")
+    Test(args) => logger.write_string("Test(\{args})")
+    GenerateTypes(args) => logger.write_string("GenerateTypes(\{args})")
+    Build(args) => logger.write_string("Build(\{args})")
+    Wasm(args) => logger.write_string("Wasm(\{args})")
+    Dump(args) => logger.write_string("Dump(\{args})")
+    Clean(args) => logger.write_string("Clean(\{args})")
+    Help(sub) => logger.write_string("Help(\{sub})")
+    Version => logger.write_string("Version")
+  }
+}
 
 ///|
 // 内部解析状态
@@ -100,7 +262,7 @@ pub enum Command {
 /// 消耗 ArgParser 头部的全局 flag：--no-color、--quiet / -q
 fn parse_global_flags(p : ArgParser) -> Unit {
   let mut cont = true
-  while cont && not(p.at_end()) {
+  while cont && !p.at_end() {
     match p.peek() {
       Some("--no-color") => {
         let _ = p.next()
@@ -196,7 +358,57 @@ pub fn parse_args(argv : Array[String]) -> Result[Command, String] {
     "fmt" => parse_fmt(p)
     "query" => parse_query(p)
     "test" => parse_test(p)
+    "generate-types" => parse_generate_types(p)
+    "build" => parse_build(p)
+    "wasm" => parse_wasm(p)
+    "dump" => parse_dump(p)
+    "clean" => parse_clean(p)
     other => Err("unknown command '\{other}'\n\{global_usage()}")
+  }
+}
+
+///|
+fn parse_generate_types(p : ArgParser) -> Result[Command, String] {
+  let mut grammar_file : String? = None
+  let mut output : String? = None
+  let mut module_name : String? = None
+  while !p.at_end() {
+    match p.peek() {
+      Some("--help") | Some("-h") => return Ok(Help(Some("generate-types")))
+      Some("--output") | Some("-o") => {
+        let _ = p.next()
+        match p.require_value("--output") {
+          Ok(v) => output = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--module") | Some("-m") => {
+        let _ = p.next()
+        match p.require_value("--module") {
+          Ok(v) => module_name = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--stdout") => {
+        let _ = p.next()
+        output = None // None = stdout（明确覆写，无副作用）
+      }
+      Some(s) =>
+        if s[0].to_int() == '-'.to_int() {
+          return Err(
+            "unknown flag '\{s}' for generate-types\n\{generate_types_usage()}",
+          )
+        } else {
+          let _ = p.next()
+          grammar_file = Some(s)
+        }
+      None => break
+    }
+  }
+  match grammar_file {
+    None =>
+      Err("generate-types: grammar file required\n\{generate_types_usage()}")
+    Some(gf) => Ok(GenerateTypes({ grammar_file: gf, output, module_name }))
   }
 }
 
@@ -207,7 +419,7 @@ fn parse_generate(p : ArgParser) -> Result[Command, String] {
   let mut json = false
   let mut diagnostic = false
   let mut force = false
-  while not(p.at_end()) {
+  while !p.at_end() {
     match p.peek() {
       Some("--help") | Some("-h") => return Ok(Help(Some("generate")))
       Some("--output") | Some("-o") => {
@@ -254,7 +466,7 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
   let mut format = Sexp
   let mut tokens = false
   let mut error_summary = false
-  while not(p.at_end()) {
+  while !p.at_end() {
     match p.peek() {
       Some("--help") | Some("-h") => return Ok(Help(Some("parse")))
       Some("--grammar") | Some("-g") => {
@@ -303,7 +515,7 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
           let _ = p.next()
           // 首个位置参数：无 --grammar/--table 时视为 grammar_file；
           // 第二个位置参数视为 input_file
-          if grammar_file.is_empty() && table_file.is_empty() {
+          if grammar_file is None && table_file is None {
             grammar_file = Some(s)
           } else {
             input_file = Some(s)
@@ -317,7 +529,7 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
       "parse: cannot use --grammar and --table together\n\{parse_usage()}",
     )
   }
-  if grammar_file.is_empty() && table_file.is_empty() {
+  if grammar_file is None && table_file is None {
     return Err("parse: grammar or table file required\n\{parse_usage()}")
   }
   Ok(
@@ -335,7 +547,7 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
 ///|
 fn parse_check(p : ArgParser) -> Result[Command, String] {
   let mut grammar_file : String? = None
-  while not(p.at_end()) {
+  while !p.at_end() {
     match p.peek() {
       Some("--help") | Some("-h") => return Ok(Help(Some("check")))
       Some(s) =>
@@ -359,7 +571,7 @@ fn parse_fmt(p : ArgParser) -> Result[Command, String] {
   let mut grammar_file : String? = None
   let mut check = false
   let mut stdout = false
-  while not(p.at_end()) {
+  while !p.at_end() {
     match p.peek() {
       Some("--help") | Some("-h") => return Ok(Help(Some("fmt")))
       Some("--check") => {
@@ -394,7 +606,7 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
   let mut table_file : String? = None
   let mut json = false
   let mut count = false
-  while not(p.at_end()) {
+  while !p.at_end() {
     match p.peek() {
       Some("--help") | Some("-h") => return Ok(Help(Some("query")))
       Some("--grammar") | Some("-g") => {
@@ -425,7 +637,7 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
         } else {
           let _ = p.next()
           // 第一个位置参数：pattern；第二个：input_file
-          if pattern.is_empty() {
+          if pattern is None {
             pattern = Some(s)
           } else {
             input_file = Some(s)
@@ -442,7 +654,7 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
   match pattern {
     None => Err("query: pattern required\n\{query_usage()}")
     Some(pat) => {
-      if grammar_file.is_empty() && table_file.is_empty() {
+      if grammar_file is None && table_file is None {
         return Err("query: --grammar or --table required\n\{query_usage()}")
       }
       Ok(
@@ -462,7 +674,7 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
 ///|
 fn parse_test(p : ArgParser) -> Result[Command, String] {
   let mut test_dir : String? = None
-  while not(p.at_end()) {
+  while !p.at_end() {
     match p.peek() {
       Some("--help") | Some("-h") => return Ok(Help(Some("test")))
       Some(s) =>
@@ -487,12 +699,17 @@ fn global_usage() -> String {
     #|Usage: moonparse [global-options] <command> [options]
     #|
     #|Commands:
-    #|  generate <file.grammar>   Compile grammar to .parse_table
-    #|  parse    <file.grammar>   Parse input and print CST
-    #|  check    <file.grammar>   Validate grammar and report conflicts
-    #|  fmt      <file.grammar>   Format a .grammar file
-    #|  query    <pattern>        Run S-expression query on CST
-    #|  test     [dir]            Run corpus test cases
+    #|  generate       <file.grammar>  Compile grammar to .parse_table
+    #|  parse          <file.grammar>  Parse input and print CST
+    #|  check          <file.grammar>  Validate grammar and report conflicts
+    #|  fmt            <file.grammar>  Format a .grammar file
+    #|  query          <pattern>       Run S-expression query on CST
+    #|  test           [dir]           Run corpus test cases
+    #|  generate-types <file.grammar>  Generate typed CST API (.mbt)
+    #|  build          <file>          Build distributable parser artifact
+    #|  wasm           <file>          Build WASM distribution package
+    #|  dump           <target> <file> Dump internal structures for debugging
+    #|  clean                          Remove generated/, build/, dist/
     #|
     #|Global options (before <command>):
     #|  --no-color     Disable ANSI color output
@@ -503,6 +720,22 @@ fn global_usage() -> String {
     #|  -v, --version  Show version
     #|
     #|Run 'moonparse help <command>' for command-specific help.
+  )
+}
+
+///|
+fn generate_types_usage() -> String {
+  (
+    #|Usage: moonparse generate-types <file.grammar> [options]
+    #|
+    #|Generate a type-safe MoonBit CST accessor API from a grammar file.
+    #|
+    #|Options:
+    #|  -o, --output <path>   Write to file (default: stdout)
+    #|  -m, --module <name>   Module name for the generated header
+    #|                        (default: grammar filename without extension)
+    #|  --stdout              Write result to stdout (default when -o is omitted)
+    #|  -h, --help            Show this help
   )
 }
 
@@ -523,7 +756,7 @@ fn generate_usage() -> String {
 ///|
 fn parse_usage() -> String {
   (
-    #|Usage: moonparse parse <file.grammar> [input-file] [options]
+    #|Usage: moonparse parse (-g <file.grammar> | -t <file.parse_table>) [input-file] [options]
     #|
     #|Options:
     #|  -g, --grammar <file>  Grammar file (.grammar)
@@ -533,6 +766,22 @@ fn parse_usage() -> String {
     #|  --error-summary       Only print ERROR node summary
     #|  --stdin               Read input from stdin
     #|  -h, --help            Show this help
+  )
+}
+
+///|
+fn test_usage() -> String {
+  (
+    #|Usage: moonparse test <spec>
+    #|
+    #|spec formats:
+    #|  grammar.grammar:corpus.txt   Explicit grammar and corpus files
+    #|  corpus.txt                   Auto-derives grammar from same basename
+    #|
+    #|Exit codes: 0 = all passed, 1 = test failures, 2 = load/compile error
+    #|
+    #|Options:
+    #|  -h, --help  Show this help
   )
 }
 
@@ -571,5 +820,230 @@ fn query_usage() -> String {
     #|  --json                Output JSON format
     #|  --count               Only print match count
     #|  -h, --help            Show this help
+  )
+}
+
+///|
+fn parse_build(p : ArgParser) -> Result[Command, String] {
+  let mut input : String? = None
+  let mut outdir : String? = None
+  let mut wasm = false
+  while !p.at_end() {
+    match p.peek() {
+      Some("--help") | Some("-h") => return Ok(Help(Some("build")))
+      Some("--output") | Some("-o") => {
+        let _ = p.next()
+        match p.require_value("--output") {
+          Ok(v) => outdir = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--wasm") => {
+        let _ = p.next()
+        wasm = true
+      }
+      Some(s) =>
+        if s[0].to_int() == '-'.to_int() {
+          return Err("unknown flag '\{s}' for build\n\{build_usage()}")
+        } else {
+          let _ = p.next()
+          input = Some(s)
+        }
+      None => break
+    }
+  }
+  match input {
+    None => Err("build: input file required\n\{build_usage()}")
+    Some(f) => Ok(Build({ input: f, outdir, wasm }))
+  }
+}
+
+///|
+fn parse_wasm(p : ArgParser) -> Result[Command, String] {
+  let mut grammar_file : String? = None
+  let mut table_file : String? = None
+  let mut outdir : String? = None
+  while !p.at_end() {
+    match p.peek() {
+      Some("--help") | Some("-h") => return Ok(Help(Some("wasm")))
+      Some("--grammar") | Some("-g") => {
+        let _ = p.next()
+        match p.require_value("--grammar") {
+          Ok(v) => grammar_file = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--table") | Some("-t") => {
+        let _ = p.next()
+        match p.require_value("--table") {
+          Ok(v) => table_file = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--output") | Some("-o") => {
+        let _ = p.next()
+        match p.require_value("--output") {
+          Ok(v) => outdir = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some(s) =>
+        if s[0].to_int() == '-'.to_int() {
+          return Err("unknown flag '\{s}' for wasm\n\{wasm_usage()}")
+        } else {
+          let _ = p.next()
+          if grammar_file is None && table_file is None {
+            grammar_file = Some(s)
+          } else {
+            return Err(
+              "wasm: unexpected positional argument '\{s}'\n\{wasm_usage()}",
+            )
+          }
+        }
+      None => break
+    }
+  }
+  if grammar_file is Some(_) && table_file is Some(_) {
+    return Err(
+      "wasm: cannot use --grammar and --table together\n\{wasm_usage()}",
+    )
+  }
+  if grammar_file is None && table_file is None {
+    return Err("wasm: grammar or table file required\n\{wasm_usage()}")
+  }
+  Ok(Wasm({ grammar_file, table_file, outdir }))
+}
+
+///|
+fn parse_dump(p : ArgParser) -> Result[Command, String] {
+  // 子目标是第一个位置参数
+  let target_str = match p.next() {
+    Some("--help") | Some("-h") => return Ok(Help(Some("dump")))
+    Some(s) => s
+    None =>
+      return Err(
+        "dump: target required (ir | table | automaton)\n\{dump_usage()}",
+      )
+  }
+  let target = match target_str {
+    "ir" => DumpTarget::Ir
+    "table" => DumpTarget::Table
+    "automaton" => DumpTarget::Automaton
+    other =>
+      return Err(
+        "dump: unknown target '\{other}' (expected: ir | table | automaton)\n\{dump_usage()}",
+      )
+  }
+  let mut input : String? = None
+  while !p.at_end() {
+    match p.peek() {
+      Some("--help") | Some("-h") => return Ok(Help(Some("dump")))
+      Some(s) =>
+        if s[0].to_int() == '-'.to_int() {
+          return Err("unknown flag '\{s}' for dump\n\{dump_usage()}")
+        } else {
+          let _ = p.next()
+          input = Some(s)
+        }
+      None => break
+    }
+  }
+  match input {
+    None => Err("dump: input file required\n\{dump_usage()}")
+    Some(f) => Ok(Dump({ target, input: f }))
+  }
+}
+
+///|
+fn parse_clean(p : ArgParser) -> Result[Command, String] {
+  let mut force = false
+  while !p.at_end() {
+    match p.peek() {
+      Some("--help") | Some("-h") => return Ok(Help(Some("clean")))
+      Some("--force") | Some("-f") => {
+        let _ = p.next()
+        force = true
+      }
+      Some(s) =>
+        if s[0].to_int() == '-'.to_int() {
+          return Err("unknown flag '\{s}' for clean\n\{clean_usage()}")
+        } else {
+          return Err("clean: unexpected argument '\{s}'\n\{clean_usage()}")
+        }
+      None => break
+    }
+  }
+  Ok(Clean({ force, }))
+}
+
+///|
+fn build_usage() -> String {
+  (
+    #|Usage: moonparse build <file> [options]
+    #|
+    #|Input: .grammar file (generates parse table first) or .parse_table file
+    #|
+    #|Output: build/
+    #|  parser.parse_table   Binary parse table (native target)
+    #|  parser.wasm          Same artifact with .wasm extension (with --wasm)
+    #|
+    #|Options:
+    #|  -o, --output <dir>   Output directory (default: build/)
+    #|  --wasm               Also write parser.wasm alongside parser.parse_table
+    #|  -h, --help           Show this help
+  )
+}
+
+///|
+fn wasm_usage() -> String {
+  (
+    #|Usage: moonparse wasm (-g <file.grammar> | -t <file.parse_table>) [options]
+    #|
+    #|Build a WASM distribution package from a grammar or parse table.
+    #|
+    #|Output: dist/
+    #|  parser.js            JavaScript module (embeds grammar DSL)
+    #|  parser.parse_table   Binary parse table
+    #|
+    #|Options:
+    #|  -g, --grammar <file>  Grammar file (.grammar)
+    #|  -t, --table   <file>  Parse table file (.parse_table)
+    #|  -o, --output <dir>    Output directory (default: dist/)
+    #|  -h, --help            Show this help
+  )
+}
+
+///|
+fn dump_usage() -> String {
+  (
+    #|Usage: moonparse dump <target> <file> [options]
+    #|
+    #|Targets:
+    #|  ir         Print the grammar IR (rules, terminals, precedences)
+    #|  table      Print the LALR parse table as JSON
+    #|  automaton  Print LR(0) item sets and GOTO transitions
+    #|
+    #|Input: .grammar file (or .parse_table for 'table' target)
+    #|
+    #|Options:
+    #|  -h, --help  Show this help
+    #|
+    #|Examples:
+    #|  moonparse dump ir      grammar.grammar
+    #|  moonparse dump table   grammar.grammar
+    #|  moonparse dump automaton grammar.grammar
+  )
+}
+
+///|
+fn clean_usage() -> String {
+  (
+    #|Usage: moonparse clean [options]
+    #|
+    #|Remove build artifacts: generated/, build/, dist/
+    #|
+    #|Options:
+    #|  -f, --force  Skip confirmation (currently always skips, reserved for future use)
+    #|  -h, --help   Show this help
   )
 }

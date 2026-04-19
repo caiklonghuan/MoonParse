@@ -22,6 +22,11 @@ fn str_to_utf8(s : String) -> Bytes {
 }
 
 ///|
+fn shell_quote(path : String) -> String {
+  "\"" + path + "\""
+}
+
+///|
 // C stdio FFI
 
 ///|
@@ -204,7 +209,7 @@ fn read_bytes_impl(path : String) -> Result[Bytes, String] {
   if read < 0 {
     return Err("fread failed: \{path}")
   }
-  Ok(buf[0:read])
+  Ok(Bytes::makei(read, fn(i) { buf[i] }))
 }
 
 ///|
@@ -213,4 +218,32 @@ extern "c" fn c_exit(code : Int) -> Unit = "exit"
 ///|
 fn process_exit_impl(code : Int) -> Unit {
   c_exit(code)
+}
+
+///|
+#borrow(cmd)
+extern "c" fn c_system(cmd : Bytes) -> Int = "system"
+
+///|
+fn make_dir_impl(path : String) -> Result[Unit, String] {
+  // best-effort: `mkdir` 在 Windows 上可递归创建，在 Unix 上至少可处理单层输出目录；
+  // 真正的失败会在后续 write_file / write_bytes 阶段暴露。
+  let _ = c_system(str_to_cstr("mkdir " + shell_quote(path)))
+  Ok(())
+}
+
+///|
+fn remove_dir_all_impl(path : String) -> Result[Unit, String] {
+  let quoted = shell_quote(path)
+  let unix_code = c_system(str_to_cstr("rm -rf " + quoted))
+  if unix_code == 0 {
+    return Ok(())
+  }
+  let win_code = c_system(str_to_cstr("rmdir /s /q " + quoted))
+  if win_code == 0 {
+    Ok(())
+  } else {
+    // 缺失目录在不同 shell 上返回码不一致；clean 语义上应保持幂等。
+    Ok(())
+  }
 }

@@ -1,14 +1,58 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "caiklonghuan/MoonParse/grammar"
 
+import {
+  "moonbitlang/core/debug",
+}
+
 // Values
+pub fn alias_(String, Pattern) -> Pattern
+
+pub fn and_(Pattern) -> Pattern
+
+pub fn app(String, Array[Pattern]) -> Pattern
+
+pub fn choice(Array[Pattern]) -> Pattern
+
+pub fn field(String, Pattern) -> Pattern
+
+pub fn grammar_from_json(String) -> ParseResult[Grammar]
+
 pub fn grammar_to_json(Grammar) -> String
 
 pub fn grammar_to_string(Grammar) -> String
 
+pub fn lit(String) -> Pattern
+
+pub let moonbit_grammar : String
+
+pub fn not_(Pattern) -> Pattern
+
+pub fn optional(Pattern) -> Pattern
+
 pub fn parse_grammar(String) -> ParseResult[Grammar]
 
+pub fn parse_grammar_lenient(String) -> (Grammar, Array[ParseError])
+
 pub fn pattern_to_string(Pattern) -> String
+
+pub fn plus(Pattern) -> Pattern
+
+pub fn prec(Int, PrecKind, Pattern) -> Pattern
+
+pub fn re(String) -> Pattern
+
+pub fn ref_(String) -> Pattern
+
+pub fn repeat(Pattern) -> Pattern
+
+pub fn repeat_exact(Pattern, Int) -> Pattern
+
+pub fn repeat_range(Pattern, Int, Int) -> Pattern
+
+pub fn seq(Array[Pattern]) -> Pattern
+
+pub fn tagged(String, Pattern) -> Pattern
 
 pub fn validate_grammar(Grammar) -> Array[ValidationError]
 
@@ -21,7 +65,20 @@ pub(all) struct Grammar {
   precedences : Array[PrecDecl]
   extras : Array[Pattern]
   externals : Array[String]
+  duplicate_rule_names : Array[String]
+  mut word : String?
+  conflicts : Array[Array[String]]
+  supertypes : Array[String]
 }
+pub fn Grammar::add_conflict(Self, Array[String]) -> Self
+pub fn Grammar::add_external(Self, String) -> Self
+pub fn Grammar::add_extra(Self, Pattern) -> Self
+pub fn Grammar::add_precedence(Self, PrecKind, Array[String]) -> Self
+pub fn Grammar::add_rule(Self, Rule) -> Self
+pub fn Grammar::add_supertype(Self, String) -> Self
+pub fn Grammar::new() -> Self
+pub fn Grammar::set_start(Self, String) -> Self
+pub fn Grammar::set_word(Self, String) -> Self
 
 pub(all) struct ParseError {
   message : String
@@ -50,6 +107,7 @@ pub(all) enum Pattern {
   RepeatRange(Pattern, Int, Int)
   Prec(Int, PrecKind, Pattern)
   Alias(String, Pattern)
+  RuleApp(String, Array[Pattern])
 }
 pub fn Pattern::to_string(Self) -> String
 
@@ -64,16 +122,29 @@ pub(all) enum PrecKind {
   Right
   Nonassoc
   Dynamic
-}
-pub impl Eq for PrecKind
+} derive(Eq, @debug.Debug)
 pub impl Show for PrecKind
 
 pub(all) struct Rule {
   name : String
   pattern : Pattern
   is_named : Bool
+  is_token : Bool
+  params : Array[String]
+  attributes : Array[RuleAttribute]
   location : SourceLocation?
 }
+pub fn Rule::new(String, Pattern) -> Self
+pub fn Rule::template(String, Array[String], Pattern) -> Self
+pub fn Rule::token(String, Pattern) -> Self
+pub fn Rule::with_attribute(Self, RuleAttribute) -> Self
+
+pub(all) enum RuleAttribute {
+  Inline
+  Hide
+  Deprecated
+} derive(Eq, @debug.Debug)
+pub impl Show for RuleAttribute
 
 pub(all) struct SourceLocation {
   line : Int
@@ -91,6 +162,7 @@ pub(all) struct ValidationError {
   rule : String
   kind : ValidationErrorKind
   location : SourceLocation?
+  hint : String?
 }
 pub fn ValidationError::to_string(Self) -> String
 
@@ -101,6 +173,19 @@ pub(all) enum ValidationErrorKind {
   IndirectLeftRecursion(Array[String])
   UnreachableRule(String)
   InvalidRegex(String, String)
+  DuplicateRule(String)
+  MixedPrecSystems
+  ExtrasNonTerminal(String)
+  UndefinedTemplateRule(String)
+  RuleAppArityMismatch(String, Int, Int)
+  TemplateRuleUsedAsRef(String)
+  UndefinedWordRule(String)
+  TokenRuleContainsRef(String)
+  ConflictUndeclaredRule(String)
+  SupertypeUndeclaredRule(String)
+  DeprecatedRuleUsed(String)
+  LookaheadNonTailAssertion
+  LookaheadMixedAssertions
 }
 
 // Type aliases

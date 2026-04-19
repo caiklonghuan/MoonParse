@@ -48,7 +48,7 @@ fn write_cst_json(
     buf.write_string(",\"children\":[")
     let mut first = true
     for child in node.children {
-      if not(first) {
+      if !first {
         buf.write_char(',')
       }
       write_cst_json(buf, child, input, table)

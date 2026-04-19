@@ -1,7 +1,6 @@
 ///|
 // 词法器编译器
 
-
 ///|
 /// 仅用于 AnyChar / `.` 展开的字符集（ASCII 可打印字符 + 常用控制字符）
 let range_chars : String = "\t\n\r !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
@@ -176,11 +175,48 @@ fn parse_escape_trans(p : RexParse) -> Array[NfaTrans] {
   let c = RexParse::next(p)
   match c {
     'd' => [Range('0', '9')]
+    'D' => {
+      // 非数字：range_chars 中排除 [0-9] 的补集
+      let result : Array[NfaTrans] = []
+      for ch in range_chars {
+        if ch < '0' || ch > '9' {
+          result.push(Ch(ch))
+        }
+      }
+      result
+    }
     'w' => [Range('a', 'z'), Range('A', 'Z'), Range('0', '9'), Ch('_')]
+    'W' => {
+      // 非单词字符：range_chars 中排除 [a-zA-Z0-9_]
+      let result : Array[NfaTrans] = []
+      for ch in range_chars {
+        let is_word = (ch >= 'a' && ch <= 'z') ||
+          (ch >= 'A' && ch <= 'Z') ||
+          (ch >= '0' && ch <= '9') ||
+          ch == '_'
+        if !is_word {
+          result.push(Ch(ch))
+        }
+      }
+      result
+    }
     's' => [Ch(' '), Ch('\t'), Ch('\n'), Ch('\r')]
+    'S' => {
+      // 非空白字符：range_chars 中排除 [ \t\n\r]
+      let result : Array[NfaTrans] = []
+      for ch in range_chars {
+        if ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r' {
+          result.push(Ch(ch))
+        }
+      }
+      result
+    }
     'n' => [Ch('\n')]
     't' => [Ch('\t')]
     'r' => [Ch('\r')]
+    'f' => [Ch((0x0C).unsafe_to_char())]
+    'v' => [Ch((0x0B).unsafe_to_char())]
+    '0' => [Ch((0).unsafe_to_char())]
     _ => [Ch(c)]
   }
 }
@@ -251,7 +287,7 @@ fn parse_char_class_trans(p : RexParse) -> Array[NfaTrans] {
     }
     let complement : Array[NfaTrans] = []
     for c in range_chars {
-      if not(pos_set.contains(c)) {
+      if !pos_set.contains(c) {
         complement.push(Ch(c))
       }
     }
@@ -421,6 +457,11 @@ fn collect_regex_alphabet(re : String, set : Set[Char]) -> Unit {
         if p.pos < p.src.length() {
           match p.src[p.pos] {
             'd' => add_range_chars(set, '0', '9')
+            'D' | 'W' | 'S' =>
+              // 否定转义补集来自 range_chars，全部加入字母表
+              for c in range_chars {
+                set.add(c)
+              }
             'w' => {
               add_range_chars(set, 'a', 'z')
               add_range_chars(set, 'A', 'Z')
@@ -443,9 +484,13 @@ fn collect_regex_alphabet(re : String, set : Set[Char]) -> Unit {
       }
       '[' => {
         p.pos = p.pos + 1
-        // skip optional '^'
-        if p.pos < p.src.length() && p.src[p.pos] == '^' {
+        // 检测否定类 [^...]：NFA 生成 range_chars 的补集，整个 range_chars 须进字母表
+        let negated = p.pos < p.src.length() && p.src[p.pos] == '^'
+        if negated {
           p.pos = p.pos + 1
+          for c in range_chars {
+            set.add(c)
+          }
         }
         let mut in_cls = true
         while in_cls && p.pos < p.src.length() {
@@ -456,6 +501,11 @@ fn collect_regex_alphabet(re : String, set : Set[Char]) -> Unit {
               if p.pos < p.src.length() {
                 match p.src[p.pos] {
                   'd' => add_range_chars(set, '0', '9')
+                  'D' | 'W' | 'S' =>
+                    // 否定转义补集来自 range_chars，全部加入字母表
+                    for c in range_chars {
+                      set.add(c)
+                    }
                   'w' => {
                     add_range_chars(set, 'a', 'z')
                     add_range_chars(set, 'A', 'Z')
@@ -468,6 +518,10 @@ fn collect_regex_alphabet(re : String, set : Set[Char]) -> Unit {
                     set.add('\n')
                     set.add('\r')
                   }
+                  'n' => set.add('\n')
+                  't' => set.add('\t')
+                  'r' => set.add('\r')
+                  'f' => set.add('\f')
                   x => set.add(x)
                 }
                 p.pos = p.pos + 1
@@ -775,7 +829,7 @@ fn minimize_dfa(
       changed = true
     } else {
       let mut i = 0
-      while i < n && not(changed) {
+      while i < n && !changed {
         if new_class_of[i] != class_of[i] {
           changed = true
         }

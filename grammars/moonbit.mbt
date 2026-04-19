@@ -1,81 +1,150 @@
 ///|
-// MoonBit 语法定义（项目内高频写法的核心子集）。
+// MoonBit 语法定义（覆盖绝大部分常用语法特性）。
 //
 // 覆盖：
-//   - fn / let / type / struct / enum / test
-//   - if / match / for / while / return
-//   - 记录字面量、数组、调用、索引、成员访问
+//   - fn / let / const / type / struct / enum / trait / impl / test / suberror
+//   - if / match / guard / for / for..in / while / loop / return / raise / try-catch / defer
+//   - 管道 |> / 级联 .. / is 表达式 / 箭头函数
+//   - 位运算 & | ^ << >> / 范围 .. ..< ..=
+//   - 带标签参数 label~ / 可选参数 label?
+//   - 记录字面量、struct update { ..e, f: v }、数组、调用、索引、成员访问
+//   - or-pattern (|) / as-pattern / rest-pattern (..) / range pattern
+//   - 泛型约束 fn[T : Trait] / raise 签名 / nobreak 子句
 //   - 基于 newline 的语句分隔
 
-///|
 pub let moonbit_grammar : String =
   #|start module
-  #|extras [/[ \t\f]+/, /\/\/[^\n\r]*/, /\/\*([^*]|\*+[^*/])*\*+\//]
+  #|extras [/[ \t\f]+/, /\/\/[^\n\r]*/, /\/\*([^*]|\*+[^*\/])*\*+\//]
+  #|word identifier
+  #|conflicts [[for_in_statement, for_c_statement]]
+  #|conflicts [[pattern_item, single_pattern]]
+  #|conflicts [[block, record_literal]]
   #|rule newline: /(\r\n|\n|\r)[ \t\f]*/
-  #|rule module: newline* item*
-  #|rule item: function_decl newline* | let_decl newline* | type_alias_decl newline* | struct_decl newline* | enum_decl newline* | test_decl newline*
-  #|rule visibility: "pub" ("(" "all" ")")? | "priv"
-  #|rule function_decl: visibility? "fn" fn_name type_params? "(" parameter_list? ")" return_type? block
+  #|rule module: (newline | item)*
+  #|rule item: function_decl | let_decl | const_decl | type_alias_decl | struct_decl | enum_decl | trait_decl | impl_decl | test_decl | suberror_decl
+  #|rule visibility: "pub" ("(" ("all" | "readonly" | "open") ")")? | "priv"
+  #|rule function_decl: attribute* visibility? "fn" constrained_type_params? fn_name type_params? parameter_clause return_type? error_type? block
   #|rule let_decl: visibility? "let" "mut"? pattern type_annotation? ("=" expression)?
+  #|rule const_decl: visibility? "const" identifier type_annotation? "=" expression
   #|rule type_alias_decl: visibility? "type" identifier type_params? "=" type_expr
-  #|rule struct_decl: visibility? "struct" identifier type_params? "{" newline* field_decl (newline+ field_decl)* newline* "}" derive_clause?
-  #|rule field_decl: identifier ":" type_expr
-  #|rule enum_decl: visibility? "enum" identifier type_params? "{" newline* enum_case (newline+ enum_case)* newline* "}" derive_clause?
-  #|rule enum_case: identifier ("(" type_expr_list? ")")?
-  #|rule test_decl: "test" string_literal block
+  #|rule struct_decl: visibility? "struct" identifier type_params? ("(" struct_tuple_fields? ")")? ("{" field_decl_list "}")? derive_clause?
+  #|rule struct_tuple_fields: type_expr ("," type_expr)*
+  #|rule field_decl_list: (newline | field_decl)*
+  #|rule field_decl: "mut"? identifier ":" type_expr
+  #|rule enum_decl: visibility? "enum" identifier type_params? "{" enum_case_list "}" derive_clause?
+  #|rule enum_case_list: (newline | enum_case)*
+  #|rule enum_case: identifier ("(" enum_payload_list? ")")?
+  #|rule enum_payload_list: enum_payload_item ("," enum_payload_item)*
+  #|rule enum_payload_item: "mut"? identifier "~" ":" type_expr | type_expr
+  #|rule trait_decl: visibility? "trait" identifier type_params? (":" trait_bound_list)? "{" trait_method_list "}"
+  #|rule trait_bound_list: qualified_identifier ("+" qualified_identifier)*
+  #|rule trait_method_list: (newline | trait_method_decl)*
+  #|rule trait_method_decl: identifier type_params? parameter_clause return_type? error_type? ("=" "_")?
+  #|rule impl_decl: visibility? "impl" constrained_type_params? qualified_identifier ("for" qualified_identifier type_args?)? ("with" newline? impl_method_decl)?
+  #|rule impl_method_decl: identifier type_params? parameter_clause return_type? error_type? block
+  #|rule test_decl: "test" string_literal? block
+  #|rule suberror_decl: visibility? "suberror" identifier ("{" enum_case_list "}")? derive_clause?
+  #|rule attribute: "#" identifier "(" attribute_args? ")"
+  #|rule attribute_args: attribute_arg ("," attribute_arg)*
+  #|rule attribute_arg: identifier ("=" (string_literal | identifier))?
   #|rule fn_name: identifier ("::" identifier)*
+  #|rule constrained_type_params: "[" constrained_param ("," constrained_param)* "]"
+  #|rule constrained_param: identifier (":" trait_bound_list)?
   #|rule type_params: "[" identifier ("," identifier)* "]"
-  #|rule parameter_list: parameter ("," parameter)*
-  #|rule parameter: "self" | pattern type_annotation?
+  #|rule parameter_clause: "()" | "(" newline* parameter_list? newline* ")"
+  #|rule parameter_list: parameter ("," newline* parameter)* ("," newline*)?
+  #|rule parameter: "self" | "~"? identifier type_annotation? ("=" expression)? | "_" | ".." identifier
   #|rule type_annotation: ":" type_expr
   #|rule return_type: "->" type_expr
-  #|rule type_expr: simple_type ("->" type_expr)?
-  #|rule simple_type: qualified_identifier type_args? "?"* | "(" type_expr_list? ")" | "[" type_expr_list? "]" | "()"
+  #|rule error_type: "raise" type_expr?
+  #|rule type_expr: simple_type ("->" type_expr ("raise" type_expr?)?)?
+  #|rule simple_type: qualified_identifier type_args? "?"* | "(" type_expr_list? ")" | "[" type_expr_list? "]" | "()" | "&" qualified_identifier type_args?
   #|rule type_expr_list: type_expr ("," type_expr)*
   #|rule type_args: "[" type_expr ("," type_expr)* "]"
-  #|rule block: "{" newline* statement* "}"
-  #|rule statement: let_statement newline* | return_statement newline* | break_statement newline* | continue_statement newline* | if_statement newline* | while_statement newline* | for_statement newline* | expression newline*
+  #|rule block: "{" newline* (statement newline*)* "}"
+  #|rule statement: let_statement | return_statement | break_statement | continue_statement | raise_statement | guard_statement | if_statement | while_statement | loop_statement | for_in_statement | for_c_statement | defer_statement | expression
   #|rule let_statement: "let" "mut"? pattern type_annotation? ("=" expression)?
   #|rule return_statement: "return" expression?
-  #|rule break_statement: "break"
-  #|rule continue_statement: "continue"
+  #|rule break_statement: "break" (identifier "~")? expression?
+  #|rule continue_statement: "continue" (identifier "~")? continue_args?
+  #|rule continue_args: expression ("," expression)*
+  #|rule raise_statement: "raise" expression
+  #|rule guard_statement: "guard" expression ("is" pattern)? ("else" "{" match_case_list "}")?
   #|rule if_statement: "if" expression block ("else" (block | if_statement))?
-  #|rule while_statement: "while" expression block
-  #|rule for_statement: "for" pattern "in" expression block
-  #|rule expression: match_expression | assignment_expression
-  #|rule match_expression: "match" expression "{" newline* match_case* "}"
-  #|rule match_case: pattern guard_clause? "=>" expression_or_block newline*
+  #|rule while_statement: "while" expression block nobreak_clause?
+  #|rule nobreak_clause: "nobreak" block
+  #|rule loop_statement: "loop" block
+  #|rule for_in_statement: label_clause? "for" pattern ("," pattern)? "in" expression block nobreak_clause?
+  #|rule for_c_statement: label_clause? "for" for_init_list? ";" expression? ";" for_update_list? block nobreak_clause?
+  #|rule label_clause: identifier "~" ":"
+  #|rule for_init_list: for_init_item ("," for_init_item)*
+  #|rule for_init_item: identifier "=" expression
+  #|rule for_update_list: for_update_item ("," for_update_item)*
+  #|rule for_update_item: identifier "=" expression
+  #|rule defer_statement: "defer" expression
+  #|rule expression: match_expression | try_expression | fn_expression | arrow_expression | assignment_expression
+  #|rule match_expression: "match" expression "{" match_case_list "}"
+  #|rule match_case_list: (newline | match_case)*
+  #|rule match_case: pattern guard_clause? "=>" expression_or_block
   #|rule guard_clause: "if" expression
   #|rule expression_or_block: block | expression
-  #|rule assignment_expression: logical_or_expression (("=" | ":=") assignment_expression)?
+  #|rule fn_expression: "fn" parameter_clause return_type? error_type? block
+  #|rule arrow_expression: identifier "=>" (block | expression)
+  #|rule try_expression: "try" try_tail
+  #|rule try_tail: "?" expression | "!" expression | block catch_clause+ noraise_clause?
+  #|rule catch_clause: "catch" catch_binding? block
+  #|rule catch_binding: "{" match_case_list "}" | "(" pattern ")"
+  #|rule noraise_clause: "noraise" block
+  #|rule assignment_expression: pipe_expression (("=" | ":=" | "+=" | "-=" | "*=" | "/=") assignment_expression)?
+  #|rule pipe_expression: logical_or_expression ("|>" pipe_target)*
+  #|rule pipe_target: logical_or_expression | arrow_expression
   #|rule logical_or_expression: logical_and_expression ("||" logical_and_expression)*
-  #|rule logical_and_expression: equality_expression ("&&" equality_expression)*
+  #|rule logical_and_expression: is_expression ("&&" is_expression)*
+  #|rule is_expression: equality_expression ("is" pattern)?
   #|rule equality_expression: comparison_expression (("==" | "!=") comparison_expression)*
-  #|rule comparison_expression: range_expression (("<" | ">" | "<=" | ">=") range_expression)*
-  #|rule range_expression: additive_expression ((".." | "..<" | "..=") additive_expression)?
+  #|rule comparison_expression: bitwise_or_expression (("<" | ">" | "<=" | ">=") bitwise_or_expression)*
+  #|rule bitwise_or_expression: bitwise_xor_expression ("|" bitwise_xor_expression)*
+  #|rule bitwise_xor_expression: bitwise_and_expression ("^" bitwise_and_expression)*
+  #|rule bitwise_and_expression: shift_expression ("&" shift_expression)*
+  #|rule shift_expression: range_expression (("<<" | ">>") range_expression)*
+  #|rule range_expression: additive_expression ((".." | "..<" | "..=" | ">=.." | ">..") additive_expression)?
   #|rule additive_expression: multiplicative_expression (("+" | "-") multiplicative_expression)*
   #|rule multiplicative_expression: unary_expression (("*" | "/" | "%") unary_expression)*
   #|rule unary_expression: postfix_expression | ("!" | "-" | "+") unary_expression
   #|rule postfix_expression: primary_expression postfix_suffix*
-  #|rule postfix_suffix: "(" argument_list? ")" | "[" expression "]" | "." identifier
-  #|rule argument_list: expression ("," expression)*
-  #|rule primary_expression: literal | qualified_identifier | tuple_literal | list_literal | record_literal | "(" expression ")"
+  #|rule postfix_suffix: "()" | "(" argument_list? ")" | "[" slice_or_index "]" | "." identifier | ".." identifier "(" argument_list? ")" | "?"
+  #|rule slice_or_index: expression? ":" expression? | expression
+  #|rule argument_list: argument ("," argument)*
+  #|rule argument: identifier "~" | identifier "=" expression | identifier "?" ("=" expression)? | expression
+  #|rule primary_expression: literal | "self" | qualified_identifier | tuple_literal | list_literal | record_literal | "(" expression ")" | "_"
   #|rule tuple_literal: "(" expression ("," expression)+ ")"
-  #|rule list_literal: "[" expression_list? "]"
-  #|rule expression_list: expression ("," expression)*
-  #|rule record_literal: "{" record_field_list? "}"
+  #|rule list_literal: "[" list_elements? "]"
+  #|rule list_elements: list_element ("," list_element)*
+  #|rule list_element: ".." expression | expression
+  #|rule record_literal: "{" record_body? "}"
+  #|rule record_body: ".." expression ("," record_field)* ","? | record_field_list
   #|rule record_field_list: record_field ("," record_field)* ","?
-  #|rule record_field: identifier ":" expression
-  #|rule pattern: "_" | literal | qualified_identifier pattern_suffix? | "(" pattern_list? ")" | "[" pattern_list? "]"
-  #|rule pattern_suffix: "(" pattern_list? ")"
-  #|rule pattern_list: pattern ("," pattern)*
+  #|rule record_field: identifier (":" expression)?
+  #|rule pattern: or_pattern
+  #|rule or_pattern: as_pattern ("|" as_pattern)*
+  #|rule as_pattern: single_pattern ("as" identifier)?
+  #|rule single_pattern: "_" | literal | range_pattern | qualified_identifier pattern_suffix? | "(" pattern_items? ")" | "[" array_pattern_items? "]" | "{" map_pattern_items "}" | ".." identifier?
+  #|rule range_pattern: (literal | "_") ("..<" | "..=") (literal | "_")
+  #|rule pattern_suffix: "(" pattern_items? ")" | "::" "{" "}"
+  #|rule pattern_items: pattern_item ("," pattern_item)*
+  #|rule pattern_item: identifier "~" | identifier "=" pattern | ".." identifier? | pattern
+  #|rule array_pattern_items: pattern_item ("," pattern_item)*
+  #|rule map_pattern_items: map_pattern_entry ("," map_pattern_entry)* ","? ".."
+  #|rule map_pattern_entry: literal "?"? ":" pattern
   #|rule derive_clause: "derive" "(" qualified_identifier ("," qualified_identifier)* ")"
   #|rule qualified_identifier: identifier (("." | "::") identifier)*
-  #|rule identifier: /@?[A-Za-z_][A-Za-z0-9_]*/
-  #|rule literal: number_literal | string_literal | char_literal | "true" | "false" | "()"
-  #|rule number_literal: /[0-9]+(\.[0-9]+)?/
+  #|token rule identifier: /@?[A-Za-z_][A-Za-z0-9_]*/
+  #|rule literal: number_literal | string_literal | char_literal | byte_literal | bytes_literal | "true" | "false" | "()"
+  #|rule number_literal: /0[xX][0-9a-fA-F][0-9a-fA-F_]*|0[bB][01][01_]*|0[oO][0-7][0-7_]*|[0-9][0-9_]*(\.[0-9][0-9_]*)?([eE][+-]?[0-9]+)?[uUlLnN]*/
   #|rule string_literal: /"([^"\\]|\\.)*"/
   #|rule char_literal: /'([^'\\]|\\.)'/
+  #|rule byte_literal: /b'([^'\\]|\\.)'/
+  #|rule bytes_literal: /b"([^"\\]|\\.)*"/
 
 ///|
 let moonbit_table : @tablegen.ParseTable = compile_builtin_grammar(
@@ -87,4 +156,12 @@ pub fn parse_moonbit(
   source : String,
 ) -> Result[@runtime.CstNode, @runtime.ParseError] {
   @runtime.parse(moonbit_table, source)
+}
+
+///|
+pub fn moonbit_sexp(source : String) -> String {
+  match @runtime.parse(moonbit_table, source) {
+    Ok(root) => cst_to_sexp(root, source, moonbit_table)
+    Err(_) => "(ERROR)"
+  }
 }

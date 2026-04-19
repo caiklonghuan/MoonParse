@@ -4,6 +4,7 @@ package "caiklonghuan/MoonParse/query"
 import {
   "caiklonghuan/MoonParse/runtime",
   "caiklonghuan/MoonParse/tablegen",
+  "moonbitlang/core/debug",
 }
 
 // Values
@@ -30,14 +31,12 @@ pub(all) struct CaptureResult {
   match_id : Int
   capture_name : String
   node : @runtime.CstNode
-}
-pub impl Show for CaptureResult
+} derive(@debug.Debug)
 
 pub(all) struct CompiledQuery {
   patterns : Array[(QueryPattern, String?)]
   predicates : Array[Array[Predicate]]
-}
-pub impl Show for CompiledQuery
+} derive(@debug.Debug)
 
 pub(all) struct HighlightRange {
   start_byte : Int
@@ -45,39 +44,49 @@ pub(all) struct HighlightRange {
   start_point : @runtime.Point
   end_point : @runtime.Point
   highlight_name : String
-}
-pub impl Show for HighlightRange
+} derive(@debug.Debug)
 
 pub(all) struct LocalResolution {
   local_refs : Map[Int, Bool]
-}
+} derive(@debug.Debug)
 pub fn LocalResolution::is_local_ref(Self, Int) -> Bool
-pub impl Show for LocalResolution
 
 pub(all) struct PatternChild {
   field : String?
   pattern : QueryPattern
   capture : String?
-}
-pub impl Show for PatternChild
+  quantifier : Quantifier
+  anchor_before : Bool
+  anchor_after : Bool
+} derive(@debug.Debug)
 
 pub(all) enum Predicate {
   Eq(String, String)
+  NotEq(String, String)
   Match(String, String)
-}
-pub impl Show for Predicate
+  NotMatch(String, String)
+  AnyOf(String, Array[String])
+} derive(@debug.Debug)
+
+pub(all) enum Quantifier {
+  One
+  ZeroOrOne
+  ZeroOrMore
+  OneOrMore
+} derive(Eq, @debug.Debug)
+pub impl Show for Quantifier
 
 pub(all) enum QueryError {
   ParseError(Int, String)
-}
+} derive(@debug.Debug)
 pub impl Show for QueryError
 
 pub(all) enum QueryPattern {
   NodePattern(String, Array[PatternChild])
   AnonPattern(String)
   Wildcard
-}
-pub impl Show for QueryPattern
+  Alternation(Array[QueryPattern])
+} derive(@debug.Debug)
 
 // Type aliases
 

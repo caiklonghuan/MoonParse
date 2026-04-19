@@ -73,6 +73,18 @@ test "冲突类型与消解" {
       "e/t 分层", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", false, false,
       0,
     ),
+    // Repeat(*) が seq 内嵌の場合、left-recursive _rep_N は LALR が自然に消解する。
+    // 各 LALR 状態の lookahead が overlap しないため、conflict 自体が生成されない。
+    (
+      "Repeat 贪心（seq 内嵌、LALR 自然消解）", "start s\nrule s: \"n\"* \"n\"",
+      false, false, 0,
+    ),
+    // Optional(?) が seq 内嵌の場合、_opt_N → ε と "n" が同じ lookahead "n" で衝突する。
+    // 修复前: Ambiguous（双侧保留）。修复後: greedy shift 胜出 → Warn, 0 冲突格。
+    (
+      "Optional 贪心消解（seq 内嵌）", "start s\nrule s: \"n\"? \"n\"", false,
+      true, 0,
+    ),
   ]
   for case in cases {
     let (_l, dsl, want_ambiguous, want_warn, exp_cells) = case
@@ -212,6 +224,10 @@ test "generate_parse_table: empty grammar returns Err" {
     precedences: [],
     extras: [],
     externals: [],
+    duplicate_rule_names: [],
+    word: None,
+    conflicts: [],
+    supertypes: [],
   }
   match generate_parse_table(empty) {
     Err(msg) => assert_true(msg.length() > 0)
@@ -228,6 +244,9 @@ test "generate_parse_table: missing start rule returns Err" {
         name: "s",
         pattern: @grammar.Pattern::Literal("a"),
         is_named: true,
+        is_token: false,
+        params: [],
+        attributes: [],
         location: None,
       },
     },
@@ -235,6 +254,10 @@ test "generate_parse_table: missing start rule returns Err" {
     precedences: [],
     extras: [],
     externals: [],
+    duplicate_rule_names: [],
+    word: None,
+    conflicts: [],
+    supertypes: [],
   }
   match generate_parse_table(g) {
     Err(msg) => assert_true(msg.length() > 0)
@@ -250,6 +273,9 @@ test "generate_parse_table: no start declared returns Err" {
         name: "s",
         pattern: @grammar.Pattern::Literal("a"),
         is_named: true,
+        is_token: false,
+        params: [],
+        attributes: [],
         location: None,
       },
     },
@@ -257,6 +283,10 @@ test "generate_parse_table: no start declared returns Err" {
     precedences: [],
     extras: [],
     externals: [],
+    duplicate_rule_names: [],
+    word: None,
+    conflicts: [],
+    supertypes: [],
   }
   match generate_parse_table(g) {
     Err(msg) => assert_true(msg.length() > 0)

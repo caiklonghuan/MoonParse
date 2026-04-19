@@ -9,7 +9,17 @@ pub(all) enum PrecKind {
   Nonassoc
   /// 运行时动态优先级
   Dynamic
-} derive(Eq, Show)
+} derive(Eq, Debug)
+
+///|
+pub impl Show for PrecKind with output(self, logger) {
+  match self {
+    Left => logger.write_string("Left")
+    Right => logger.write_string("Right")
+    Nonassoc => logger.write_string("Nonassoc")
+    Dynamic => logger.write_string("Dynamic")
+  }
+}
 
 ///|
 /// 顶层 `precedence` 声明（一条声明对应一个优先级层级）
@@ -20,6 +30,26 @@ pub(all) struct PrecDecl {
   kind : PrecKind
   /// 该层级包含的规则名列表
   rules : Array[String]
+}
+
+///|
+/// 规则属性，向 tablegen 传递优化/展示提示
+pub(all) enum RuleAttribute {
+  /// 内联规则：tablegen 可将此规则展开到父规则，减少 CST 节点层数
+  Inline
+  /// 隐藏规则：解析成功但不出现在命名 CST 节点中
+  Hide
+  /// 已废弃规则：标记该规则将在未来版本中移除，供迁移工具生成警告
+  Deprecated
+} derive(Debug, Eq)
+
+///|
+pub impl Show for RuleAttribute with output(self, logger) {
+  match self {
+    Inline => logger.write_string("Inline")
+    Hide => logger.write_string("Hide")
+    Deprecated => logger.write_string("Deprecated")
+  }
 }
 
 ///|
@@ -57,6 +87,8 @@ pub(all) enum Pattern {
   Prec(Int, PrecKind, Pattern)
   /// 节点类型别名 alias("name", p)：将产生式的显示名称覆盖为 alias_name
   Alias(String, Pattern)
+  /// 模板规则实例化：name[arg1, arg2]，用具体 Pattern 替换模板参数
+  RuleApp(String, Array[Pattern])
 }
 
 ///|
@@ -68,6 +100,12 @@ pub(all) struct Rule {
   pattern : Pattern
   /// 是否为命名节点（名称以 _ 开头则为匿名节点）
   is_named : Bool
+  /// 是否为词法规则（由 `token rule` 声明）；词法规则仅含终结符模式
+  is_token : Bool
+  /// 模板参数列表；非空时此规则为参数化模板，用 name[arg] 实例化
+  params : Array[String]
+  /// 规则属性（@inline / @hide）
+  attributes : Array[RuleAttribute]
   /// 规则名在源码中的位置（行列，用于错误报告）
   location : SourceLocation?
 }
@@ -87,6 +125,17 @@ pub(all) struct Grammar {
   /// externals：由外部词法器处理的 token 名称列表
   /// 对应 DSL 中的 `externals [name1, name2, ...]` 声明
   externals : Array[String]
+  /// 重复定义的规则名列表（解析阶段检测，校验阶段报告 DuplicateRule 错误）
+  duplicate_rule_names : Array[String]
+  /// word 关键字规则名：指定用于关键字提升的词法规则，防止关键字被识别为普通标识符
+  mut word : String?
+  /// conflicts：声明的 GLR 歧义规则组，每组列出可能产生 shift/reduce 歧义的规则对
+  /// 对应 DSL 中的 `conflicts [[rule_a, rule_b], ...]` 声明
+  conflicts : Array[Array[String]]
+  /// supertypes：抽象超类型列表，供查询 API（如 tree-sitter query）使用
+  /// 对应 DSL 中的 `supertypes [expr, stmt, ...]` 声明
+  /// 列表中的规则名在 CST 查询中被视为抽象类别，而不是具体节点类型
+  supertypes : Array[String]
 }
 
 ///|
@@ -103,8 +152,43 @@ fn wrap_if_complex(p : Pattern) -> String {
 pub fn pattern_to_string(pattern : Pattern) -> String {
   match pattern {
     RuleRef(name) => name
-    Literal(str) => "\"" + str + "\""
-    Regex(re) => "/" + re + "/"
+    Literal(str) => {
+      let buf = StringBuilder::new()
+      buf.write_char('"')
+      for c in str {
+        match c {
+          '"' => buf.write_string("\\\"")
+          '\\' => buf.write_string("\\\\")
+          _ => buf.write_char(c)
+        }
+      }
+      buf.write_char('"')
+      buf.to_string()
+    }
+    Regex(re) => {
+      let buf = StringBuilder::new()
+      buf.write_char('/')
+      let chars = re.to_array()
+      let mut k = 0
+      while k < chars.length() {
+        let c = chars[k]
+        if c == '\\' && k + 1 < chars.length() {
+          // 转义序列原样输出（含 \/ \n \\ 等）
+          buf.write_char(c)
+          buf.write_char(chars[k + 1])
+          k = k + 2
+        } else if c == '/' {
+          // 裸 / 需转义，避免提前终止正则字面量
+          buf.write_string("\\/")
+          k = k + 1
+        } else {
+          buf.write_char(c)
+          k = k + 1
+        }
+      }
+      buf.write_char('/')
+      buf.to_string()
+    }
     AnyChar => "."
     Tagged(label, p) => "@" + label + " " + wrap_if_complex(p)
     Not(p) => "!" + wrap_if_complex(p)
@@ -129,6 +213,8 @@ pub fn pattern_to_string(pattern : Pattern) -> String {
       prefix + "(" + level.to_string() + ", " + pattern_to_string(p) + ")"
     }
     Alias(name, p) => "alias(\"" + name + "\", " + pattern_to_string(p) + ")"
+    RuleApp(name, args) =>
+      name + "[" + args.map(pattern_to_string).join(", ") + "]"
     Choice(patterns) => {
       let mut result = ""
       for i in 0..<patterns.length() {

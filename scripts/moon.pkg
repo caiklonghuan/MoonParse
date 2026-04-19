@@ -1,0 +1,16 @@
+import {
+  "caiklonghuan/MoonParse/grammar" @grammar,
+  "caiklonghuan/MoonParse/tablegen" @tablegen,
+  "caiklonghuan/MoonParse/runtime" @runtime,
+  "caiklonghuan/MoonParse/grammars" @grammars,
+  "moonbitlang/core/env" @env,
+  "moonbitlang/core/bench" @bench,
+}
+
+options(
+  "is-main": true,
+  targets: {
+    "exit_native.mbt": [ "native", "llvm" ],
+    "exit_wasm.mbt": [ "wasm", "wasm-gc" ],
+  },
+)

@@ -128,6 +128,15 @@ test "Regex 字符类 [a-z]+ 接受小写字母序列" {
 // parse_escape_trans
 
 ///|
+test "Regex \\f 转义匹配 form feed 而非字面 f" {
+  // /[\f]/ 应匹配 form feed (0x0C)，不应匹配字母 'f'
+  let dfa = lexer_for("start s\nrule s: /[\\f]+/")
+  let ff = String::make(1, (0x0C).unsafe_to_char())
+  assert_true(dfa_run(dfa, ff) is Some(_))
+  assert_eq(dfa_run(dfa, "f"), None)
+}
+
+///|
 test "Regex 转义 \\d+ 等同 [0-9]+" {
   // DSL 中 /\d+/ 对应 MoonBit 源码字符串 "/\\d+/"
   let (aug, table, _) = build_resolved("start s\nrule s: /\\d+/")
@@ -142,31 +151,25 @@ test "Regex 转义 \\d+ 等同 [0-9]+" {
 // 量词 * + ?
 
 ///|
-test "Regex 量词 * — 起始态即接受，接受零或多个" {
-  let dfa = lexer_for("start s\nrule s: /a*/")
-  // a* 起始 DFA 状态本身就是接受态（含 ε-path 到 na_out）
-  assert_true(dfa_run(dfa, "") is Some(_))
-  assert_true(dfa_run(dfa, "a") is Some(_))
-  assert_true(dfa_run(dfa, "aaaa") is Some(_))
-  // 'b' 不在字母表，DFA 无 transition
-  assert_eq(dfa_run(dfa, "b"), None)
-  assert_eq(dfa_run(dfa, "ab"), None)
-}
-
-///|
-test "Regex 量词 + — 起始态不接受，需至少一个字符" {
-  let dfa = lexer_for("start s\nrule s: /a+/")
-  assert_eq(dfa_run(dfa, ""), None) // 空串：start 状态不接受
-  assert_true(dfa_run(dfa, "a") is Some(_))
-  assert_true(dfa_run(dfa, "aaa") is Some(_))
-}
-
-///|
-test "Regex 量词 ? — 接受零或恰好一个字符" {
-  let dfa = lexer_for("start s\nrule s: /a?/")
-  assert_true(dfa_run(dfa, "") is Some(_)) // 空串接受（start 可选）
-  assert_true(dfa_run(dfa, "a") is Some(_)) // 单字符接受
-  assert_eq(dfa_run(dfa, "aa"), None) // 接受一个 'a' 后无 transition
+test "Regex 量词 表驱动（* + ?）" {
+  // (DSL, 必须接受的输入列表, 必须拒绝的输入列表)
+  let cases : Array[(String, Array[String], Array[String])] = [
+    // * — 起始态即接受，接受零或多个；'b'/'ab' 不在字母表
+    ("start s\nrule s: /a*/", ["", "a", "aaaa"], ["b", "ab"]),
+    // + — 起始态不接受，需至少一个字符
+    ("start s\nrule s: /a+/", ["a", "aaa"], [""]),
+    // ? — 接受零或恰好一个字符
+    ("start s\nrule s: /a?/", ["", "a"], ["aa"]),
+  ]
+  for item in cases {
+    let dfa = lexer_for(item.0)
+    for s in item.1 {
+      assert_true(dfa_run(dfa, s) is Some(_))
+    }
+    for s in item.2 {
+      assert_eq(dfa_run(dfa, s), None)
+    }
+  }
 }
 
 // 交替
@@ -230,6 +233,34 @@ test "Regex Unicode range [中-龥] accepts CJK characters" {
   assert_eq(dfa_run(dfa, "α"), None)
 }
 
+// 否定字符类 [^...] 与否定转义 \D \W \S
+
+///|
+test "Regex 否定字符类与否定转义 表驱动" {
+  // (regex_fragment, 必须接受的输入列表, 必须拒绝的输入列表)
+  let cases : Array[(String, Array[String], Array[String])] = [
+    // [^0-9]+ — 接受非数字，拒绝数字
+    ("/[^0-9]+/", ["abc", "xyz", "!@#"], ["0", "9", ""]),
+    // [^a-z]+ — 接受非小写字母
+    ("/[^a-z]+/", ["ABC", "123"], ["abc", ""]),
+    // \D+ — 接受非数字
+    ("/\\D+/", ["abc", "xyz"], ["0", "9", ""]),
+    // \W+ — 接受非单词字符
+    ("/\\W+/", ["!", "@#"], ["a", "0", "_", ""]),
+    // \S+ — 接受非空白字符
+    ("/\\S+/", ["abc", "!"], [" ", "\t", ""]),
+  ]
+  for item in cases {
+    let dfa = lexer_for("start s\nrule s: \{item.0}")
+    for s in item.1 {
+      assert_true(dfa_run(dfa, s) is Some(_))
+    }
+    for s in item.2 {
+      assert_eq(dfa_run(dfa, s), None)
+    }
+  }
+}
+
 // build_valid_tokens
 
 ///|
@@ -282,4 +313,55 @@ test "最小化 DFA：/ab|cb/ 合并相同后缀接受状态" {
   assert_eq(dfa_run(dfa, "db"), None)
   assert_eq(dfa_run(dfa, "a"), None)
   assert_eq(dfa_run(dfa, "c"), None)
+}
+
+// 正向转义 \w \s
+
+///|
+test "Regex 正向转义 \\w 接受单词字符，拒绝空白和符号" {
+  let dfa = lexer_for("start s\nrule s: /\\w+/")
+  assert_true(dfa_run(dfa, "abc") is Some(_))
+  assert_true(dfa_run(dfa, "Hello") is Some(_))
+  assert_true(dfa_run(dfa, "X") is Some(_))
+  assert_true(dfa_run(dfa, "test_123") is Some(_))
+  assert_eq(dfa_run(dfa, " "), None)
+  assert_eq(dfa_run(dfa, "!"), None)
+  assert_eq(dfa_run(dfa, ""), None)
+}
+
+///|
+test "Regex 正向转义 \\s 接受空白字符，拒绝非空白" {
+  let dfa = lexer_for("start s\nrule s: /\\s+/")
+  assert_true(dfa_run(dfa, " ") is Some(_))
+  assert_true(dfa_run(dfa, "\t") is Some(_))
+  assert_true(dfa_run(dfa, "\n") is Some(_))
+  assert_true(dfa_run(dfa, "   ") is Some(_))
+  assert_eq(dfa_run(dfa, "a"), None)
+  assert_eq(dfa_run(dfa, "0"), None)
+  assert_eq(dfa_run(dfa, ""), None)
+}
+
+// 分组 (...)
+
+///|
+test "Regex 分组 (ab)+ 接受重复分组，拒绝不完整分组" {
+  let dfa = lexer_for("start s\nrule s: /(ab)+/")
+  assert_true(dfa_run(dfa, "ab") is Some(_))
+  assert_true(dfa_run(dfa, "abab") is Some(_))
+  assert_true(dfa_run(dfa, "ababab") is Some(_))
+  assert_eq(dfa_run(dfa, ""), None)
+  assert_eq(dfa_run(dfa, "a"), None) // 不完整分组
+  assert_eq(dfa_run(dfa, "b"), None) // 不匹配分组起始
+  assert_eq(dfa_run(dfa, "aba"), None) // 末尾 'a' 无后续完整分组
+}
+
+///|
+test "Regex 分组 (a|b)c 接受多路选择后接续字符" {
+  let dfa = lexer_for("start s\nrule s: /(a|b)c/")
+  assert_true(dfa_run(dfa, "ac") is Some(_))
+  assert_true(dfa_run(dfa, "bc") is Some(_))
+  assert_eq(dfa_run(dfa, "c"), None) // 缺少分组前缀
+  assert_eq(dfa_run(dfa, "a"), None) // 缺少 c
+  assert_eq(dfa_run(dfa, "abc"), None) // 超长
+  assert_eq(dfa_run(dfa, ""), None)
 }

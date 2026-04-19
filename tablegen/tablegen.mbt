@@ -10,7 +10,7 @@ pub fn generate_parse_table(
   match grammar.start {
     None => return Err("generate_parse_table: no start rule declared")
     Some(s) =>
-      if not(grammar.rules.contains(s)) {
+      if !grammar.rules.contains(s) {
         return Err("generate_parse_table: start rule '\{s}' not found")
       }
   }
@@ -25,6 +25,14 @@ pub fn generate_parse_table(
   for name, tid in aug.terminals {
     terminal_names.set(tid, name)
   }
+  // 构建 keyword_map：所有 Literal 终结符的文本 → TerminalId 映射（O(1) 关键字查表）
+  let keyword_map : Map[String, TerminalId] = Map::new()
+  for tid, def in aug.terminal_patterns {
+    match def {
+      TerminalDef::Literal(s) => keyword_map.set(s, tid)
+      _ => ()
+    }
+  }
   let final_table = {
     states: resolved_table.states,
     action: resolved_table.action,
@@ -36,6 +44,8 @@ pub fn generate_parse_table(
     terminal_names,
     extras: aug.extras,
     external_token_ids: aug.external_ids,
+    word_token: aug.word_token,
+    keyword_map,
   }
   Ok((final_table, reports))
 }

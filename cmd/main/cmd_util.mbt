@@ -18,6 +18,27 @@ fn json_escape(s : String) -> String {
 }
 
 ///|
+fn write_sexp_children(
+  buf : StringBuilder,
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> Unit {
+  for child in node.children {
+    if child.extra {
+      continue
+    }
+    if child.is_named || child.is_error {
+      buf.write_char(' ')
+      write_sexp(buf, child, input, table)
+    } else if !child.children.is_empty() {
+      // 匿名内部节点（辅助产生式）：透明展开
+      write_sexp_children(buf, child, input, table)
+    }
+  }
+}
+
+///|
 fn write_sexp(
   buf : StringBuilder,
   node : @runtime.CstNode,
@@ -27,22 +48,13 @@ fn write_sexp(
   if node.extra {
     return
   }
-  if not(node.is_named) && not(node.is_error) {
+  if !node.is_named && !node.is_error {
     return
   }
   let type_name = @query.node_type_name(node, table)
-  if node.children.is_empty() {
-    buf.write_string("(\{type_name})")
-  } else {
-    buf.write_string("(\{type_name}")
-    for child in node.children {
-      if not(child.extra) && (child.is_named || child.is_error) {
-        buf.write_char(' ')
-        write_sexp(buf, child, input, table)
-      }
-    }
-    buf.write_char(')')
-  }
+  buf.write_string("(\{type_name}")
+  write_sexp_children(buf, node, input, table)
+  buf.write_char(')')
 }
 
 ///|
@@ -168,6 +180,21 @@ fn load_table_from_grammar(
   let grammar = match @grammar.parse_grammar(src) {
     Success(g) => g
     Error(err) => return Err("parse error in '\{path}': \{err.message}")
+  }
+  let val_errors : Array[@grammar.ValidationError] = []
+  for err in @grammar.validate_grammar(grammar) {
+    match err.kind {
+      @grammar.ValidationErrorKind::DirectLeftRecursion(_)
+      | @grammar.ValidationErrorKind::IndirectLeftRecursion(_) => ()
+      _ => val_errors.push(err)
+    }
+  }
+  if !val_errors.is_empty() {
+    let lines : Array[String] = []
+    for err in val_errors {
+      lines.push(err.to_string())
+    }
+    return Err("validation error in '\{path}':\n" + lines.join("\n"))
   }
   match @tablegen.generate_parse_table(grammar) {
     Ok((table, _reports)) => Ok(table)

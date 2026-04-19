@@ -18,7 +18,29 @@ pub(all) enum QueryPattern {
   /// 通配符：匹配任意单节点，不约束类型
   /// e.g. `_`
   Wildcard
-} derive(Show)
+  /// 交替模式：匹配 `[pat1 pat2 ...]` 中的任一个
+  /// e.g. `[(identifier) (number_literal)]`
+  Alternation(Array[QueryPattern])
+} derive(Debug)
+
+///|
+/// 子节点量词（量词限定子节点模式的重复次数）
+pub(all) enum Quantifier {
+  One // 默认：匹配恰好一次
+  ZeroOrOne // ?：匹配零次或一次
+  ZeroOrMore // *：匹配零次或多次
+  OneOrMore // +：匹配一次或多次
+} derive(Debug, Eq)
+
+///|
+pub impl Show for Quantifier with output(self, logger) {
+  match self {
+    One => logger.write_string("One")
+    ZeroOrOne => logger.write_string("ZeroOrOne")
+    ZeroOrMore => logger.write_string("ZeroOrMore")
+    OneOrMore => logger.write_string("OneOrMore")
+  }
+}
 
 ///|
 /// 子节点位置的包装：携带可选字段约束和捕获标注
@@ -29,20 +51,35 @@ pub(all) struct PatternChild {
   pattern : QueryPattern
   /// 捕获标注（`@capture_name`），不捕获时为 None
   capture : String?
-} derive(Show)
+  /// 量词（默认 One）
+  quantifier : Quantifier
+  /// 锚点：若为 true，匹配前不跳过任何语义子节点（对应 `. pattern` 语法）
+  anchor_before : Bool
+  /// 锚点：若为 true 且此为最后一个子模式，匹配后不允许有剩余语义子节点（对应 `pattern .` 语法）
+  anchor_after : Bool
+} derive(Debug)
 
 ///|
 /// 谓词（对捕获结果的后置过滤条件）
 ///
-/// 支持 `#eq?` 字面量匹配和 `#match?` 正则匹配。
+/// 支持 `#eq?` / `#not-eq?` / `#match?` / `#not-match?` / `#any-of?` 过滤。
 pub(all) enum Predicate {
   /// `#eq? @capture_name "expected_text"`
   /// 要求命名捕获的节点文本等于给定字面量
   Eq(String, String)
+  /// `#not-eq? @capture_name "expected_text"`
+  /// 要求命名捕获的节点文本不等于给定字面量
+  NotEq(String, String)
   /// `#match? @capture_name "regex"`
   /// 要求命名捕获的节点文本匹配给定正则表达式（部分匹配，`^` `$` 可指定全文匹配）
   Match(String, String)
-} derive(Show)
+  /// `#not-match? @capture_name "regex"`
+  /// 要求命名捕获的节点文本不匹配给定正则表达式
+  NotMatch(String, String)
+  /// `#any-of? @capture_name "val1" "val2" ...`
+  /// 要求命名捕获的节点文本等于给定字面量列表中的任意一个
+  AnyOf(String, Array[String])
+} derive(Debug)
 
 ///|
 /// 完整编译后的查询结果
@@ -56,7 +93,7 @@ pub(all) struct CompiledQuery {
   /// 谓词列表（按顶层模式分组）：`predicates[i]` 为第 i 条顶层模式的谓词列表。
   /// 长度始终等于 `patterns.length()`，无谓词时为空数组 `[]`。
   predicates : Array[Array[Predicate]]
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// 查询执行后的一次捕获命中
@@ -67,14 +104,26 @@ pub(all) struct CaptureResult {
   capture_name : String
   /// 命中的 CST 节点（只读引用，来自原始语法树）
   node : @runtime.CstNode
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// 查询编译 / 执行的错误
 pub(all) enum QueryError {
   /// 模式字符串语法错误（偏移 + 描述）
   ParseError(Int, String)
-} derive(Show)
+} derive(Debug)
+
+///|
+pub impl Show for QueryError with output(self, logger) {
+  match self {
+    ParseError(pos, msg) => logger.write_string("ParseError(\{pos}, \{msg})")
+  }
+}
+
+///|
+fn _keep_grammar_dependency() -> Unit {
+  ignore(@grammar.parse_grammar("start _dummy\nrule _dummy: \"x\""))
+}
 
 ///|
 // 内部辅助：从 CstNode + ParseTable 取节点类型名称字符串
@@ -86,14 +135,14 @@ pub(all) enum QueryError {
 /// | 条件 | 返回值 |
 /// |------|--------|
 /// | `node.is_error == true` | `"ERROR"` |
-/// | `node.symbol == sym_error \|\| sym_error_repeat` | `"ERROR"` |
+/// | `node.symbol == sym_error` | `"ERROR"` |
 /// | `node.symbol == sym_end`（叶节点） | `"EOF"` |
 /// | 叶节点（`children` 为空），`symbol` 在 `table.terminal_names` 中 | 对应终结符展示名称 |
 /// | 叶节点，`symbol` 不在 `terminal_names` 中 | `"<terminal:N>"` |
 /// | 内部节点，`symbol` 在 `table.symbol_metadata` 合法下标范围内 | `symbol_metadata[symbol].name` |
 /// | 内部节点，`symbol` 越界 | `"<nonterminal:N>"` |
 ///
-/// 特殊符号常量（`sym_error`、`sym_error_repeat`、`sym_end`）由 runtime 包导出，
+/// 特殊符号常量（`sym_error`、`sym_end`）由 runtime 包导出，
 /// 均为负整数或保留编号，不与用户定义的 TerminalId 或 NonTerminalId 冲突。
 pub fn node_type_name(
   node : @runtime.CstNode,
@@ -102,8 +151,7 @@ pub fn node_type_name(
   if node.is_error {
     return "ERROR"
   }
-  if node.symbol == @runtime.sym_error ||
-    node.symbol == @runtime.sym_error_repeat {
+  if node.symbol == @runtime.sym_error {
     return "ERROR"
   }
   if node.children.is_empty() {

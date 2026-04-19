@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+	<defs>
+		<linearGradient id="bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#0f172a" />
+			<stop offset="1" stop-color="#0f62fe" />
+		</linearGradient>
+		<linearGradient id="branch" x1="31" y1="18" x2="50" y2="44" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#dbeafe" />
+			<stop offset="1" stop-color="#67e8f9" />
+		</linearGradient>
+	</defs>
+	<rect x="4" y="4" width="56" height="56" rx="16" fill="url(#bg)" />
+	<rect x="5.5" y="5.5" width="53" height="53" rx="14.5" stroke="#93c5fd" stroke-opacity="0.18" />
+
+	<circle cx="23" cy="25" r="12" fill="#fde68a" />
+	<circle cx="29" cy="21" r="10.5" fill="#102140" />
+
+	<path d="M42 18L33 31" stroke="url(#branch)" stroke-width="3.5" stroke-linecap="round" />
+	<path d="M42 18L50 31" stroke="url(#branch)" stroke-width="3.5" stroke-linecap="round" />
+	<path d="M33 31L40 44" stroke="url(#branch)" stroke-width="3.5" stroke-linecap="round" />
+
+	<circle cx="42" cy="18" r="4.5" fill="#e0f2fe" />
+	<circle cx="33" cy="31" r="4.5" fill="#5eead4" />
+	<circle cx="50" cy="31" r="4.5" fill="#93c5fd" />
+	<circle cx="40" cy="44" r="5" fill="#f8fafc" />
+</svg>

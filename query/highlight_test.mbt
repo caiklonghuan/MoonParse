@@ -233,3 +233,125 @@ test "highlight/multiline_points" {
   assert_eq(first.start_point.row, 1)
   assert_eq(first.start_byte, 1)
 }
+
+///|
+test "api/highlight_names_non_empty" {
+  // highlight_names 是对外承诺的常量，不能为空
+  assert_true(highlight_names.length() > 0)
+}
+
+///|
+test "api/highlight_names_contains_common" {
+  // 检查关键高亮名存在于列表中
+  let has_keyword = highlight_names.iter().any(fn(n) { n == "keyword" })
+  let has_string = highlight_names.iter().any(fn(n) { n == "string" })
+  let has_number = highlight_names.iter().any(fn(n) { n == "number" })
+  assert_true(has_keyword)
+  assert_true(has_string)
+  assert_true(has_number)
+}
+
+///|
+test "api/is_local_ref_returns_false_for_unknown_key" {
+  // 对不在 local_refs 中的字节偏移，is_local_ref 应返回 false
+  let dsl =
+    #|start s
+    #|extras [/[ \t\n\r]+/]
+    #|rule s: ident*
+    #|rule ident: /[a-z]+/
+  let input = "foo"
+  let (root, table) = parse_ok(dsl, input)
+  let lq = compile_ok("(ident) @local.reference")
+  let res = resolve_locals(root, input, table, lq)
+  // 无 scope → local_refs 为空，任何偏移返回 false
+  assert_true(!res.is_local_ref(0))
+  assert_true(!res.is_local_ref(999))
+}
+
+///|
+test "locals/ref_without_def_not_marked_local" {
+  let dsl =
+    #|start prog
+    #|extras [/[ \t\n\r]+/]
+    #|rule prog: ident*
+    #|rule ident: /[a-z]+/
+  // 有 scope，但没有 definition → ref 不应被标记为 local
+  let input = "foo"
+  let (root, table) = parse_ok(dsl, input)
+  let lq_s =
+    #|(prog) @local.scope
+    #|(ident) @local.reference
+  let lq = compile_ok(lq_s)
+  let res = resolve_locals(root, input, table, lq)
+  assert_true(!res.is_local_ref(0))
+}
+
+///|
+test "locals/ref_matching_def_is_local" {
+  let dsl =
+    #|start prog
+    #|extras [/[ \t\n\r]+/]
+    #|rule prog: ident*
+    #|rule ident: /[a-z]+/
+  // scope 内有 "foo" 的定义，"foo" 的引用应被标记为 local
+  let input = "foo foo"
+  let (root, table) = parse_ok(dsl, input)
+  let lq_s =
+    #|(prog) @local.scope
+    #|(ident) @local.definition
+    #|(ident) @local.reference
+  let lq = compile_ok(lq_s)
+  let res = resolve_locals(root, input, table, lq)
+  // 两个 "foo" 节点都应被标记（start_byte = 0 和 4）
+  assert_true(res.is_local_ref(0) || res.is_local_ref(4))
+}
+
+///|
+test "locals/ref_not_matching_def_not_local" {
+  // 用不同节点类型区分 def 和 ref，避免 def 和 ref 文本重叠
+  // def_id 只作定义，ref_id 只作引用
+  let dsl =
+    #|start prog
+    #|rule prog: def_id ref_id
+    #|rule def_id: /[a-z]+/
+    #|rule ref_id: /[a-z]+/
+  // 输入：def="foo"，ref="bar"；"bar" 无对应定义 → 不是 local
+  let input = "foo bar"
+  let (root, table) = parse_ok(dsl, input)
+  let lq_s =
+    #|(prog) @local.scope
+    #|(def_id) @local.definition
+    #|(ref_id) @local.reference
+  let lq = compile_ok(lq_s)
+  let res = resolve_locals(root, input, table, lq)
+  // ref_id "bar" 的 start_byte=4，scope 内 def 是 "foo"，不匹配 → 不是 local
+  assert_true(!res.is_local_ref(4))
+}
+
+///|
+// ─────────────────────────────────────────────────
+// apply_highlights_with_locals 补充测试
+// ─────────────────────────────────────────────────
+
+///|
+test "highlight_with_locals/non_local_ref_unchanged" {
+  let dsl =
+    #|start prog
+    #|extras [/[ \t\n\r]+/]
+    #|rule prog: ident*
+    #|rule ident: /[a-z]+/
+  // "foo" 无对应 definition → 不应加 .local 后缀
+  let input = "foo"
+  let (root, table) = parse_ok(dsl, input)
+  let hq = compile_ok("(ident) @variable")
+  let lq_s =
+    #|(prog) @local.scope
+    #|(ident) @local.reference
+  let lq = compile_ok(lq_s)
+  let ranges = apply_highlights_with_locals(root, input, table, hq, lq)
+  assert_true(ranges.length() > 0)
+  // 无 definition，所有高亮名应保持 "variable" 而非 "variable.local"
+  for r in ranges {
+    assert_true(r.highlight_name != "variable.local")
+  }
+}

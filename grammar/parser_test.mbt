@@ -1,5 +1,5 @@
-// 测试辅助：TestCase 数据结构 + 用例集合
-// 对应 parser.mbt 中的 parse_grammar 函数
+// parser_test.mbt
+// 将 Grammar DSL 解析测试收拢为单文件、按功能模块组织的表驱动套件。
 
 ///|
 priv struct TestCase {
@@ -7,6 +7,77 @@ priv struct TestCase {
   dsl : String
   expected_rules : Array[String]
   expected_patterns : Map[String, String]
+}
+
+///|
+priv struct RuleMetaCase {
+  name : String
+  dsl : String
+  rule_name : String
+  expected_is_named : Bool
+  expected_is_token : Bool
+  expected_params : Array[String]
+}
+
+///|
+priv struct StartCase {
+  name : String
+  dsl : String
+  expected_start : String?
+}
+
+///|
+priv struct WordCase {
+  name : String
+  dsl : String
+  expected_word : String?
+}
+
+///|
+priv struct ExtrasCase {
+  name : String
+  dsl : String
+  expected_variants : Array[String]
+}
+
+///|
+priv struct PrecExpectation {
+  level : Int
+  kind : PrecKind
+  rules : Array[String]
+}
+
+///|
+priv struct PrecDeclCase {
+  name : String
+  dsl : String
+  expected_precedences : Array[PrecExpectation]
+}
+
+///|
+priv struct AttrCase {
+  name : String
+  dsl : String
+  rule_name : String
+  expected_attrs : Array[RuleAttribute]
+  expected_is_token : Bool
+}
+
+///|
+priv struct ErrorCase {
+  name : String
+  dsl : String
+  expected_line : Int?
+  expected_column : Int?
+}
+
+///|
+priv struct LenientCase {
+  name : String
+  dsl : String
+  expected_error_count : Int
+  expected_rules : Array[String]
+  expected_duplicate_rules : Array[String]
 }
 
 ///|
@@ -28,38 +99,216 @@ fn pattern_variant(p : Pattern) -> String {
     Pattern::RepeatRange(_, _, _) => "RepeatRange"
     Pattern::Prec(_, _, _) => "Prec"
     Pattern::Alias(_, _) => "Alias"
+    Pattern::RuleApp(_, _) => "RuleApp"
   }
 }
 
 ///|
-fn get_parse_test_cases() -> Array[TestCase] {
+fn assert_parse_ok(name : String, dsl : String) -> Grammar raise {
+  match parse_grammar(dsl) {
+    Success(grammar) => grammar
+    Error(err) =>
+      fail(
+        "解析失败 [\{name}]: \{err.message} at \{err.location.line}:\{err.location.column}",
+      )
+  }
+}
+
+///|
+fn assert_parse_error(name : String, dsl : String) -> ParseError raise {
+  match parse_grammar(dsl) {
+    Success(_) => fail("应该失败但成功了 [\{name}]")
+    Error(err) => err
+  }
+}
+
+///|
+fn assert_rule(
+  grammar : Grammar,
+  rule_name : String,
+  case_name : String,
+) -> Rule raise {
+  match grammar.rules.get(rule_name) {
+    Some(rule) => rule
+    None => fail("规则 \{rule_name} 不存在 [\{case_name}]")
+  }
+}
+
+///|
+fn assert_rule_pattern(
+  grammar : Grammar,
+  rule_name : String,
+  expected_variant : String,
+  case_name : String,
+) -> Unit raise {
+  let rule = assert_rule(grammar, rule_name, case_name)
+  let actual_variant = pattern_variant(rule.pattern)
+  if actual_variant != expected_variant {
+    fail(
+      "模式断言失败 [\{case_name}] rule=\{rule_name}: expected \{expected_variant}, got \{actual_variant}",
+    )
+  }
+}
+
+///|
+fn assert_has_attr(
+  grammar : Grammar,
+  rule_name : String,
+  expected_attr : RuleAttribute,
+  case_name : String,
+) -> Unit raise {
+  let rule = assert_rule(grammar, rule_name, case_name)
+  let mut found = false
+  for attr in rule.attributes {
+    if attr == expected_attr {
+      found = true
+    }
+  }
+  assert_true(found)
+}
+
+///|
+fn run_pattern_cases(cases : Array[TestCase]) -> Unit raise {
+  for tc in cases {
+    let grammar = assert_parse_ok(tc.name, tc.dsl)
+    for rule_name in tc.expected_rules {
+      assert_true(grammar.rules.contains(rule_name))
+    }
+    for rule_name, expected_variant in tc.expected_patterns {
+      assert_rule_pattern(grammar, rule_name, expected_variant, tc.name)
+    }
+  }
+}
+
+///|
+fn run_rule_meta_cases(cases : Array[RuleMetaCase]) -> Unit raise {
+  for tc in cases {
+    let grammar = assert_parse_ok(tc.name, tc.dsl)
+    let rule = assert_rule(grammar, tc.rule_name, tc.name)
+    assert_eq(rule.is_named, tc.expected_is_named)
+    assert_eq(rule.is_token, tc.expected_is_token)
+    assert_eq(rule.params, tc.expected_params)
+  }
+}
+
+///|
+fn run_start_cases(cases : Array[StartCase]) -> Unit raise {
+  for tc in cases {
+    let grammar = assert_parse_ok(tc.name, tc.dsl)
+    assert_eq(grammar.start, tc.expected_start)
+  }
+}
+
+///|
+fn run_word_cases(cases : Array[WordCase]) -> Unit raise {
+  for tc in cases {
+    let grammar = assert_parse_ok(tc.name, tc.dsl)
+    assert_eq(grammar.word, tc.expected_word)
+  }
+}
+
+///|
+fn run_extras_cases(cases : Array[ExtrasCase]) -> Unit raise {
+  for tc in cases {
+    let grammar = assert_parse_ok(tc.name, tc.dsl)
+    assert_eq(grammar.extras.length(), tc.expected_variants.length())
+    for i in 0..<tc.expected_variants.length() {
+      assert_eq(pattern_variant(grammar.extras[i]), tc.expected_variants[i])
+    }
+  }
+}
+
+///|
+fn run_precedence_cases(cases : Array[PrecDeclCase]) -> Unit raise {
+  for tc in cases {
+    let grammar = assert_parse_ok(tc.name, tc.dsl)
+    assert_eq(grammar.precedences.length(), tc.expected_precedences.length())
+    for i in 0..<tc.expected_precedences.length() {
+      let actual = grammar.precedences[i]
+      let expected = tc.expected_precedences[i]
+      assert_eq(actual.level, expected.level)
+      assert_eq(actual.kind, expected.kind)
+      assert_eq(actual.rules, expected.rules)
+    }
+  }
+}
+
+///|
+fn run_attr_cases(cases : Array[AttrCase]) -> Unit raise {
+  for tc in cases {
+    let grammar = assert_parse_ok(tc.name, tc.dsl)
+    let rule = assert_rule(grammar, tc.rule_name, tc.name)
+    assert_eq(rule.is_token, tc.expected_is_token)
+    assert_eq(rule.attributes.length(), tc.expected_attrs.length())
+    for attr in tc.expected_attrs {
+      assert_has_attr(grammar, tc.rule_name, attr, tc.name)
+    }
+  }
+}
+
+///|
+fn run_error_cases(cases : Array[ErrorCase]) -> Unit raise {
+  for tc in cases {
+    let err = assert_parse_error(tc.name, tc.dsl)
+    match tc.expected_line {
+      Some(line) => assert_eq(err.location.line, line)
+      None => ()
+    }
+    match tc.expected_column {
+      Some(column) => assert_eq(err.location.column, column)
+      None => ()
+    }
+  }
+}
+
+///|
+fn run_lenient_cases(cases : Array[LenientCase]) -> Unit raise {
+  for tc in cases {
+    let _ = tc.name
+    let (grammar, errors) = parse_grammar_lenient(tc.dsl)
+    assert_eq(errors.length(), tc.expected_error_count)
+    for rule_name in tc.expected_rules {
+      assert_true(grammar.rules.contains(rule_name))
+    }
+    assert_eq(grammar.duplicate_rule_names, tc.expected_duplicate_rules)
+  }
+}
+
+///|
+fn get_parser_basic_test_cases() -> Array[TestCase] {
   [
     {
-      name: "基本规则 - 选择",
+      name: "基础规则 - 选择",
       dsl: "rule expr: num | expr \"+\" expr\nrule num: /\\d+/",
       expected_rules: ["expr", "num"],
       expected_patterns: Map::from_array([("expr", "Choice"), ("num", "Regex")]),
     },
     {
-      name: "基本规则 - 序列",
+      name: "基础规则 - 序列",
       dsl: "rule statement: identifier \"=\" expression \";\"",
       expected_rules: ["statement"],
       expected_patterns: Map::from_array([("statement", "Seq")]),
     },
     {
-      name: "基本规则 - 字面量选择",
+      name: "基础规则 - 字面量选择",
       dsl: "rule keyword: \"if\" | \"else\" | \"while\"",
       expected_rules: ["keyword"],
       expected_patterns: Map::from_array([("keyword", "Choice")]),
     },
     {
-      name: "基本规则 - 单字面量",
+      name: "基础规则 - 单字面量",
       dsl: "rule equals: \"=\"",
       expected_rules: ["equals"],
       expected_patterns: Map::from_array([("equals", "Literal")]),
     },
     {
-      name: "基本规则 - 规则引用链",
+      name: "基础规则 - 空字面量",
+      dsl: "rule empty: \"\"",
+      expected_rules: ["empty"],
+      expected_patterns: Map::from_array([("empty", "Literal")]),
+    },
+    {
+      name: "基础规则 - 规则引用链",
       dsl: "rule program: statement\nrule statement: expr\nrule expr: number",
       expected_rules: ["program", "statement", "expr"],
       expected_patterns: Map::from_array([
@@ -131,47 +380,6 @@ fn get_parse_test_cases() -> Array[TestCase] {
       expected_patterns: Map::from_array([("any", "AnyChar")]),
     },
     {
-      name: "顶层声明 - start",
-      dsl: "start program\nrule program: statement*\nrule statement: \"print\" expr",
-      expected_rules: ["program", "statement"],
-      expected_patterns: Map::from_array([
-        ("program", "Repeat"),
-        ("statement", "Seq"),
-      ]),
-    },
-    {
-      name: "顶层声明 - 优先级左结合",
-      dsl: "precedence left plus, minus\nrule expr: number (plus | minus) number\nrule plus: \"+\"\nrule minus: \"-\"",
-      expected_rules: ["expr", "plus", "minus"],
-      expected_patterns: Map::from_array([
-        ("expr", "Seq"),
-        ("plus", "Literal"),
-        ("minus", "Literal"),
-      ]),
-    },
-    {
-      name: "顶层声明 - 优先级右结合",
-      dsl: "precedence right power\nrule expr: number power number\nrule power: \"^\"",
-      expected_rules: ["expr", "power"],
-      expected_patterns: Map::from_array([("expr", "Seq"), ("power", "Literal")]),
-    },
-    {
-      name: "顶层声明 - 多级优先级",
-      dsl: "precedence left plus, minus\nprecedence left star, slash\nrule expr: term ((plus | minus) term)*\nrule term: factor ((star | slash) factor)*\nrule factor: number | \"(\" expr \")\"\nrule plus: \"+\"\nrule minus: \"-\"\nrule star: \"*\"\nrule slash: \"/\"",
-      expected_rules: [
-        "expr", "term", "factor", "plus", "minus", "star", "slash",
-      ],
-      expected_patterns: Map::from_array([
-        ("expr", "Seq"),
-        ("term", "Seq"),
-        ("factor", "Choice"),
-        ("plus", "Literal"),
-        ("minus", "Literal"),
-        ("star", "Literal"),
-        ("slash", "Literal"),
-      ]),
-    },
-    {
       name: "注释 - 行注释",
       dsl: "rule expr: number // 这是一个注释\nrule number: /\\d+/",
       expected_rules: ["expr", "number"],
@@ -214,6 +422,171 @@ fn get_parse_test_cases() -> Array[TestCase] {
       expected_patterns: Map::from_array([("assign", "Seq")]),
     },
     {
+      name: "token 规则",
+      dsl: "token rule num: /\\d+/",
+      expected_rules: ["num"],
+      expected_patterns: Map::from_array([("num", "Regex")]),
+    },
+    {
+      name: "正则中的转义斜杠",
+      dsl: "start s\nrule s: /\\/\\/\\//",
+      expected_rules: ["s"],
+      expected_patterns: Map::from_array([("s", "Regex")]),
+    },
+    {
+      name: "word 仍可作规则名",
+      dsl: "rule word: /[a-z]+/",
+      expected_rules: ["word"],
+      expected_patterns: Map::from_array([("word", "Regex")]),
+    },
+    {
+      name: "token 仍可作规则名",
+      dsl: "rule token: /[a-z]+/",
+      expected_rules: ["token"],
+      expected_patterns: Map::from_array([("token", "Regex")]),
+    },
+    {
+      name: "未定义引用仅做语法解析",
+      dsl: "rule expr: undefined_rule",
+      expected_rules: ["expr"],
+      expected_patterns: Map::from_array([("expr", "RuleRef")]),
+    },
+    {
+      name: "未闭合正则被宽松解析为正则（产生部分内容的 RegexLiteral）",
+      dsl: "rule num: /unclosed",
+      expected_rules: ["num"],
+      expected_patterns: Map::from_array([("num", "Regex")]),
+    },
+  ]
+}
+
+///|
+fn get_parser_basic_rule_meta_cases() -> Array[RuleMetaCase] {
+  [
+    {
+      name: "普通规则默认是命名节点",
+      dsl: "rule expr: number",
+      rule_name: "expr",
+      expected_is_named: true,
+      expected_is_token: false,
+      expected_params: [],
+    },
+    {
+      name: "下划线规则是匿名节点",
+      dsl: "rule _ws: \" \"",
+      rule_name: "_ws",
+      expected_is_named: false,
+      expected_is_token: false,
+      expected_params: [],
+    },
+    {
+      name: "token rule 标记为词法规则",
+      dsl: "token rule num: /\\d+/",
+      rule_name: "num",
+      expected_is_named: true,
+      expected_is_token: true,
+      expected_params: [],
+    },
+    {
+      name: "普通 rule 的 is_token 默认为 false",
+      dsl: "rule expr: /\\d+/",
+      rule_name: "expr",
+      expected_is_named: true,
+      expected_is_token: false,
+      expected_params: [],
+    },
+  ]
+}
+
+///|
+fn get_parser_basic_start_cases() -> Array[StartCase] {
+  [
+    {
+      name: "start 顶层声明写入 grammar.start",
+      dsl: "start program\nrule program: statement*\nrule statement: \"print\" expr",
+      expected_start: Some("program"),
+    },
+    {
+      name: "未声明 start 时保持 None",
+      dsl: "rule expr: number",
+      expected_start: None,
+    },
+  ]
+}
+
+///|
+fn get_parser_basic_word_cases() -> Array[WordCase] {
+  [
+    {
+      name: "word 顶层声明写入 grammar.word",
+      dsl: "word identifier\nrule identifier: /[a-z]+/",
+      expected_word: Some("identifier"),
+    },
+    {
+      name: "未声明 word 时保持 None",
+      dsl: "rule expr: /\\d+/",
+      expected_word: None,
+    },
+  ]
+}
+
+///|
+fn get_parser_basic_extras_cases() -> Array[ExtrasCase] {
+  [
+    {
+      name: "extras 支持 Regex 和 Literal",
+      dsl: "start s\nrule s: \"a\"\nextras [/\\s+/, \"//\"]",
+      expected_variants: ["Regex", "Literal"],
+    },
+    {
+      name: "extras 支持空列表",
+      dsl: "start s\nrule s: \"a\"\nextras []",
+      expected_variants: [],
+    },
+    {
+      name: "extras 中的转义斜杠正则可正确解析",
+      dsl: "start s\nrule s: \"a\"\nextras [/\\/\\/.*/]",
+      expected_variants: ["Regex"],
+    },
+  ]
+}
+
+///|
+fn get_parser_complex_test_cases() -> Array[TestCase] {
+  [
+    {
+      name: "顶层声明 - 优先级左结合",
+      dsl: "precedence left plus, minus\nrule expr: number (plus | minus) number\nrule plus: \"+\"\nrule minus: \"-\"",
+      expected_rules: ["expr", "plus", "minus"],
+      expected_patterns: Map::from_array([
+        ("expr", "Seq"),
+        ("plus", "Literal"),
+        ("minus", "Literal"),
+      ]),
+    },
+    {
+      name: "顶层声明 - 优先级右结合",
+      dsl: "precedence right power\nrule expr: number power number\nrule power: \"^\"",
+      expected_rules: ["expr", "power"],
+      expected_patterns: Map::from_array([("expr", "Seq"), ("power", "Literal")]),
+    },
+    {
+      name: "顶层声明 - 多级优先级",
+      dsl: "precedence left plus, minus\nprecedence left star, slash\nrule expr: term ((plus | minus) term)*\nrule term: factor ((star | slash) factor)*\nrule factor: number | \"(\" expr \")\"\nrule plus: \"+\"\nrule minus: \"-\"\nrule star: \"*\"\nrule slash: \"/\"",
+      expected_rules: [
+        "expr", "term", "factor", "plus", "minus", "star", "slash",
+      ],
+      expected_patterns: Map::from_array([
+        ("expr", "Seq"),
+        ("term", "Seq"),
+        ("factor", "Choice"),
+        ("plus", "Literal"),
+        ("minus", "Literal"),
+        ("star", "Literal"),
+        ("slash", "Literal"),
+      ]),
+    },
+    {
       name: "复杂表达式语法",
       dsl: "rule expression: additive\nrule additive: multiplicative ((\"+\" | \"-\") multiplicative)*\nrule multiplicative: primary ((\"*\" | \"/\") primary)*\nrule primary: number | identifier | \"(\" expression \")\"\nrule number: /\\d+(\\.\\d+)?/\nrule identifier: /[a-zA-Z_]\\w*/",
       expected_rules: [
@@ -241,325 +614,285 @@ fn get_parse_test_cases() -> Array[TestCase] {
       expected_patterns: Map::from_array([("expr", "Prec"), ("number", "Regex")]),
     },
     {
-      name: "内联优先级 - 右结吆",
+      name: "内联优先级 - 右结合",
       dsl: "rule expr: prec.right(3, number)\nrule number: /\\d+/",
       expected_rules: ["expr", "number"],
       expected_patterns: Map::from_array([("expr", "Prec"), ("number", "Regex")]),
     },
     {
-      name: "内联优先级 - 内嵌序列",
-      dsl: "rule expr: prec.left(2, expr \"+\" expr)\nrule expr: /\\d+/",
-      expected_rules: ["expr"],
-      expected_patterns: Map::from_array([("expr", "Regex")]),
+      name: "alias 模式",
+      dsl: "rule expr: alias(\"num\", number)\nrule number: /\\d+/",
+      expected_rules: ["expr", "number"],
+      expected_patterns: Map::from_array([
+        ("expr", "Alias"),
+        ("number", "Regex"),
+      ]),
+    },
+    {
+      name: "参数化模板与规则应用",
+      dsl: "rule list[T]: T (\",\" T)*\nrule items: list[expr]\nrule expr: /\\d+/",
+      expected_rules: ["list", "items", "expr"],
+      expected_patterns: Map::from_array([
+        ("list", "Seq"),
+        ("items", "RuleApp"),
+        ("expr", "Regex"),
+      ]),
     },
   ]
 }
 
 ///|
-fn run_parse_tests(cases : Array[TestCase]) -> Unit raise {
-  for tc in cases {
-    match parse_grammar(tc.dsl) {
-      Success(grammar) => {
-        for rule_name in tc.expected_rules {
-          assert_true(grammar.rules.contains(rule_name))
-        }
-        for rule_name, expected_type in tc.expected_patterns {
-          match grammar.rules.get(rule_name) {
-            Some(r) => assert_eq(pattern_variant(r.pattern), expected_type)
-            None => abort("规则 \{rule_name} 不存在 [\{tc.name}]")
-          }
-        }
-      }
-      Error(err) =>
-        abort(
-          "解析失败 [\{tc.name}]: \{err.message} at \{err.location.line}:\{err.location.column}",
-        )
-    }
-  }
-}
-
-// 测试入口
-
-///|
-test "parse_correctness" {
-  run_parse_tests(get_parse_test_cases())
-}
-
-///|
-// 验证各种边缘输入不会崩溃，并区分预期的成功/失败
-test "parse_error_handling" {
-  // (描述, DSL, 是否期望解析失败)
-  let cases = [
-    ("缺少选择分支", "rule expr: num |", true),
-    ("空规则体", "rule empty: ", true),
-    ("无效标签 @", "rule expr: @", true),
-    ("未闭合括号", "rule expr: (number", true),
-    ("空字面量", "rule empty: \"\"", false), // 空字面量合法
-    ("重复规则名", "rule expr: number\nrule expr: string", false), // 后者覆盖前者
-    ("未引用规则", "rule expr: undefined_rule", false), // 无引用校验
-    ("无效正则", "rule num: /unclosed", false), // 无正则校验
-    ("无效优先级", "precedence invalid plus", false), // 跳过处理
-    ("后缀叠加", "rule expr: number*+", false), // * 消耗后 + 单独报错
+fn get_parser_complex_rule_meta_cases() -> Array[RuleMetaCase] {
+  [
+    {
+      name: "模板规则参数列表 - 单参数",
+      dsl: "rule list[T]: T (\",\" T)*",
+      rule_name: "list",
+      expected_is_named: true,
+      expected_is_token: false,
+      expected_params: ["T"],
+    },
+    {
+      name: "模板规则参数列表 - 双参数",
+      dsl: "rule pair[A, B]: A B",
+      rule_name: "pair",
+      expected_is_named: true,
+      expected_is_token: false,
+      expected_params: ["A", "B"],
+    },
   ]
-  for c in cases {
-    let (description, dsl, expect_error) = c
-    match parse_grammar(dsl) {
-      Success(g) => {
-        if expect_error {
-          abort("应该失败但成功了: \{description}")
-        }
-        assert_true(g.rules.length() >= 0)
-      }
-      Error(err) =>
-        if not(expect_error) {
-          abort("意外失败: \{description} — \{err.message}")
-        }
-    }
-  }
 }
 
 ///|
-test "parse_error_locations" {
-  let cases = [
-    ("rule expr: num |", 1, 16), // | 后无分支
-    ("rule : num", 1, 6),
-  ] // 缺少规则名
-  for c in cases {
-    let (dsl, expected_line, expected_col) = c
-    match parse_grammar(dsl) {
-      Success(_) => abort("应该失败但成功了: \{dsl}")
-      Error(err) => {
-        assert_eq(err.location.line, expected_line)
-        assert_eq(err.location.column, expected_col)
-      }
-    }
-  }
+fn get_parser_complex_precedence_cases() -> Array[PrecDeclCase] {
+  [
+    {
+      name: "precedence 混合 left/right 按顺序入表",
+      dsl: "precedence left plus, minus\nprecedence right power\nrule plus: \"+\"\nrule minus: \"-\"\nrule power: \"^\"",
+      expected_precedences: [
+        { level: 1, kind: PrecKind::Left, rules: ["plus", "minus"] },
+        { level: 2, kind: PrecKind::Right, rules: ["power"] },
+      ],
+    },
+    {
+      name: "precedence 无修饰词解析为 Nonassoc",
+      dsl: "precedence eq, neq\nrule eq: \"==\"\nrule neq: \"!=\"",
+      expected_precedences: [
+        { level: 1, kind: PrecKind::Nonassoc, rules: ["eq", "neq"] },
+      ],
+    },
+    {
+      name: "precedence dynamic 解析为 Dynamic",
+      dsl: "precedence dynamic cmp\nrule cmp: \"<\"",
+      expected_precedences: [
+        { level: 1, kind: PrecKind::Dynamic, rules: ["cmp"] },
+      ],
+    },
+    {
+      name: "多级 precedence 按声明顺序分层",
+      dsl: "precedence left plus, minus\nprecedence left star, slash\nrule plus: \"+\"\nrule minus: \"-\"\nrule star: \"*\"\nrule slash: \"/\"",
+      expected_precedences: [
+        { level: 1, kind: PrecKind::Left, rules: ["plus", "minus"] },
+        { level: 2, kind: PrecKind::Left, rules: ["star", "slash"] },
+      ],
+    },
+  ]
 }
 
 ///|
-test "parse_rule_is_named" {
-  // 以普通名称开头 → 命名节点
-  match parse_grammar("rule expr: number") {
-    Success(g) =>
-      match g.rules.get("expr") {
-        Some(r) => assert_true(r.is_named)
-        None => abort("rule not found")
-      }
-    Error(err) => abort(err.message)
-  }
-  // 以 _ 开头 → 匿名节点（不出现在 CST 查询中）
-  match parse_grammar("rule _ws: \" \"") {
-    Success(g) =>
-      match g.rules.get("_ws") {
-        Some(r) => assert_true(r.is_named == false)
-        None => abort("rule not found")
-      }
-    Error(err) => abort(err.message)
-  }
+fn get_parser_attr_cases() -> Array[AttrCase] {
+  [
+    {
+      name: "@inline 规则属性",
+      dsl: "@inline rule sep: \",\"",
+      rule_name: "sep",
+      expected_attrs: [RuleAttribute::Inline],
+      expected_is_token: false,
+    },
+    {
+      name: "@hide 规则属性",
+      dsl: "@hide rule ws: /\\s+/",
+      rule_name: "ws",
+      expected_attrs: [RuleAttribute::Hide],
+      expected_is_token: false,
+    },
+    {
+      name: "@deprecated 规则属性",
+      dsl: "@deprecated rule legacy: \"x\"",
+      rule_name: "legacy",
+      expected_attrs: [RuleAttribute::Deprecated],
+      expected_is_token: false,
+    },
+    {
+      name: "多属性 + token rule",
+      dsl: "@inline @hide token rule trivia: /\\s+/",
+      rule_name: "trivia",
+      expected_attrs: [RuleAttribute::Inline, RuleAttribute::Hide],
+      expected_is_token: true,
+    },
+  ]
 }
 
 ///|
-// 验证顶层 precedence 声明被正确解析并存入 grammar.precedences
-test "parse_precedences" {
-  let dsl = "precedence left plus, minus\nprecedence right power\nrule plus: \"+\"\nrule minus: \"-\"\nrule power: \"^\""
-  match parse_grammar(dsl) {
-    Error(err) => abort(err.message)
-    Success(g) => {
-      assert_eq(g.precedences.length(), 2)
-      // 第一条：左结合，包含 plus 和 minus
-      let p0 = g.precedences[0]
-      assert_eq(p0.level, 1)
-      assert_eq(p0.rules.length(), 2)
-      let kind0 = match p0.kind {
-        PrecKind::Left => "Left"
-        _ => "other"
-      }
-      assert_eq(kind0, "Left")
-      // 第二条：右结合，包含 power
-      let p1 = g.precedences[1]
-      assert_eq(p1.level, 2)
-      assert_eq(p1.rules.length(), 1)
-      let kind1 = match p1.kind {
-        PrecKind::Right => "Right"
-        _ => "other"
-      }
-      assert_eq(kind1, "Right")
-      assert_eq(p1.rules[0], "power")
-    }
-  }
+fn get_parser_error_cases() -> Array[ErrorCase] {
+  [
+    {
+      name: "缺少选择分支",
+      dsl: "rule expr: num |",
+      expected_line: Some(1),
+      expected_column: Some(16),
+    },
+    {
+      name: "空规则体",
+      dsl: "rule empty: ",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "无效标签 @",
+      dsl: "rule expr: @",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "缺少规则名",
+      dsl: "rule : num",
+      expected_line: Some(1),
+      expected_column: Some(6),
+    },
+    {
+      name: "未闭合括号",
+      dsl: "rule expr: (number",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "多行未闭合括号定位到第二行",
+      dsl: "rule a: b\nrule b: (\"x\"",
+      expected_line: Some(2),
+      expected_column: None,
+    },
+    {
+      name: "extras 缺少方括号",
+      dsl: "extras /\\s+/",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "RepeatRange 下界大于上界",
+      dsl: "rule r: digit{5,2}\nrule digit: /\\d/",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "prec 缺少左括号",
+      dsl: "rule r: prec 1, a",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "prec 级别不是整数",
+      dsl: "rule r: prec(abc, a)",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "prec 缺少逗号",
+      dsl: "rule r: prec(1 a)",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "prec 缺少右括号",
+      dsl: "rule r: prec(1, a",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "prec 使用无效修饰词",
+      dsl: "rule r: prec.none(1, a)",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "precedence 后跟数字",
+      dsl: "precedence left 42\nrule plus: \"+\"",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "precedence 缺少规则名",
+      dsl: "precedence\nrule plus: \"+\"",
+      expected_line: None,
+      expected_column: None,
+    },
+    {
+      name: "precedence 后跟字面量",
+      dsl: "precedence left \"+\"\nrule plus: \"+\"",
+      expected_line: None,
+      expected_column: None,
+    },
+  ]
 }
 
 ///|
-// 验证无结合性（无修饰词）和 dynamic 修饰词也能被正确识别
-test "parse_precedences_kinds" {
-  // Nonassoc：省略修饰词
-  match parse_grammar("precedence eq, neq\nrule eq: \"==\"\nrule neq: \"!=\"") {
-    Error(err) => abort(err.message)
-    Success(g) => {
-      assert_eq(g.precedences.length(), 1)
-      let kind = match g.precedences[0].kind {
-        PrecKind::Nonassoc => "Nonassoc"
-        _ => "other"
-      }
-      assert_eq(kind, "Nonassoc")
-      assert_eq(g.precedences[0].rules.length(), 2)
-    }
-  }
-  // Dynamic
-  match parse_grammar("precedence dynamic cmp\nrule cmp: \"<\"") {
-    Error(err) => abort(err.message)
-    Success(g) => {
-      assert_eq(g.precedences.length(), 1)
-      let kind = match g.precedences[0].kind {
-        PrecKind::Dynamic => "Dynamic"
-        _ => "other"
-      }
-      assert_eq(kind, "Dynamic")
-    }
-  }
+fn get_parser_lenient_cases() -> Array[LenientCase] {
+  [
+    {
+      name: "lenient 模式收集多条错误并保留合法规则",
+      dsl: "rule a: |\nrule b: |\nrule c: /\\d+/",
+      expected_error_count: 2,
+      expected_rules: ["c"],
+      expected_duplicate_rules: [],
+    },
+    {
+      name: "合法 DSL 在 lenient 模式下无错误",
+      dsl: "start expr\nrule expr: /\\d+/",
+      expected_error_count: 0,
+      expected_rules: ["expr"],
+      expected_duplicate_rules: [],
+    },
+    {
+      name: "重复规则名记录在 duplicate_rule_names",
+      dsl: "rule expr: /\\d+/\nrule expr: /[a-z]/",
+      expected_error_count: 0,
+      expected_rules: ["expr"],
+      expected_duplicate_rules: ["expr"],
+    },
+  ]
 }
 
 ///|
-// 验证 prec() 的错误路径
-test "parse_prec_errors" {
-  // 缺少 (
-  match parse_grammar("rule r: prec 1, a") {
-    Success(_) => abort("should fail")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
-  // 级别不是整数
-  match parse_grammar("rule r: prec(abc, a)") {
-    Success(_) => abort("should fail")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
-  // 缺少 ,
-  match parse_grammar("rule r: prec(1 a)") {
-    Success(_) => abort("should fail")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
-  // 未闭合 )
-  match parse_grammar("rule r: prec(1, a") {
-    Success(_) => abort("should fail")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
-  // prec. 后接无效词
-  match parse_grammar("rule r: prec.none(1, a)") {
-    Success(_) => abort("should fail")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
+fn parser_basic_test() -> Unit raise {
+  run_pattern_cases(get_parser_basic_test_cases())
+  run_rule_meta_cases(get_parser_basic_rule_meta_cases())
+  run_start_cases(get_parser_basic_start_cases())
+  run_word_cases(get_parser_basic_word_cases())
+  run_extras_cases(get_parser_basic_extras_cases())
 }
 
 ///|
-test "parse_grammar extras: Regex and Literal patterns" {
-  let dsl =
-    #|
-    #|start s
-    #|rule s: "a"
-    #|extras [/\s+/, "//"]
-  match parse_grammar(dsl) {
-    Error(e) => fail(e.message)
-    Success(g) => {
-      assert_eq(g.extras.length(), 2)
-      assert_true(g.extras[0] is Regex("\\s+"))
-      assert_true(g.extras[1] is Literal("//"))
-    }
-  }
+fn parser_complex_test() -> Unit raise {
+  run_pattern_cases(get_parser_complex_test_cases())
+  run_rule_meta_cases(get_parser_complex_rule_meta_cases())
+  run_precedence_cases(get_parser_complex_precedence_cases())
 }
 
 ///|
-test "parse_grammar extras: empty list" {
-  let dsl = "start s\nrule s: \"a\"\nextras []"
-  match parse_grammar(dsl) {
-    Error(e) => fail(e.message)
-    Success(g) => assert_eq(g.extras.length(), 0)
-  }
+fn parser_attr_test() -> Unit raise {
+  run_attr_cases(get_parser_attr_cases())
 }
 
 ///|
-test "parse_grammar extras: missing bracket returns error" {
-  match parse_grammar("extras /\\s+/") {
-    Success(_) => fail("should error")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
+fn parser_error_test() -> Unit raise {
+  run_error_cases(get_parser_error_cases())
+  run_lenient_cases(get_parser_lenient_cases())
 }
 
 ///|
-test "regex literal \\/ escape parsed correctly" {
-  // /\/\/.*/  应解析为包含 \/ 的正则词法，而非在第一个 / 处截断
-  let dsl = "start s\nrule s: /\\/\\/\\//"
-  match parse_grammar(dsl) {
-    Error(e) => fail("parse failed: \{e.message}")
-    Success(g) =>
-      // 规则应该存在且模式中包含正则
-      assert_eq(g.rules.contains("s"), true)
-  }
-}
-
-///|
-test "regex literal with escaped slash in extras" {
-  // extras [ /\/\/.*/] — 行注释正则
-  let dsl = "start s\nrule s: \"a\"\nextras [/\\/\\/.*/]"
-  match parse_grammar(dsl) {
-    Error(e) => fail("parse failed: \{e.message}")
-    Success(g) => assert_eq(g.extras.length(), 1)
-  }
-}
-
-///|
-/// 负面测试：{n,m} 区间中 n > m 应报错
-test "parse_negative: RepeatRange min > max is rejected" {
-  // {5,2}：下界 5 大于上界 2，语义非法
-  match parse_grammar("rule r: digit{5,2}\nrule digit: /\\d/") {
-    Success(_) => fail("should have rejected {5,2} range where min > max")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
-  // {0,0}：重复 0-0 次，合法（等价于不出现）
-  match parse_grammar("rule r: digit{0,0}\nrule digit: /\\d/") {
-    Error(e) => fail("unexpected error for {0,0}: \{e.message}")
-    Success(g) => assert_true(g.rules.contains("r"))
-  }
-}
-
-///|
-/// 负面测试：未闭合括号 '(' 应报错并报告正确位置
-test "parse_negative: unclosed parenthesis reports error" {
-  // 行内未闭合
-  match parse_grammar("rule expr: (number \"*\" factor") {
-    Success(_) => fail("should fail for unclosed '('")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
-  // 嵌套未闭合：外层已关闭但内层未闭合
-  match parse_grammar("rule expr: ((number)") {
-    Success(_) => fail("should fail for nested unclosed '('")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
-  // 多行：第二行出现未闭合括号
-  match parse_grammar("rule a: b\nrule b: (\"x\"") {
-    Success(_) => fail("should fail for unclosed '(' on line 2")
-    Error(err) => {
-      assert_true(err.message.length() > 0)
-      // 错误应出现在第 2 行
-      assert_eq(err.location.line, 2)
-    }
-  }
-}
-
-///|
-/// 负面测试：precedence 后接非标识符 token（如数字字面量、符号）应报错
-test "parse_negative: precedence with invalid token after keyword" {
-  // precedence left 后接数字而非规则名
-  match parse_grammar("precedence left 42\nrule plus: \"+\"") {
-    Success(_) => fail("should fail: precedence followed by integer literal")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
-  // precedence 后直接换行（没有结合性也没有规则名）
-  match parse_grammar("precedence\nrule plus: \"+\"") {
-    Success(_) => fail("should fail: bare 'precedence' with no rules")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
-  // precedence left 后接引号字面量而非标识符
-  match parse_grammar("precedence left \"+\"\nrule plus: \"+\"") {
-    Success(_) => fail("should fail: precedence followed by string literal")
-    Error(err) => assert_true(err.message.length() > 0)
-  }
+test "grammar_parsing_suite" {
+  parser_basic_test()
+  parser_complex_test()
+  parser_attr_test()
+  parser_error_test()
 }

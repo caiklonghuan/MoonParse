@@ -28,7 +28,16 @@ pub(all) enum Symbol {
   Terminal(TerminalId)
   NonTerminal(NonTerminalId)
   EndOfInput
-} derive(Eq, Hash, Show)
+} derive(Eq, Hash, Debug)
+
+///|
+pub impl Show for Symbol with output(self, logger) {
+  match self {
+    Terminal(id) => logger.write_string("Terminal(\{id})")
+    NonTerminal(id) => logger.write_string("NonTerminal(\{id})")
+    EndOfInput => logger.write_string("EndOfInput")
+  }
+}
 
 ///|
 /// 产生式体中携带字段元数据的符号包装
@@ -36,7 +45,7 @@ pub(all) enum Symbol {
 pub(all) struct BodySymbol {
   symbol : Symbol
   field_name : String?
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// Reduce 时的前瞻约束（由 Not(p) / And(p) 零宽断言产生）
@@ -45,7 +54,7 @@ pub(all) enum LookaheadConstraint {
   NotFollowedBy(Array[TerminalId])
   /// 正向前瞻 &p ：当前 lookahead 必须属于此集合
   FollowedBy(Array[TerminalId])
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// 扁平化产生式：A → β
@@ -63,7 +72,7 @@ pub(all) struct Production {
   lookahead : LookaheadConstraint?
   /// 别名（来自 Pattern::Alias；None = 无别名，使用规则名）
   mut alias_name : String?
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// 终结符的词法定义
@@ -73,7 +82,17 @@ pub(all) enum TerminalDef {
   AnyChar
   /// 由外部词法器（external scanner）处理的 token，不进入 DFA
   External(String)
-} derive(Eq, Show)
+} derive(Eq, Debug)
+
+///|
+pub impl Show for TerminalDef with output(self, logger) {
+  match self {
+    Literal(s) => logger.write_string("Literal(\{s})")
+    Regex(s) => logger.write_string("Regex(\{s})")
+    AnyChar => logger.write_string("AnyChar")
+    External(s) => logger.write_string("External(\{s})")
+  }
+}
 
 ///|
 /// Grammar 规范化后的增广文法（S' → Start $）
@@ -96,6 +115,12 @@ pub(all) struct AugmentedGrammar {
   nt_metas : Array[SymbolMeta]
   /// 外部词法器 token 的 TerminalId 列表（对应 DSL externals 声明）
   external_ids : Array[TerminalId]
+  /// word 关键字规则对应的 TerminalId（若文法声明了 `word`，否则为 None）
+  /// 该 token 是所有字面量关键字的"通用标识符"模式；字面量在 DFA 中优先级更高
+  word_token : TerminalId?
+  /// 显式声明的 GLR 冲突规则组（来自 DSL conflicts 声明）
+  /// 若某冲突涉及的规则名均属同一组，则按已知歧义处理（Declared 级别），不产生 Ambiguous 报告
+  declared_conflicts : Array[Array[String]]
 }
 
 ///|
@@ -106,7 +131,7 @@ pub(all) struct AugmentedGrammar {
 pub(all) struct LRItem {
   prod : ProductionId
   dot : Int
-} derive(Eq, Hash, Show, Compare)
+} derive(Eq, Hash, Debug, Compare)
 
 ///|
 // 解析动作与解析表
@@ -120,7 +145,16 @@ pub(all) enum Action {
   Reduce(ProductionId)
   /// 接受（仅用于增广起始产生式的规约）
   Accept
-} derive(Eq, Show)
+} derive(Eq, Debug)
+
+///|
+pub impl Show for Action with output(self, logger) {
+  match self {
+    Shift(state) => logger.write_string("Shift(\{state})")
+    Reduce(prod) => logger.write_string("Reduce(\{prod})")
+    Accept => logger.write_string("Accept")
+  }
+}
 
 ///|
 /// 非终结符的 AST 节点元数据（对应 grammar.Rule.is_named）
@@ -128,7 +162,14 @@ pub(all) struct SymbolMeta {
   name : String
   /// false = 匿名节点，运行时 AST 不暴露给用户
   is_named : Bool
-} derive(Show)
+  /// true = normalize 阶段生成的辅助非终结符（_rulename_suffix_n / _ra_xxx 等），
+  /// 不对应用户声明的规则。
+  is_synthetic : Bool
+  /// 该非终结符的产生式中出现的字段名列表（有序、去重）。
+  /// 来自 Pattern::Field / Pattern::Tagged；Token 和无字段规则为空。
+  /// 供运行时按名定位子节点。
+  field_slots : Array[String]
+} derive(Debug)
 
 ///|
 // 词法器 DFA
@@ -141,7 +182,7 @@ pub(all) struct DfaState {
   /// 若为接受态，记录优先级最高的 terminal
   /// 优先级：Literal > Regex > 声明顺序靠前
   accept : TerminalId?
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// 上下文敏感词法器 DFA
@@ -180,6 +221,12 @@ pub(all) struct ParseTable {
   extras : Array[TerminalId]
   /// 外部词法器 token 的 TerminalId 列表（来自 externals 声明），runtime 调用外部扫描器用
   external_token_ids : Array[TerminalId]
+  /// word 关键字规则对应的 TerminalId（若文法声明了 `word`，否则为 None）
+  /// 仅当 best_tid == word_token 时，lexer 才尝试 keyword 提升。
+  word_token : TerminalId?
+  /// 全文法 Literal 终结符的字符串 → TerminalId 映射（O(1) 关键字查表）
+  /// 由 generate_parse_table 从 terminal_patterns 中提取所有 Literal 条目构建。
+  keyword_map : Map[String, TerminalId]
 }
 
 ///|
@@ -199,7 +246,10 @@ pub(all) enum ConflictSeverity {
   /// prec.dynamic 标记的冲突：编译期无法消解，在 runtime 根据 dynamic_precedence
   /// 字段比较两棵子树的动态优先级来选择路径。携带 dynamic prec id（来自 grammar DSL）。
   DynamicConflict(Int)
-} derive(Show)
+  /// 该冲突由 DSL 的 conflicts 声明显式标注；runtime 通过 GLR 并行处理。
+  /// 与 Ambiguous 不同，Declared 是预期歧义，不阻止解析表生成。
+  Declared(String)
+} derive(Debug)
 
 ///|
 /// 单条冲突报告（由 tablegen 在构建 LALR 表时生成，每个 (state, terminal) 冲突点一条）
@@ -216,4 +266,4 @@ pub(all) struct ConflictReport {
   actions : Array[Action]
   /// 冲突的严重程度与消解策略，见 ConflictSeverity。
   severity : ConflictSeverity
-} derive(Show)
+} derive(Debug)

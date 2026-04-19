@@ -2,6 +2,7 @@
 _build/
 .mooncakes/
 .moonagent/
+.vite/
 **/design.md
 DESIGN.md
 **/design.md.bak

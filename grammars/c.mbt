@@ -29,24 +29,33 @@ pub let c_grammar : String =
   #|rule parameter: declaration_specifiers declarator?
   #|rule compound_statement: "{" block_item* "}"
   #|rule block_item: declaration | statement
-  #|rule statement: compound_statement | if_statement | while_statement | for_statement | return_statement | break_statement | continue_statement | expression_statement
+  #|rule statement: compound_statement | if_statement | while_statement | do_while_statement | for_statement | switch_statement | return_statement | break_statement | continue_statement | expression_statement
   #|rule if_statement: "if" "(" expression ")" statement ("else" statement)?
   #|rule while_statement: "while" "(" expression ")" statement
   #|rule for_statement: "for" "(" for_init? ";" expression? ";" expression? ")" statement
   #|rule for_init: for_declaration | expression
   #|rule for_declaration: declaration_specifiers init_declarator_list?
+  #|rule do_while_statement: "do" statement "while" "(" expression ")" ";"
+  #|rule switch_statement: "switch" "(" expression ")" "{" switch_item* "}"
+  #|rule switch_item: case_clause | default_clause | block_item
+  #|rule case_clause: "case" conditional_expression ":"
+  #|rule default_clause: "default" ":"
   #|rule return_statement: "return" expression? ";"
   #|rule break_statement: "break" ";"
   #|rule continue_statement: "continue" ";"
   #|rule expression_statement: expression? ";"
   #|rule expression: assignment_expression ("," assignment_expression)*
   #|rule assignment_expression: unary_expression assignment_operator assignment_expression | conditional_expression
-  #|rule assignment_operator: "=" | "+=" | "-=" | "*=" | "/=" | "%="
+  #|rule assignment_operator: "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "|=" | "^=" | "&=" | "<<=" | ">>="
   #|rule conditional_expression: logical_or_expression ("?" expression ":" conditional_expression)?
   #|rule logical_or_expression: logical_and_expression ("||" logical_and_expression)*
-  #|rule logical_and_expression: equality_expression ("&&" equality_expression)*
+  #|rule logical_and_expression: bitwise_or_expression ("&&" bitwise_or_expression)*
+  #|rule bitwise_or_expression: bitwise_xor_expression ("|" bitwise_xor_expression)*
+  #|rule bitwise_xor_expression: bitwise_and_expression ("^" bitwise_and_expression)*
+  #|rule bitwise_and_expression: equality_expression ("&" equality_expression)*
   #|rule equality_expression: relational_expression (("==" | "!=") relational_expression)*
-  #|rule relational_expression: additive_expression (("<" | ">" | "<=" | ">=") additive_expression)*
+  #|rule relational_expression: shift_expression (("<" | ">" | "<=" | ">=") shift_expression)*
+  #|rule shift_expression: additive_expression (("<<" | ">>") additive_expression)*
   #|rule additive_expression: multiplicative_expression (("+" | "-") multiplicative_expression)*
   #|rule multiplicative_expression: unary_expression (("*" | "/" | "%") unary_expression)*
   #|rule unary_expression: postfix_expression | unary_operator unary_expression
@@ -68,4 +77,12 @@ pub fn parse_c(
   source : String,
 ) -> Result[@runtime.CstNode, @runtime.ParseError] {
   @runtime.parse(c_table, source)
+}
+
+///|
+pub fn c_sexp(source : String) -> String {
+  match @runtime.parse(c_table, source) {
+    Ok(root) => cst_to_sexp(root, source, c_table)
+    Err(_) => "(ERROR)"
+  }
 }

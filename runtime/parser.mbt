@@ -1,21 +1,5 @@
 ///|
-// 线性 LR 解析器
-//
-// 实现最基础的单栈确定性 LR 解析循环：
-//   · 初始状态 1（state 0 保留为 ERROR 哨兵，遵照 tree-sitter 惯例）
-//   · extras token：推入 node_stack，不推 state_stack（LR 状态不变）
-//   · trailing extras：reduce 时分离，推回到新内部节点之后
-//   · 限制：GLR 冲突取第一个动作；语法错误直接返回 Err
-//
-// 注：state_stack[0] = 1（初始状态，永不弹出）
-
-///|
-/// 线性 LR 解析器（单栈）
-///
-/// state_stack：仅含非 extras 的 LR 状态，最底一项永远是初始状态 1。
-/// node_stack ：含 extras 和非 extras 的全部 CstNode，按推入顺序排列。
-/// 仅用于全量解析和测试基准；增量解析由 GlrEngine 负责。
-struct LrParser {
+priv struct LrParser {
   state_stack : Array[Int]
   node_stack : Array[CstNode]
   lexer : LexerEngine
@@ -35,7 +19,7 @@ fn LrParser::top_state(self : LrParser) -> Int {
 /// 从 input 全量解析完整 CST，仅用于非歧义文法和测试基准。
 /// GLR 冲突取第一个动作；语法错误直接返回 Err。
 /// 增量解析请使用 `parse_with_old_tree`（由 GlrEngine 负责）。
-fn parse_linear(
+pub fn parse_linear(
   table : @tablegen.ParseTable,
   input : String,
 ) -> Result[CstNode, ParseError] {
@@ -214,12 +198,12 @@ fn LrParser::do_reduce(
   // 依次从栈顶弹出，直到累计 real_pops 个非 extras 节点
   let raw : Array[CstNode] = []
   let mut real_count = 0
-  while real_count < real_pops && not(self.node_stack.is_empty()) {
+  while real_count < real_pops && !self.node_stack.is_empty() {
     match self.node_stack.pop() {
       None => break
       Some(n) => {
         raw.push(n)
-        if not(n.extra) {
+        if !n.extra {
           real_count = real_count + 1
         }
       }
@@ -231,7 +215,7 @@ fn LrParser::do_reduce(
   // 分离 trailing extras
   // 产生式体末端之后的 extras 在 reduce 后需成为新内部节点的后续兄弟节点
   let trailing : Array[CstNode] = []
-  while not(raw.is_empty()) {
+  while !raw.is_empty() {
     let last = raw[raw.length() - 1]
     if last.extra {
       let _ = raw.pop()
@@ -260,9 +244,24 @@ fn LrParser::do_reduce(
       let meta : @tablegen.SymbolMeta = if nt < table.symbol_metadata.length() {
         table.symbol_metadata[nt]
       } else {
-        { name: "?", is_named: false }
+        { name: "?", is_named: false, is_synthetic: false, field_slots: [] }
       }
-      let fnames : Array[String?] = prod.body.map(fn(bs) { bs.field_name })
+      // children 和 fnames 同步构造：extras 对应 None 字段名，保证等长
+      let fnames : Array[String?] = []
+      let mut body_idx = 0
+      for n in raw {
+        if n.extra {
+          fnames.push(None)
+        } else {
+          let fname = if body_idx < prod.body.length() {
+            prod.body[body_idx].field_name
+          } else {
+            None
+          }
+          fnames.push(fname)
+          body_idx = body_idx + 1
+        }
+      }
       let inner = CstNode::inner(
         nt,
         meta.is_named,
@@ -272,6 +271,7 @@ fn LrParser::do_reduce(
         0,
         false,
         false,
+        base_state, // parse_state = goto 查表前的栈顶状态（增量复用匹配用）
       )
 
       // 推入新状态与内部节点
@@ -297,7 +297,7 @@ fn LrParser::collect_root(
   let mut j = self.node_stack.length() - 1
   while j >= 0 {
     let n = self.node_stack[j]
-    if not(n.extra) {
+    if !n.extra {
       return Ok(n)
     }
     j = j - 1

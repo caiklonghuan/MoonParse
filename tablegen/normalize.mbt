@@ -15,6 +15,12 @@ priv struct NormCtx {
   /// 与 nonterminals 同步增长，下标即 NonTerminalId
   nt_metas : Array[SymbolMeta]
   productions : Array[Production]
+  /// 模板规则 name → Rule（用于 RuleApp 展开）
+  template_rules : Map[String, @grammar.Rule]
+  /// RuleApp 实例化缓存：canonical_key → NonTerminalId（防止无限递归）
+  rule_app_cache : Map[String, NonTerminalId]
+  /// @inline 规则的展开模式（name → Pattern），用于在引用处创建 per-callsite 新 NT
+  inline_patterns : Map[String, @grammar.Pattern]
 }
 
 ///|
@@ -29,6 +35,9 @@ fn NormCtx::new() -> NormCtx {
     nonterminals: Map::new(),
     nt_metas: [],
     productions: [],
+    template_rules: Map::new(),
+    rule_app_cache: Map::new(),
+    inline_patterns: Map::new(),
   }
 }
 
@@ -58,7 +67,27 @@ fn alloc_nt(ctx : NormCtx, name : String, is_named : Bool) -> NonTerminalId {
       let id = ctx.nt_next
       ctx.nt_next = ctx.nt_next + 1
       ctx.nonterminals.set(name, id)
-      ctx.nt_metas.push({ name, is_named })
+      ctx.nt_metas.push({ name, is_named, is_synthetic: false, field_slots: [] })
+      id
+    }
+  }
+}
+
+///|
+/// 注册 normalize 阶段生成的辅助非终结符（is_synthetic = true）
+fn alloc_nt_synthetic(ctx : NormCtx, name : String) -> NonTerminalId {
+  match ctx.nonterminals.get(name) {
+    Some(id) => id
+    None => {
+      let id = ctx.nt_next
+      ctx.nt_next = ctx.nt_next + 1
+      ctx.nonterminals.set(name, id)
+      ctx.nt_metas.push({
+        name,
+        is_named: false,
+        is_synthetic: true,
+        field_slots: [],
+      })
       id
     }
   }
@@ -114,7 +143,7 @@ fn add_production_with_lookahead(
 }
 
 ///|
-/// 分配辅助非终结符（is_named = false），命名带规则来源和类型后缀
+/// 分配辅助非终结符（is_named = false，is_synthetic = true），命名带规则来源和类型后缀
 fn fresh_helper(
   ctx : NormCtx,
   rule_name : String,
@@ -123,7 +152,7 @@ fn fresh_helper(
   let n = ctx.helper_next
   ctx.helper_next = ctx.helper_next + 1
   let name = "_\{rule_name}_\{suffix}_\{n}"
-  alloc_nt(ctx, name, false)
+  alloc_nt_synthetic(ctx, name)
 }
 
 ///|
@@ -138,6 +167,52 @@ fn pattern_suffix(p : @grammar.Pattern) -> String {
     RepeatRange(_, n, m) => "r\{n}to\{m}"
     Alias(_, _) => "alias"
     _ => "aux"
+  }
+}
+
+///|
+/// 计算 RuleApp 实例化的规范 key（用于缓存查找）
+fn ruleapp_cache_key(
+  tmpl_name : String,
+  args : Array[@grammar.Pattern],
+) -> String {
+  let arg_strs = args.map(fn(a) { @grammar.pattern_to_string(a) })
+  tmpl_name + "[" + arg_strs.join(",") + "]"
+}
+
+///|
+/// 将模板 Pattern 中的参数名替换为实际 Pattern（类型替换）
+fn substitute_pattern(
+  params : Array[String],
+  args : Array[@grammar.Pattern],
+  p : @grammar.Pattern,
+) -> @grammar.Pattern {
+  match p {
+    RuleRef(name) => {
+      // 若 name 是模板参数，替换为对应实参
+      for i in 0..<params.length() {
+        if params[i] == name {
+          return args[i]
+        }
+      }
+      RuleRef(name)
+    }
+    RuleApp(tmpl, as2) =>
+      RuleApp(tmpl, as2.map(fn(a) { substitute_pattern(params, args, a) }))
+    Choice(ps) => Choice(ps.map(fn(q) { substitute_pattern(params, args, q) }))
+    Seq(ps) => Seq(ps.map(fn(q) { substitute_pattern(params, args, q) }))
+    Repeat(q) => Repeat(substitute_pattern(params, args, q))
+    Plus(q) => Plus(substitute_pattern(params, args, q))
+    Optional(q) => Optional(substitute_pattern(params, args, q))
+    Tagged(tag, q) => Tagged(tag, substitute_pattern(params, args, q))
+    Field(f, q) => Field(f, substitute_pattern(params, args, q))
+    Not(q) => Not(substitute_pattern(params, args, q))
+    And(q) => And(substitute_pattern(params, args, q))
+    RepeatRange(q, n, m) =>
+      RepeatRange(substitute_pattern(params, args, q), n, m)
+    Prec(n, k, q) => Prec(n, k, substitute_pattern(params, args, q))
+    Alias(a, q) => Alias(a, substitute_pattern(params, args, q))
+    Literal(_) | Regex(_) | AnyChar => p
   }
 }
 
@@ -170,13 +245,27 @@ fn to_symbol(
       { symbol: Symbol::Terminal(id), field_name }
     }
     RuleRef(name) =>
-      // 前向引用在预注册阶段已处理，此处保底自动注册
-      match ctx.nonterminals.get(name) {
-        Some(id) => { symbol: Symbol::NonTerminal(id), field_name }
-        None => {
-          let id = alloc_nt(ctx, name, false)
-          { symbol: Symbol::NonTerminal(id), field_name }
+      // 先检查是否为 @inline 规则（展开到引用处，创建 per-callsite 新 NT）
+      match ctx.inline_patterns.get(name) {
+        Some(inline_pat) => {
+          let fresh_id = fresh_helper(ctx, name, "inl")
+          expand_into(ctx, fresh_id, inline_pat, name, prec, assoc)
+          { symbol: Symbol::NonTerminal(fresh_id), field_name }
         }
+        None =>
+          // 先检查是否为外部词法器 token（externals 声明的名称）
+          match ctx.terminals.get("ext:\{name}") {
+            Some(ext_id) => { symbol: Symbol::Terminal(ext_id), field_name }
+            None =>
+              // 前向引用在预注册阶段已处理，此处保底自动注册
+              match ctx.nonterminals.get(name) {
+                Some(id) => { symbol: Symbol::NonTerminal(id), field_name }
+                None => {
+                  let id = alloc_nt(ctx, name, false)
+                  { symbol: Symbol::NonTerminal(id), field_name }
+                }
+              }
+          }
       }
     // 包装类：传递元数据，递归处理内层
     Tagged(tag, inner) =>
@@ -204,6 +293,33 @@ fn to_symbol(
         i = i + 1
       }
       { symbol: Symbol::NonTerminal(fresh_id), field_name }
+    }
+    RuleApp(tmpl_name, args) => {
+      // 模板规则实例化：查缓存，未命中则展开后缓存
+      let key = ruleapp_cache_key(tmpl_name, args)
+      let nt_id = match ctx.rule_app_cache.get(key) {
+        Some(id) => id
+        None =>
+          match ctx.template_rules.get(tmpl_name) {
+            None => {
+              // 验证器已报告，此处仅分配空 NT 作兜底
+              let id = alloc_nt_synthetic(ctx, "_ra_\{tmpl_name}_err")
+              ctx.rule_app_cache.set(key, id)
+              id
+            }
+            Some(tmpl) => {
+              let expanded = substitute_pattern(tmpl.params, args, tmpl.pattern)
+              let n = ctx.rule_app_cache.length()
+              let concrete_name = "_ra_\{tmpl_name}_\{n}"
+              let id = alloc_nt_synthetic(ctx, concrete_name)
+              // 先缓存再展开，防止模板递归引用自身时无限循环
+              ctx.rule_app_cache.set(key, id)
+              expand_into(ctx, id, expanded, rule_name, prec, assoc)
+              id
+            }
+          }
+      }
+      { symbol: Symbol::NonTerminal(nt_id), field_name }
     }
     _ => {
       // 复杂 Pattern：创建辅助 NT，展开后返回对它的引用
@@ -301,37 +417,37 @@ fn expand_into(
     Repeat(inner) => {
       let sym = to_symbol(ctx, inner, rule_name, None, None, None)
       // head → ε
-      add_production(ctx, head, [], None, None, rule_name)
+      add_production(ctx, head, [], prec, assoc, rule_name)
       // head → head inner  (左递归，GLR 天然处理)
       add_production(
         ctx,
         head,
         [{ symbol: Symbol::NonTerminal(head), field_name: None }, sym],
-        None,
-        None,
+        prec,
+        assoc,
         rule_name,
       )
     }
     Plus(inner) => {
       let sym = to_symbol(ctx, inner, rule_name, None, None, None)
       // head → inner
-      add_production(ctx, head, [sym], None, None, rule_name)
+      add_production(ctx, head, [sym], prec, assoc, rule_name)
       // head → head inner  (左递归)
       add_production(
         ctx,
         head,
         [{ symbol: Symbol::NonTerminal(head), field_name: None }, sym],
-        None,
-        None,
+        prec,
+        assoc,
         rule_name,
       )
     }
     Optional(inner) => {
       let sym = to_symbol(ctx, inner, rule_name, None, None, None)
       // head → ε
-      add_production(ctx, head, [], None, None, rule_name)
+      add_production(ctx, head, [], prec, assoc, rule_name)
       // head → inner
-      add_production(ctx, head, [sym], None, None, rule_name)
+      add_production(ctx, head, [sym], prec, assoc, rule_name)
     }
     RepeatRange(inner, n, m) => {
       let sym = to_symbol(ctx, inner, rule_name, None, None, None)
@@ -403,27 +519,46 @@ fn expand_into(
       }
     }
     Seq(elems) => {
-      // 检测 Seq 尾部零宽断言，提取为前瞻约束
+      // 向后扫描，收集尾部连续的 Not/And 零宽断言，提取为前瞻约束。
+      // 多个同类断言合并（tids 取并集）；And/Not 混存时 FollowedBy 优先（取最内层类型）。
       let mut body_count = elems.length()
-      let mut constraint : LookaheadConstraint? = None
-      if body_count > 0 {
+      let not_tids : Array[TerminalId] = []
+      let and_tids : Array[TerminalId] = []
+      let mut scanning = true
+      while scanning && body_count > 0 {
         match elems[body_count - 1] {
           Not(q) => {
             let tids = collect_constraint_tids(ctx, q)
             if tids.length() > 0 {
-              constraint = Some(NotFollowedBy(tids))
               body_count = body_count - 1
+              for t in tids {
+                not_tids.push(t)
+              }
+            } else {
+              scanning = false
             }
           }
           And(q) => {
             let tids = collect_constraint_tids(ctx, q)
             if tids.length() > 0 {
-              constraint = Some(FollowedBy(tids))
               body_count = body_count - 1
+              for t in tids {
+                and_tids.push(t)
+              }
+            } else {
+              scanning = false
             }
           }
-          _ => ()
+          _ => scanning = false
         }
+      }
+      // 构造约束：FollowedBy 优先于 NotFollowedBy（LookaheadConstraint 只能携带一种）
+      let constraint : LookaheadConstraint? = if and_tids.length() > 0 {
+        Some(FollowedBy(and_tids))
+      } else if not_tids.length() > 0 {
+        Some(NotFollowedBy(not_tids))
+      } else {
+        None
       }
       let body : Array[BodySymbol] = []
       for i in 0..<body_count {
@@ -465,9 +600,29 @@ fn expand_into(
 pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
   let ctx = NormCtx::new()
 
-  // 预注册所有非终结符
+  // 收集 @inline 规则的展开模式（引用处展开，不创建命名 NT）
   for name, rule in grammar.rules {
-    let _ = alloc_nt(ctx, name, rule.is_named)
+    if rule.attributes.contains(@grammar.RuleAttribute::Inline) {
+      ctx.inline_patterns.set(name, rule.pattern)
+    }
+  }
+
+  // 收集模板规则（params 非空），供 RuleApp 展开使用
+  for name, rule in grammar.rules {
+    if !rule.params.is_empty() {
+      ctx.template_rules.set(name, rule)
+    }
+  }
+
+  // 预注册所有非终结符（@inline 规则跳过，由引用处按需展开）
+  for name, rule in grammar.rules {
+    if ctx.inline_patterns.contains(name) {
+      continue // @inline 规则不分配命名 NT
+    }
+    // @hide 规则强制 is_named = false（无论名称是否以 _ 开头）
+    let hide_forced = rule.attributes.contains(@grammar.RuleAttribute::Hide)
+    let effective_is_named = rule.is_named && !hide_forced
+    let _ = alloc_nt(ctx, name, effective_is_named)
   }
 
   // 确定起始符名称
@@ -491,7 +646,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
   }
 
   // 创建增广起始符及产生式 $accept → start $
-  let accept_id = alloc_nt(ctx, "$accept", false)
+  let accept_id = alloc_nt_synthetic(ctx, "$accept")
   add_production(
     ctx,
     accept_id,
@@ -504,8 +659,18 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     "$accept",
   )
 
-  // 展开每条用户规则
+  // 预注册外部词法器 token（必须在展开规则前，使 RuleRef 能正确映射为 Terminal）
+  let external_ids : Array[TerminalId] = []
+  for name in grammar.externals {
+    let tid = alloc_terminal(ctx, "ext:\{name}", TerminalDef::External(name))
+    external_ids.push(tid)
+  }
+
+  // 展开每条用户规则（@inline 规则不展开，由引用处生成 per-callsite NT）
   for name, rule in grammar.rules {
+    if ctx.inline_patterns.contains(name) {
+      continue
+    }
     let nt_id = match ctx.nonterminals.get(name) {
       Some(id) => id
       None => 0
@@ -594,11 +759,60 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     extras.push(tid)
   }
 
-  // 处理 externals：将每个外部 token 名注册为 External terminal，收集 TerminalId
-  let external_ids : Array[TerminalId] = []
-  for name in grammar.externals {
-    let tid = alloc_terminal(ctx, "ext:\{name}", TerminalDef::External(name))
-    external_ids.push(tid)
+  // 处理 word：找到 word 规则对应的 TerminalId（通过产生式 body 间接查找）
+  let word_token : TerminalId? = match grammar.word {
+    None => None
+    Some(word_name) =>
+      match ctx.nonterminals.get(word_name) {
+        None => None
+        Some(nt_id) => {
+          // word 规则是 token rule，其产生式 body 只含一个 Terminal
+          let mut found : TerminalId? = None
+          for prod in ctx.productions {
+            if prod.head == nt_id && prod.body.length() == 1 {
+              match prod.body[0].symbol {
+                Terminal(tid) => {
+                  found = Some(tid)
+                  break
+                }
+                _ => ()
+              }
+            }
+          }
+          found
+        }
+      }
+  }
+
+  // 后处理：扫描产生式，为每个非终结符收集字段名（来自 Field / Tagged），
+  // 然后重建 nt_metas，使 field_slots 填充就位，供 runtime 直接读取。
+  let nt_field_names : Array[Array[String]] = []
+  for _ in 0..<ctx.nt_metas.length() {
+    nt_field_names.push([])
+  }
+  for prod in ctx.productions {
+    let head_id = prod.head
+    if head_id < nt_field_names.length() {
+      for sym in prod.body {
+        match sym.field_name {
+          None => ()
+          Some(fname) =>
+            if !nt_field_names[head_id].contains(fname) {
+              nt_field_names[head_id].push(fname)
+            }
+        }
+      }
+    }
+  }
+  let final_metas : Array[SymbolMeta] = []
+  for i in 0..<ctx.nt_metas.length() {
+    let old = ctx.nt_metas[i]
+    final_metas.push({
+      name: old.name,
+      is_named: old.is_named,
+      is_synthetic: old.is_synthetic,
+      field_slots: nt_field_names[i],
+    })
   }
 
   // 返回增广文法
@@ -610,7 +824,9 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     terminal_patterns: ctx.term_patterns,
     extras,
     prec_table,
-    nt_metas: ctx.nt_metas,
+    nt_metas: final_metas,
     external_ids,
+    word_token,
+    declared_conflicts: grammar.conflicts,
   }
 }

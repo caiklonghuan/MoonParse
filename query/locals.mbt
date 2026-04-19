@@ -8,7 +8,7 @@
 pub(all) struct LocalResolution {
   /// start_byte → true：该字节处的节点是一个已被本地定义绑定的引用。
   local_refs : Map[Int, Bool]
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// 查询节点是否被识别为局部变量引用（在某个祖先作用域内有对应定义）。
@@ -106,7 +106,7 @@ pub fn resolve_locals(
       def.start_byte,
       def.end_byte,
     )
-    if not(containing.is_empty()) {
+    if !containing.is_empty() {
       let innermost = containing[0]
       scope_defs[innermost].push(text)
     }

@@ -81,7 +81,7 @@ fn parse_corpus(content : String) -> Array[TestCase] {
   let mut i = 0
   while i < n {
     // 找到第一条分隔线
-    if not(is_separator_line(lines[i])) {
+    if !is_separator_line(lines[i]) {
       i = i + 1
       continue
     }
@@ -93,7 +93,7 @@ fn parse_corpus(content : String) -> Array[TestCase] {
     let name = lines[i]
     i = i + 1
     // 第二条分隔线
-    if i >= n || not(is_separator_line(lines[i])) {
+    if i >= n || !is_separator_line(lines[i]) {
       continue
     }
     i = i + 1
@@ -109,7 +109,7 @@ fn parse_corpus(content : String) -> Array[TestCase] {
     i = i + 1 // 跳过 "---"
     // 收集 expected（直到下一条分隔线或文件结尾）
     let expected_lines : Array[String] = []
-    while i < n && not(is_separator_line(lines[i])) {
+    while i < n && !is_separator_line(lines[i]) {
       expected_lines.push(lines[i])
       i = i + 1
     }
@@ -206,18 +206,19 @@ pub fn cmd_run_tests(args : TestArgs) -> Int {
 
 ///|
 /// 解析测试目标规范字符串。
-/// 支持 "grammar.grammar:tests.txt" 格式，或仅 "tests.txt"（同目录查找 .grammar）
+/// 支持 "grammar.grammar:tests.txt" 格式，或仅 "tests.txt"（同目录查找 .grammar）。
+/// Windows 绝对路径中盘符后（位于下标 1）的冒号会被跳过，不当作分隔符处理。
 fn parse_test_spec(spec : String) -> (String, String) {
-  // 找冒号分隔符
+  // 找第一个「非盘符」冒号：跳过 Windows 绝对路径中索引 1 处的盘符冒号
   let n = spec.length()
   for i in 0..<n {
-    if spec[i] == ':' {
+    if spec[i] == ':' && i != 1 {
       let grammar = spec[0:i].to_string()
       let corpus = spec[i + 1:n].to_string()
       return (grammar, corpus)
     }
   }
-  // 无冒号：corpus 文件与 grammar 文件同名（仅后缀不同）
+  // 无分隔冒号：corpus 文件与 grammar 文件同名（仅后缀不同）
   let corpus = spec
   let grammar = derive_corpus_grammar_path(spec)
   (grammar, corpus)

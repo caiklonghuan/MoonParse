@@ -1,5 +1,17 @@
-﻿///|
+///|
 // GLR 解析引擎
+
+///|
+/// 计算跳过一个 CstNode 的错误代价
+fn error_cost_for_skipped_node(node : CstNode, config : ParseConfig) -> Int {
+  let char_cost = (node.end_byte - node.start_byte) *
+    config.error_cost_per_skipped_char
+  let line_cost = (node.end_point.row - node.start_point.row) *
+    config.error_cost_per_skipped_line
+  let tree_cost = config.error_cost_per_skipped_tree
+  let body_cost = if char_cost > line_cost { char_cost } else { line_cost }
+  tree_cost + body_cost
+}
 
 ///|
 /// GSS 结点引用（Arena 下标，避免循环引用）
@@ -11,7 +23,7 @@ struct GssLink {
   predecessor : GssRef
   node : CstNode?
   leading_extras : Array[CstNode]
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// GSS 结点
@@ -20,11 +32,11 @@ struct GssNode {
   state : Int
   /// 入边列表（空 = 底部哨兵结点，永不弹出）
   links : Array[GssLink]
-} derive(Show)
+} derive(Debug)
 
 ///|
 /// GLR 解析引擎
-struct GlrEngine {
+priv struct GlrEngine {
   gss_nodes : Array[GssNode]
   active_tops : Array[GssRef]
   lexer : LexerEngine
@@ -34,6 +46,10 @@ struct GlrEngine {
   error_status : Map[GssRef, ErrorStatus]
   /// 错误恢复与 GLR 版本数可配置参数
   config : ParseConfig
+  /// 有状态词法器的 per-path 状态（GssRef → &StatefulScanner）
+  /// GLR 分支时 clone，compact 时 remap，condense_stack 时清理。
+  /// 无状态模式下该 map 始终为空。
+  scanner_states : Map[GssRef, &StatefulScanner]
   // 增量复用上下文（None = 非增量全量解析）
   old_tree : OldTree?
   byte_delta : Int // new_end_byte - old_end_byte（常数，整个 parse 期间不变）
@@ -56,6 +72,7 @@ fn GlrEngine::new(lexer : LexerEngine, config : ParseConfig) -> GlrEngine {
     lexer,
     error_status: Map::new(),
     config,
+    scanner_states: Map::new(),
     old_tree: None,
     byte_delta: 0,
     edit_start: 0,
@@ -104,6 +121,39 @@ pub fn glr_parse_with_external_scanner(
 }
 
 ///|
+/// 带有状态词法器的 GLR 解析入口
+///
+/// 与无状态 external_scanner 不同，有状态词法器在 GLR 分支时会对
+/// scanner 状态进行 clone，确保每条解析路径持有独立的词法器状态。
+pub fn glr_parse_with_stateful_scanner(
+  table : @tablegen.ParseTable,
+  input : String,
+  scanner : &StatefulScanner,
+) -> Result[CstNode, ParseError] {
+  glr_parse_with_stateful_scanner_and_config(
+    table,
+    input,
+    scanner,
+    ParseConfig::default(),
+  )
+}
+
+///|
+/// 带有状态词法器 + 自定义错误恢复配置的 GLR 解析入口。
+pub fn glr_parse_with_stateful_scanner_and_config(
+  table : @tablegen.ParseTable,
+  input : String,
+  scanner : &StatefulScanner,
+  config : ParseConfig,
+) -> Result[CstNode, ParseError] {
+  let lexer = LexerEngine::new_with_stateful(table.lexer_dfa, scanner)
+  let engine = GlrEngine::new(lexer, config)
+  // 为初始栈顶（哨兵节点 0）设置初始 scanner 状态
+  engine.scanner_states[0] = scanner
+  engine.run(table, input)
+}
+
+///|
 /// GLR 主循环
 fn GlrEngine::run(
   self : GlrEngine,
@@ -116,6 +166,25 @@ fn GlrEngine::run(
   // extras 不改变 LR 状态，故不影响 active_tops，但需出现在最终 CST 中。
   let pending_extras : Array[CstNode] = []
   while true {
+    // 增量子树复用：在词法前尝试直接复用旧树中的 inner 节点。
+    // 若成功，将 active_tops 更新为 goto 后的新顶集，pos 跳过子树覆盖的 token 序列。
+    // 不同路径对相同 inner 节点的起点和终点必须完全一致才触发（保守策略）。
+    let (reused, reuse_pos, reuse_point) = self.try_reuse_subtrees(
+      table, input, pos, cur_point, pending_extras,
+    )
+    if reused {
+      // active_tops 已由 try_reuse_subtrees 内部替换为 goto 后的新顶集，无需再次清空
+      self.compact(self.active_tops)
+      self.condense_stack()
+      // 清空 pending_extras（已携带进 goto 边的 leading_extras）
+      while !pending_extras.is_empty() {
+        let _ = pending_extras.pop()
+      }
+      cur_point = reuse_point
+      pos = reuse_pos
+      continue
+    }
+
     // 计算所有活跃状态的合法 token 并集
     // GLR 中多条路径处于同一位置，词法器需对所有路径的合法符号取并集，
     // 确保任意路径在当前位置认为合法的 token 都能被识别。
@@ -140,9 +209,44 @@ fn GlrEngine::run(
     )
     match maybe_tok {
       None => {
-        // 无可识别 token：视为 EOF，执行最终归约。
+        // EOF：执行最终归约，再把 trailing pending_extras 追加到根节点 children 末尾。
+        // 文件尾部的空白/注释已积累在 pending_extras，没有后续 Shift 机会把它们
+        // 携带进 GssLink.leading_extras，故在此处直接拼入根节点。
         self.run_reduce_worklist(table, @tablegen.eoi_id)
-        return self.collect_root_glr(table, pos, cur_point)
+        match self.collect_root_glr(table, pos, cur_point) {
+          Err(e) => return Err(e)
+          Ok(root) => {
+            if pending_extras.is_empty() {
+              return Ok(root)
+            }
+            // 若 pending_extras 中含有来自 skip_token 的错误节点（is_error=true），
+            // 说明解析结束后仍有无法归入语法的错误 token（如多余尾部字符），视为失败。
+            // 正常 extra（注释、空白等，is_error=false）直接追加到根节点 children 末尾。
+            for ex in pending_extras {
+              if ex.is_error {
+                return Err({
+                  position: ex.start_byte,
+                  point: ex.start_point,
+                  message: "unexpected token",
+                })
+              }
+            }
+            let new_ch = root.children.copy()
+            let new_fn = root.field_names.copy()
+            for ex in pending_extras {
+              new_ch.push(ex)
+              new_fn.push(None)
+            }
+            let last_ex = new_ch[new_ch.length() - 1]
+            return Ok({
+              ..root,
+              children: new_ch,
+              field_names: new_fn,
+              end_byte: last_ex.end_byte,
+              end_point: last_ex.end_point,
+            })
+          }
+        }
       }
       Some(tok) => {
         // 词法错误：先尝试 insert_missing_and_relex（插入缺失 token 后重词法）；
@@ -158,7 +262,7 @@ fn GlrEngine::run(
             pos = new_pos2
             continue
           }
-          self.skip_token(tok, cur_point, input)
+          self.skip_token(tok, cur_point, input, pending_extras)
           cur_point = bytes_to_point(
             input,
             tok.start_byte,
@@ -203,10 +307,6 @@ fn GlrEngine::run(
         let next_tops = self.run_shift(
           table, tok, cur_point, input, pending_extras,
         )
-        // pending_extras 已由 run_shift 复制到每条 GssLink，此处清空
-        while not(pending_extras.is_empty()) {
-          let _ = pending_extras.pop()
-        }
         if next_tops.is_empty() {
           // 先尝试 insert_missing（插入虚拟 token，代价 610）；
           // 再尝试 recover_to_state（回退到可接受当前 token 的祖先状态）；
@@ -235,8 +335,9 @@ fn GlrEngine::run(
             pos = new_pos
             continue
           }
-          // 降级：skip 当前 token，为所有活跃路径创建 ERROR 停留路径
-          self.skip_token(tok, cur_point, input)
+          // 降级：skip 当前 token，error_node 标为 extra 追加到 pending_extras，
+          // active_tops 不变（避免自环 GssNode 污染产生式体）
+          self.skip_token(tok, cur_point, input, pending_extras)
           cur_point = bytes_to_point(
             input,
             tok.start_byte,
@@ -248,11 +349,15 @@ fn GlrEngine::run(
         }
 
         // 替换 active_tops（原地清空 + 填入 next_tops）
-        while not(self.active_tops.is_empty()) {
+        while !self.active_tops.is_empty() {
           let _ = self.active_tops.pop()
         }
         for r in next_tops {
           self.active_tops.push(r)
+        }
+        // pending_extras 已由 run_shift 复制到每条 GssLink，仅在 Shift 成功时才清空
+        while !pending_extras.is_empty() {
+          let _ = pending_extras.pop()
         }
         // compact：回收当前 active_tops 不可达的旧 GssNode，防止 Arena 线性增长。
         // 必须在 active_tops 已切换为 next_tops 之后调用，确保旧前缀结点都已成为垃圾。
@@ -275,12 +380,15 @@ fn GlrEngine::run(
 
 ///|
 /// Accept 时从活跃集中寻找根节点
+/// 当多条路径均可 Accept 时（Dynamic prec 歧义），优先选取 dynamic_precedence 最高的根节点。
 fn GlrEngine::collect_root_glr(
   self : GlrEngine,
   table : @tablegen.ParseTable,
   pos : Int,
   cur_pt : Point,
 ) -> Result[CstNode, ParseError] {
+  let mut best : CstNode? = None
+  let mut best_dp : Int = -1
   for top_ref in self.active_tops {
     let state = self.gss_nodes[top_ref].state
     match table.action.get((state, @tablegen.eoi_id)) {
@@ -288,6 +396,25 @@ fn GlrEngine::collect_root_glr(
       Some(acts) =>
         for act in acts {
           match act {
+            // 直接 Accept 动作（标准 LALR 模式）：当前栈顶即为接受状态
+            Accept =>
+              for link in self.gss_nodes[top_ref].links {
+                match link.node {
+                  Some(n) =>
+                    match best {
+                      None => {
+                        best = Some(n)
+                        best_dp = n.dynamic_precedence
+                      }
+                      Some(_) =>
+                        if n.dynamic_precedence > best_dp {
+                          best = Some(n)
+                          best_dp = n.dynamic_precedence
+                        }
+                    }
+                  None => ()
+                }
+              }
             // Shift(s_acc) 且 s_acc 有 Accept：
             //   对应 [$accept → start • $] 状态，入边携带 start 的 CstNode
             Shift(s_acc) =>
@@ -307,19 +434,34 @@ fn GlrEngine::collect_root_glr(
                   if is_accept {
                     for link in self.gss_nodes[top_ref].links {
                       match link.node {
-                        Some(n) => return Ok(n)
+                        Some(n) =>
+                          match best {
+                            None => {
+                              best = Some(n)
+                              best_dp = n.dynamic_precedence
+                            }
+                            Some(_) =>
+                              if n.dynamic_precedence > best_dp {
+                                best = Some(n)
+                                best_dp = n.dynamic_precedence
+                              }
+                          }
                         None => ()
                       }
                     }
                   }
                 }
               }
-            Accept | Reduce(_) => () // Accept 不在此处触发；Reduce 已由 worklist 处理
+            Reduce(_) => () // Reduce 已由 worklist 处理
           }
         }
     }
   }
-  Err({ position: pos, point: cur_pt, message: "accept: no root node" })
+  match best {
+    Some(n) => Ok(n)
+    None =>
+      Err({ position: pos, point: cur_pt, message: "accept: no root node" })
+  }
 }
 
 ///|
@@ -332,20 +474,28 @@ fn GlrEngine::find_or_merge(
   // 在 candidate_tops 中线性扫描同 state 的结点
   for r in candidate_tops {
     if self.gss_nodes[r].state == state {
-      // 检查是否已存在相同前驱（避免重复添加）
+      // 检查是否已存在完全相同的链接（相同前驱 + 相同节点）
+      // 仅 predecessor 相同但产生式不同（局部歧义）时，应追加入边而非丢弃。
       let mut dup = false
       for existing in self.gss_nodes[r].links {
         if existing.predecessor == new_link.predecessor {
-          dup = true
-          break
+          let same_node = match (existing.node, new_link.node) {
+            (Some(a), Some(b)) =>
+              a.symbol == b.symbol && a.production_id == b.production_id
+            (None, None) => true
+            _ => false
+          }
+          if same_node {
+            dup = true
+            break
+          }
         }
       }
-      if dup {
-        return (r, false) // 重复前驱：不追加，不触发重入队
+      if !dup {
+        // 新链接（新前驱，或相同前驱但不同产生式/节点）：追加入边（局部歧义合并）
+        self.gss_nodes[r].links.push(new_link)
       }
-      // 新前驱：追加入边（局部歧义合并）
-      self.gss_nodes[r].links.push(new_link)
-      return (r, true)
+      return (r, !dup)
     }
   }
   // 找不到：新建结点，加入 candidate_tops
@@ -415,23 +565,46 @@ fn GlrEngine::run_shift(
               // 仅当旧节点字节偏移后与 tok 跨度一致时才复用（保证 symbol/span 对齐）。
               let leaf = match self.old_tree {
                 Some(ot) => {
-                  let search_pos = if tok.start_byte < self.new_end_byte {
+                  // 将 tok 的起始字节映射为旧输入坐标
+                  // pre-edit（< edit_start）：坐标不变；post-edit（>= new_end_byte）：减去 byte_delta；
+                  // inside-edit（edit_start .. new_end_byte）：直接用 tok.start_byte，
+                  //   旧树中对应区间节点均有 has_changes=true，is_reusable 会拒绝。
+                  let search_pos = if tok.start_byte < self.edit_start {
                     tok.start_byte
                   } else {
                     tok.start_byte - self.byte_delta
                   }
+                  let old_end_b = self.new_end_byte - self.byte_delta
                   match
-                    find_reusable_node(ot, search_pos, state, self.edit_start) {
-                    Some(old_node) =>
-                      if old_node.end_byte + self.byte_delta == tok.end_byte {
-                        // 同跨度复用：字节和行列坐标同时校正
-                        shift_node(
-                          old_node,
-                          self.byte_delta,
-                          self.old_end_point,
-                          self.row_delta,
-                          self.col_delta,
-                        )
+                    find_reusable_node(
+                      ot,
+                      search_pos,
+                      state,
+                      self.edit_start,
+                      old_end_b,
+                    ) {
+                    Some(old_node) => {
+                      let can_reuse_leaf = old_node.children.is_empty() &&
+                        old_node.symbol == tok.terminal_id
+                      // pre-edit 节点坐标不需偏移；post-edit 节点需加上 byte_delta
+                      let expected_new_end = if search_pos < self.edit_start {
+                        old_node.end_byte
+                      } else {
+                        old_node.end_byte + self.byte_delta
+                      }
+                      if can_reuse_leaf && expected_new_end == tok.end_byte {
+                        // 同跨度复用：仅 post-edit 节点需要字节和行列坐标校正
+                        if search_pos < self.edit_start {
+                          old_node
+                        } else {
+                          shift_node(
+                            old_node,
+                            self.byte_delta,
+                            self.old_end_point,
+                            self.row_delta,
+                            self.col_delta,
+                          )
+                        }
                       } else {
                         CstNode::leaf(
                           tok.terminal_id,
@@ -446,6 +619,7 @@ fn GlrEngine::run_shift(
                           false,
                         )
                       }
+                    }
                     None =>
                       CstNode::leaf(
                         tok.terminal_id,
@@ -482,7 +656,16 @@ fn GlrEngine::run_shift(
                 // enum_paths 归约时会把它们插入产生式子节点序列
                 leading_extras: pending_extras.copy(),
               }
-              let _ = self.find_or_merge(next_state, link, next_tops)
+              let (new_ref, is_new) = self.find_or_merge(
+                next_state, link, next_tops,
+              )
+              // 有状态词法器：为新建的 GSS 结点克隆 scanner 状态
+              if is_new {
+                match self.scanner_states.get(top_ref) {
+                  Some(ss) => self.scanner_states[new_ref] = ss.clone_scanner()
+                  None => ()
+                }
+              }
             }
             _ => ()
           }
@@ -498,8 +681,10 @@ fn GlrEngine::skip_token(
   tok : Token,
   cur_point : Point,
   input : String,
+  pending_extras : Array[CstNode],
 ) -> Unit {
-  // 构造被跳过 token 的叶节点，包进单子 ERROR 节点
+  // 构造被跳过 token 的叶节点，包进单子 ERROR 节点，标记为 extra，
+  // 不创建新的 GssNode（避免自环），仅将 error_node 追加到 pending_extras。
   let ep = bytes_to_point(input, tok.start_byte, cur_point, tok.end_byte)
   let raw_leaf = CstNode::leaf(
     tok.terminal_id,
@@ -513,22 +698,18 @@ fn GlrEngine::skip_token(
     tok.is_keyword,
     false,
   )
-  let error_node = CstNode::error_node(
-    [raw_leaf],
-    tok.start_byte,
-    tok.end_byte,
-    cur_point,
-    ep,
-  )
-  let new_tops : Array[GssRef] = []
+  let error_node = {
+    ..CstNode::error_node(
+      [raw_leaf],
+      tok.start_byte,
+      tok.end_byte,
+      cur_point,
+      ep,
+    ),
+    extra: true,
+  } // extra=true: 跳过的 token 是 extra 节点，不应出现在归约产生式 body 中
+  // 不修改 active_tops；仅在各 top_ref 上累加错误代价，并把 error_node 推入 pending_extras。
   for top_ref in self.active_tops {
-    let state = self.gss_nodes[top_ref].state
-    let link : GssLink = {
-      predecessor: top_ref,
-      node: Some(error_node),
-      leading_extras: [],
-    }
-    let (merged_ref, _) = self.find_or_merge(state, link, new_tops)
     // 以 top_ref 的 ErrorStatus 为基础，累加本次跳过的代价
     let old_status = self.error_status.get(top_ref)
     let base_cost = match old_status {
@@ -536,7 +717,7 @@ fn GlrEngine::skip_token(
       None => 0
     }
     let is_first_error = match old_status {
-      Some(s) => not(s.is_in_error)
+      Some(s) => !s.is_in_error
       None => true
     }
     let skip_cost = error_cost_for_skipped_node(error_node, self.config)
@@ -546,27 +727,130 @@ fn GlrEngine::skip_token(
       0
     }
     let new_cost = base_cost + recovery_penalty + skip_cost
-    // 多路径合并：保留代价更低的 ErrorStatus
-    let existing_cost = match self.error_status.get(merged_ref) {
+    let existing_cost = match self.error_status.get(top_ref) {
       Some(s) => s.cost
       None => 1_000_000
     }
     if new_cost < existing_cost {
-      self.error_status[merged_ref] = {
+      self.error_status[top_ref] = {
         cost: new_cost,
-        node_count: 0,
         dynamic_precedence: 0,
         is_in_error: true,
       }
     }
   }
-  // 以停留路径替换 active_tops
-  while not(self.active_tops.is_empty()) {
+  pending_extras.push(error_node)
+}
+
+///|
+/// 增量子树复用：尝试对所有活跃栈顶在当前位置找到可复用的 inner 节点，
+/// 并一次性把这些节点（inner nodes，children 非空）跳过它们覆盖的 token 序列。
+fn GlrEngine::try_reuse_subtrees(
+  self : GlrEngine,
+  table : @tablegen.ParseTable,
+  _input : String,
+  pos : Int,
+  cur_point : Point,
+  pending_extras : Array[CstNode],
+) -> (Bool, Int, Point) {
+  if self.byte_delta != 0 {
+    return (false, pos, cur_point)
+  }
+  let ot = match self.old_tree {
+    None => return (false, pos, cur_point)
+    Some(o) => o
+  }
+  let old_end_b = self.new_end_byte - self.byte_delta
+  // 候选列表：每个活跃栈顶对应一条 (top_ref, old_node, goto_state, expected_new_end, search_pos)
+  let candidates : Array[(GssRef, CstNode, Int, Int, Int)] = []
+  for top_ref in self.active_tops {
+    let state = self.gss_nodes[top_ref].state
+    // 将 pos 转为旧输入坐标
+    let search_pos = if pos < self.edit_start {
+      pos
+    } else {
+      pos - self.byte_delta
+    }
+    match
+      find_reusable_node(ot, search_pos, state, self.edit_start, old_end_b) {
+      Some(n) => {
+        // 仅复用 inner 节点（children 非空）；leaf 节点交由 run_shift 处理
+        if n.children.is_empty() {
+          return (false, pos, cur_point)
+        }
+        // 长度变化的编辑会改变边界两侧的归约形状。
+        // 对恰好从旧编辑边界开始的 inner 节点，保守地放弃复用，
+        // 避免把左结合/列表子树当作稳定 suffix 接回去。
+        if self.byte_delta != 0 && search_pos == old_end_b {
+          return (false, pos, cur_point)
+        }
+        let nt = n.symbol
+        // 检查当前 LR 状态在 nt 上是否有 goto 跳转
+        match table.goto_table.get((state, nt)) {
+          Some(goto_st) => {
+            let expected_new_end = if search_pos < self.edit_start {
+              n.end_byte // pre-edit：坐标不变
+            } else {
+              n.end_byte + self.byte_delta // post-edit：坐标偏移
+            }
+            candidates.push((top_ref, n, goto_st, expected_new_end, search_pos))
+          }
+          None => return (false, pos, cur_point) // 路径无法 goto → 放弃
+        }
+      }
+      None => return (false, pos, cur_point) // 任意路径找不到可复用节点 → 放弃
+    }
+  }
+  if candidates.is_empty() {
+    return (false, pos, cur_point)
+  }
+  // 所有路径必须算出相同的 new_end_byte（保守：防止歧义路径导致坐标不一致）
+  let target_new_end = candidates[0].3
+  for c in candidates {
+    if c.3 != target_new_end {
+      return (false, pos, cur_point)
+    }
+  }
+  // 应用复用：为 goto 后的新栈顶插入 GssLink
+  let new_tops : Array[GssRef] = []
+  let mut new_cur_point = cur_point
+  for item in candidates {
+    let (top_ref, n, goto_st, _, search_pos) = item
+    // post-edit 节点需要坐标校正
+    let shifted = if search_pos < self.edit_start {
+      n
+    } else {
+      shift_node(
+        n,
+        self.byte_delta,
+        self.old_end_point,
+        self.row_delta,
+        self.col_delta,
+      )
+    }
+    new_cur_point = shifted.end_point
+    let link : GssLink = {
+      predecessor: top_ref,
+      node: Some(shifted),
+      leading_extras: pending_extras.copy(),
+    }
+    let (new_ref, is_new) = self.find_or_merge(goto_st, link, new_tops)
+    // 有状态词法器：为新建的 GSS 结点克隆 scanner 状态
+    if is_new {
+      match self.scanner_states.get(top_ref) {
+        Some(ss) => self.scanner_states[new_ref] = ss.clone_scanner()
+        None => ()
+      }
+    }
+  }
+  // 用新栈顶替换 active_tops
+  while !self.active_tops.is_empty() {
     let _ = self.active_tops.pop()
   }
   for r in new_tops {
     self.active_tops.push(r)
   }
+  (true, target_new_end, new_cur_point)
 }
 
 ///|
@@ -587,7 +871,7 @@ fn GlrEngine::insert_missing(
       None => ()
       Some(valid_tids) => {
         let (base_cost, is_first_error) = match self.error_status.get(top_ref) {
-          Some(s) => (s.cost, not(s.is_in_error))
+          Some(s) => (s.cost, !s.is_in_error)
           None => (0, true)
         }
         for tid in valid_tids {
@@ -629,7 +913,13 @@ fn GlrEngine::insert_missing(
                     // 新建「missing 后」状态的 GssNode，临时压入 active_tops
                     let new_ref = self.gss_nodes.length()
                     self.gss_nodes.push({ state: next_state, links: [link] })
-                    while not(self.active_tops.is_empty()) {
+                    // 有状态词法器：继承前驱的 scanner 状态
+                    match self.scanner_states.get(top_ref) {
+                      Some(ss) =>
+                        self.scanner_states[new_ref] = ss.clone_scanner()
+                      None => ()
+                    }
+                    while !self.active_tops.is_empty() {
                       let _ = self.active_tops.pop()
                     }
                     self.active_tops.push(new_ref)
@@ -642,7 +932,7 @@ fn GlrEngine::insert_missing(
                       input,
                       [],
                     )
-                    if not(shifted.is_empty()) {
+                    if !shifted.is_empty() {
                       let new_cost = base_cost +
                         (if is_first_error {
                           self.config.error_cost_per_recovery
@@ -665,7 +955,7 @@ fn GlrEngine::insert_missing(
     }
   }
   // 无论成败都先清空 active_tops，再按结果填入
-  while not(self.active_tops.is_empty()) {
+  while !self.active_tops.is_empty() {
     let _ = self.active_tops.pop()
   }
   if result_tops.is_empty() {
@@ -685,7 +975,7 @@ fn GlrEngine::insert_missing(
         break
       }
     }
-    if not(dup) {
+    if !dup {
       seen.push(r)
       self.active_tops.push(r)
     }
@@ -700,7 +990,6 @@ fn GlrEngine::insert_missing(
     if new_cost < existing {
       self.error_status[r] = {
         cost: new_cost,
-        node_count: 0,
         dynamic_precedence: 0,
         is_in_error: false, // 成功插入并推进，退出错误模式
       }
@@ -728,7 +1017,7 @@ fn GlrEngine::insert_missing_and_relex(
       None => ()
       Some(valid_tids) => {
         let (base_cost, is_first_error) = match self.error_status.get(top_ref) {
-          Some(s) => (s.cost, not(s.is_in_error))
+          Some(s) => (s.cost, !s.is_in_error)
           None => (0, true)
         }
         for tid in valid_tids {
@@ -766,7 +1055,13 @@ fn GlrEngine::insert_missing_and_relex(
                     }
                     let new_ref = self.gss_nodes.length()
                     self.gss_nodes.push({ state: next_state, links: [link] })
-                    while not(self.active_tops.is_empty()) {
+                    // 有状态词法器：继承前驱的 scanner 状态
+                    match self.scanner_states.get(top_ref) {
+                      Some(ss) =>
+                        self.scanner_states[new_ref] = ss.clone_scanner()
+                      None => ()
+                    }
+                    while !self.active_tops.is_empty() {
                       let _ = self.active_tops.pop()
                     }
                     self.active_tops.push(new_ref)
@@ -791,7 +1086,7 @@ fn GlrEngine::insert_missing_and_relex(
                     match maybe_retok {
                       None => ()
                       Some(retok) =>
-                        if retok.terminal_id != sym_error && not(retok.is_extra) {
+                        if retok.terminal_id != sym_error && !retok.is_extra {
                           self.run_reduce_worklist(table, retok.terminal_id)
                           let shifted = self.run_shift(
                             table,
@@ -800,7 +1095,7 @@ fn GlrEngine::insert_missing_and_relex(
                             input,
                             [],
                           )
-                          if not(shifted.is_empty()) {
+                          if !shifted.is_empty() {
                             let new_cost = base_cost +
                               (if is_first_error {
                                 self.config.error_cost_per_recovery
@@ -832,7 +1127,7 @@ fn GlrEngine::insert_missing_and_relex(
     }
   }
   // 无论成败先清空 active_tops
-  while not(self.active_tops.is_empty()) {
+  while !self.active_tops.is_empty() {
     let _ = self.active_tops.pop()
   }
   if result_tops.is_empty() {
@@ -851,7 +1146,7 @@ fn GlrEngine::insert_missing_and_relex(
         break
       }
     }
-    if not(dup) {
+    if !dup {
       seen.push(r)
       self.active_tops.push(r)
     }
@@ -866,11 +1161,14 @@ fn GlrEngine::insert_missing_and_relex(
     if new_cost < existing {
       self.error_status[r] = {
         cost: new_cost,
-        node_count: 0,
         dynamic_precedence: 0,
         is_in_error: false,
       }
     }
+  }
+  // 位置一致性断言：成功恢复后新位置不得后退（防止解析死循环）
+  if result_new_pos < pos {
+    abort("insert_missing_and_relex: pos regressed \{result_new_pos} < \{pos}")
   }
   (true, result_new_pos, result_new_point)
 }
@@ -889,7 +1187,7 @@ fn GlrEngine::recover_to_state(
   let result_costs : Array[(GssRef, Int)] = []
   for top_ref in saved_tops {
     let (base_cost, is_first_error) = match self.error_status.get(top_ref) {
-      Some(s) => (s.cost, not(s.is_in_error))
+      Some(s) => (s.cost, !s.is_in_error)
       None => (0, true)
     }
     // BFS 前沿：(祖先节点引用, 沿路收集的 CstNode（GSS 遍历顺序＝逆解析序）, 路径代价)
@@ -931,36 +1229,29 @@ fn GlrEngine::recover_to_state(
         }
       }
       // 若路径上有内容，尝试从 anc_ref 处恢复
-      if not(collected.is_empty()) {
+      if !collected.is_empty() {
         // 将收集到的节点反转为左→右解析顺序，包进 ERROR 节点
         let children : Array[CstNode] = collected.copy()
         array_rev_inplace(children)
         let first = children[0]
         let last = children[children.length() - 1]
-        let error_node = CstNode::error_node(
-          children,
-          first.start_byte,
-          last.end_byte,
-          first.start_point,
-          last.end_point,
-        )
-        // 在 anc_ref.state 创建新 GssNode，持有 error_node 作为入边
-        let anc_state = self.gss_nodes[anc_ref].state
-        let err_link : GssLink = {
-          predecessor: anc_ref,
-          node: Some(error_node),
-          leading_extras: [],
+        let error_node = {
+          ..CstNode::error_node(
+            children,
+            first.start_byte,
+            last.end_byte,
+            first.start_point,
+            last.end_point,
+          ),
+          extra: true,
         }
-        let new_ref = self.gss_nodes.length()
-        self.gss_nodes.push({ state: anc_state, links: [err_link] })
-        // 试验：把 active_tops 设为 [new_ref]，跑 Reduce + Shift
-        while not(self.active_tops.is_empty()) {
+        while !self.active_tops.is_empty() {
           let _ = self.active_tops.pop()
         }
-        self.active_tops.push(new_ref)
+        self.active_tops.push(anc_ref)
         self.run_reduce_worklist(table, tok.terminal_id)
-        let shifted = self.run_shift(table, tok, cur_point, input, [])
-        if not(shifted.is_empty()) {
+        let shifted = self.run_shift(table, tok, cur_point, input, [error_node])
+        if !shifted.is_empty() {
           let recovery_penalty = if is_first_error {
             self.config.error_cost_per_recovery
           } else {
@@ -976,7 +1267,7 @@ fn GlrEngine::recover_to_state(
     }
   }
   // 清空 active_tops，准备填入最终结果
-  while not(self.active_tops.is_empty()) {
+  while !self.active_tops.is_empty() {
     let _ = self.active_tops.pop()
   }
   if result_tops.is_empty() {
@@ -995,7 +1286,7 @@ fn GlrEngine::recover_to_state(
         break
       }
     }
-    if not(dup) {
+    if !dup {
       seen.push(r)
       self.active_tops.push(r)
     }
@@ -1010,7 +1301,6 @@ fn GlrEngine::recover_to_state(
     if new_cost < existing {
       self.error_status[r] = {
         cost: new_cost,
-        node_count: 0,
         dynamic_precedence: 0,
         is_in_error: false,
       }
@@ -1042,10 +1332,6 @@ fn GlrEngine::run_reduce_worklist(
         }
     }
   }
-
-  // 初始化：把 worklist 启动前已在 active_tops 里的结点的 Reduce 动作全部入队。
-  // 说明：此处只枚举启动时已有的顶点。运行过程中 find_or_merge 新建或扩展的结点
-  // 由主循环末尾的 enqueue_reduces(merged_ref) 负责入队，两者协作才覆盖所有路径。
   let mut i = 0
   let initial_tops_len = self.active_tops.length()
   while i < initial_tops_len {
@@ -1060,6 +1346,36 @@ fn GlrEngine::run_reduce_worklist(
     wi = wi + 1
 
     let prod = table.productions[prod_id]
+
+    // 检查前瞻约束（由 Not/And 断言生成）：约束不满足则跳过本次归约
+    match prod.lookahead {
+      Some(NotFollowedBy(tids)) => {
+        let mut blocked = false
+        for t in tids {
+          if t == tok_id {
+            blocked = true
+            break
+          }
+        }
+        if blocked {
+          continue
+        }
+      }
+      Some(FollowedBy(tids)) => {
+        let mut allowed = false
+        for t in tids {
+          if t == tok_id {
+            allowed = true
+            break
+          }
+        }
+        if !allowed {
+          continue
+        }
+      }
+      None => ()
+    }
+
     let body_len = prod.body.length()
 
     // 枚举所有长度为 body_len 的路径，同时得到每条路径的 base 结点
@@ -1067,10 +1383,6 @@ fn GlrEngine::run_reduce_worklist(
     let paths = self.enum_paths(top, body_len)
 
     // fragile 判据（仅当真正存在并行路径时才标 true）：
-    //   · active_tops.length() > 1 — 本轮有多个活跃并行前缀（S/R 或 R/R 冲突）
-    //   · paths.length() > 1       — 此产生式经由多条 GSS 路径归约（局部歧义）
-    // 两者均影响左边界（产生式起始位置因路径不同而异），右边界始终同步于当前词法单元位置。
-    // fragile_left: 有并行路径时为 true；fragile_right: 从最后一个子节点传播。
     let fragile_left = self.active_tops.length() > 1 || paths.length() > 1
     for path_item in paths {
       let (base_ref, path) = path_item
@@ -1082,10 +1394,26 @@ fn GlrEngine::run_reduce_worklist(
         None => () // goto 缺失 → 跳过（不应发生于合法语法）
         Some(goto_st) => {
           // 构造内部节点
+          // children 和 fnames 同步构造：来自 leading_extras 的 extra 节点对应 None 字段名
           let children : Array[CstNode] = []
+          let fnames : Array[String?] = []
+          let mut body_idx = 0
           for maybe_node in path {
             match maybe_node {
-              Some(n) => children.push(n)
+              Some(n) => {
+                children.push(n)
+                if n.extra {
+                  fnames.push(None)
+                } else {
+                  let fname = if body_idx < prod.body.length() {
+                    prod.body[body_idx].field_name
+                  } else {
+                    None
+                  }
+                  fnames.push(fname)
+                  body_idx = body_idx + 1
+                }
+              }
               None => () // 底部哨兵边，不产生子节点
             }
           }
@@ -1093,9 +1421,8 @@ fn GlrEngine::run_reduce_worklist(
             table.symbol_metadata.length() {
             table.symbol_metadata[nt]
           } else {
-            { name: "?", is_named: false }
+            { name: "?", is_named: false, is_synthetic: false, field_slots: [] }
           }
-          let fnames : Array[String?] = prod.body.map(fn(bs) { bs.field_name })
           let fragile_right = if children.is_empty() {
             false
           } else {
@@ -1123,6 +1450,7 @@ fn GlrEngine::run_reduce_worklist(
             inner_dp,
             fragile_left,
             fragile_right,
+            base_state, // parse_state = goto 查表前的栈顶状态（增量复用匹配用）
           )
           let new_link : GssLink = {
             predecessor: base_ref,
@@ -1134,6 +1462,16 @@ fn GlrEngine::run_reduce_worklist(
             new_link,
             self.active_tops,
           )
+          // 有状态词法器：reduce-goto 后新结点继承 base_ref 的 scanner 状态
+          if link_added {
+            match self.scanner_states.get(base_ref) {
+              Some(ss) =>
+                if self.scanner_states.get(merged_ref) is None {
+                  self.scanner_states[merged_ref] = ss.clone_scanner()
+                }
+              None => ()
+            }
+          }
           // 传播 dynamic_precedence 到 error_status（用于 condense_stack 排序）
           if inner_dp != 0 {
             let existing_dp = match self.error_status.get(merged_ref) {
@@ -1143,17 +1481,10 @@ fn GlrEngine::run_reduce_worklist(
             if inner_dp > existing_dp {
               let base = match self.error_status.get(merged_ref) {
                 Some(s) => s
-                None =>
-                  {
-                    cost: 0,
-                    node_count: 0,
-                    dynamic_precedence: 0,
-                    is_in_error: false,
-                  }
+                None => { cost: 0, dynamic_precedence: 0, is_in_error: false }
               }
               self.error_status[merged_ref] = {
                 cost: base.cost,
-                node_count: base.node_count,
                 dynamic_precedence: inner_dp,
                 is_in_error: base.is_in_error,
               }
@@ -1180,7 +1511,7 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
   // 标记可达结点（DFS）
   let live : Array[Bool] = Array::make(n, false)
   let stack : Array[GssRef] = roots.copy()
-  while not(stack.is_empty()) {
+  while !stack.is_empty() {
     match stack.pop() {
       None => break
       Some(r) => {
@@ -1232,9 +1563,7 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
   }
 
   // 原地替换 Arena
-  while not(self.gss_nodes.is_empty()) {
-    let _ = self.gss_nodes.pop()
-  }
+  self.gss_nodes.clear()
   for nd in new_nodes {
     self.gss_nodes.push(nd)
   }
@@ -1257,6 +1586,19 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
   for item in remapped_es {
     let (new_ref, status) = item
     self.error_status[new_ref] = status
+  }
+
+  // 重映射 scanner_states（GssRef 键随压缩而变化）
+  let remapped_ss : Array[(GssRef, &StatefulScanner)] = []
+  self.scanner_states.each(fn(old_ref, ss) {
+    if old_ref >= 0 && old_ref < n && live[old_ref] {
+      remapped_ss.push((remap[old_ref], ss))
+    }
+  })
+  self.scanner_states.clear()
+  for item in remapped_ss {
+    let (new_ref, ss) = item
+    self.scanner_states[new_ref] = ss
   }
 }
 
@@ -1310,7 +1652,7 @@ fn GlrEngine::condense_stack(self : GlrEngine) -> Unit {
 /// 从 GSS 结点反向收集状态路径
 ///
 /// 沿第一条入边回溯，返回从底部到 top 的状态序列。
-fn GlrEngine::state_path(self : GlrEngine, top : GssRef) -> Array[Int] {
+fn GlrEngine::_state_path(self : GlrEngine, top : GssRef) -> Array[Int] {
   let path : Array[Int] = []
   let mut cur = top
   while cur >= 0 && cur < self.gss_nodes.length() {

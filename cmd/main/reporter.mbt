@@ -156,7 +156,7 @@ pub fn init_reporter() -> Unit {
 /// 打印一般信息消息到 stdout。
 /// --quiet 模式下静默（不输出任何内容）。
 pub fn print_info(msg : String) -> Unit {
-  if not(use_quiet_cell[0]) {
+  if !use_quiet_cell[0] {
     println(msg)
   }
 }
@@ -239,6 +239,33 @@ pub fn report_validation_errors(
 }
 
 ///|
+/// 打印 Grammar 语义校验警告列表到 stderr（黄色 warning 标签，不影响退出码）
+pub fn report_validation_warnings(
+  warnings : Array[@grammar.ValidationError],
+  file : String?,
+) -> Unit {
+  let tag = ansi_yellow("warning")
+  let help_tag = ansi_cyan("help")
+  for e in warnings {
+    let msg = ansi_bold(e.to_string())
+    print_err("\{tag}: \{msg}")
+    match file {
+      None => ()
+      Some(path) => {
+        let arrow = ansi_cyan("-->")
+        match e.location {
+          None => print_err("  \{arrow} \{path} (rule '\{e.rule}')")
+          Some(loc) => print_err(loc_line(path, loc.line, loc.column))
+        }
+      }
+    }
+    print_err(
+      "\{help_tag}: GLR engine supports left recursion; this warning is informational only",
+    )
+  }
+}
+
+///|
 /// 打印解析表冲突报告到 stderr
 pub fn report_conflicts(reports : Array[@tablegen.ConflictReport]) -> Unit {
   if reports.is_empty() {
@@ -266,6 +293,13 @@ pub fn report_conflicts(reports : Array[@tablegen.ConflictReport]) -> Unit {
         print_err(
           "  \{lbl} dynamic prec id=\{id} in state \{r.state} on terminal \{r.terminal}",
         )
+        print_err(
+          "    state=\{r.state}  terminal=\{r.terminal}  actions=\{r.actions.length()}",
+        )
+      }
+      Declared(msg) => {
+        let lbl = ansi_yellow("[declared]")
+        print_err("  \{lbl} \{msg}")
         print_err(
           "    state=\{r.state}  terminal=\{r.terminal}  actions=\{r.actions.length()}",
         )

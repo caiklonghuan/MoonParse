@@ -41,3 +41,13 @@ pub fn read_bytes(path : String) -> Result[Bytes, String] {
 pub fn process_exit(code : Int) -> Unit {
   process_exit_impl(code)
 }
+
+///|
+pub fn make_dir(path : String) -> Result[Unit, String] {
+  make_dir_impl(path)
+}
+
+///|
+pub fn remove_dir_all(path : String) -> Result[Unit, String] {
+  remove_dir_all_impl(path)
+}

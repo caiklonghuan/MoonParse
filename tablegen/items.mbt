@@ -1,7 +1,6 @@
 ///|
 // LR(0) 项目集构建
 
-
 ///|
 /// 将项目集转为确定性字符串 key，用于 Map 去重
 fn item_set_key(items : Set[LRItem]) -> String {
@@ -99,41 +98,10 @@ fn goto_set_fast(
 
 ///|
 /// 项目集闭包：closure(I)
+/// 构建 head→productions 索引后委托给 closure_fast。
 pub fn closure(grammar : AugmentedGrammar, items : Set[LRItem]) -> Set[LRItem] {
-  let result : Set[LRItem] = Set::new()
-  // 工作队列：记录待处理的新增项目
-  let queue : Array[LRItem] = []
-
-  // 初始化：将 items 全部加入
-  for item in items {
-    if result.add_and_check(item) {
-      queue.push(item)
-    }
-  }
-
-  let mut qi = 0
-  while qi < queue.length() {
-    let item = queue[qi]
-    qi = qi + 1
-    let prod = grammar.productions[item.prod]
-    // 若 dot 未越过产生式末尾，检查 dot 处的符号
-    if item.dot < prod.body.length() {
-      match prod.body[item.dot].symbol {
-        NonTerminal(nt) =>
-          // 将 nt 的所有产生式以 dot=0 加入
-          for p in grammar.productions {
-            if p.head == nt {
-              let new_item = { prod: p.id, dot: 0 }
-              if result.add_and_check(new_item) {
-                queue.push(new_item)
-              }
-            }
-          }
-        _ => ()
-      }
-    }
-  }
-  result
+  let head_prods = build_head_prods_index(grammar)
+  closure_fast(grammar, items, head_prods)
 }
 
 ///|
@@ -144,18 +112,8 @@ pub fn goto_set(
   items : Set[LRItem],
   sym : Symbol,
 ) -> Set[LRItem] {
-  let kernel : Set[LRItem] = Set::new()
-  for item in items {
-    let prod = grammar.productions[item.prod]
-    if item.dot < prod.body.length() && prod.body[item.dot].symbol == sym {
-      kernel.add({ prod: item.prod, dot: item.dot + 1 })
-    }
-  }
-  if kernel.is_empty() {
-    Set::new()
-  } else {
-    closure(grammar, kernel)
-  }
+  let head_prods = build_head_prods_index(grammar)
+  goto_set_fast(grammar, items, sym, head_prods)
 }
 
 ///|

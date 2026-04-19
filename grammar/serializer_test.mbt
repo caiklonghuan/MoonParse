@@ -8,8 +8,6 @@ fn parse_ok_s(dsl : String) -> Grammar {
   }
 }
 
-// grammar_to_string 测试
-
 ///|
 test "serialize_roundtrip_simple" {
   let dsl = "start expr\nrule expr: /\\d+/"
@@ -18,7 +16,7 @@ test "serialize_roundtrip_simple" {
   // 重新解析应成功且结构相同
   let g2 = parse_ok_s(out)
   assert_eq(g2.start, g.start)
-  assert_eq(g2.rules.size(), g.rules.size())
+  assert_eq(g2.rules.length(), g.rules.length())
 }
 
 ///|
@@ -28,6 +26,7 @@ test "serialize_idempotent" {
   let cases = [
     "start expr\nrule expr: /\\d+/", "start s\nrule s: \"if\" | \"else\"", "start e\nprecedence left plus\nrule e: /\\d+/\nrule plus: \"+\"",
     "rule a: b c*\nrule b: /[a-z]+/\nrule c: \",\" b", "start p\nextras [/\\s+/]\nrule p: item+\nrule item: /\\w+/",
+    "start p\nexternals [indent, dedent]\nrule p: /\\w+/",
   ]
   for src in cases {
     let s1 = grammar_to_string(parse_ok_s(src))
@@ -54,7 +53,7 @@ test "serialize_contains_rule" {
 test "serialize_no_start_omitted" {
   let g = parse_ok_s("rule expr: /\\d+/")
   let out = grammar_to_string(g)
-  assert_true(not(out.contains("start ")))
+  assert_true(!out.contains("start "))
 }
 
 ///|
@@ -124,4 +123,59 @@ test "json_is_named_field" {
   let g = parse_ok_s("rule expr: /\\d+/")
   let j = grammar_to_json(g)
   assert_true(j.contains("\"is_named\""))
+}
+
+///|
+test "json_has_extras_field" {
+  let g = parse_ok_s("start p\nextras [/[ \\t\\n]+/]\nrule p: /\\w+/")
+  let j = grammar_to_json(g)
+  assert_true(j.contains("\"extras\""))
+  assert_true(j.contains("\"Regex\""))
+}
+
+///|
+test "json_extras_empty_when_absent" {
+  let g = parse_ok_s("rule expr: /\\d+/")
+  let j = grammar_to_json(g)
+  // 无 extras 声明时应输出空数组
+  assert_true(j.contains("\"extras\": []"))
+}
+
+///|
+test "grammar_from_json_roundtrip_simple" {
+  let dsl = "start expr\nrule expr: /\\d+/"
+  let g = parse_ok_s(dsl)
+  let j = grammar_to_json(g)
+  let g2 = match grammar_from_json(j) {
+    Success(g) => g
+    Error(e) => abort("grammar_from_json failed: \{e.message}")
+  }
+  assert_eq(g2.start, g.start)
+  assert_eq(g2.rules.length(), g.rules.length())
+}
+
+///|
+test "grammar_from_json_roundtrip_extras" {
+  let dsl = "start p\nextras [/[ \\t\\n]+/, /\\/\\/.*/]\nrule p: /\\w+/"
+  let g = parse_ok_s(dsl)
+  let j = grammar_to_json(g)
+  let g2 = match grammar_from_json(j) {
+    Success(g) => g
+    Error(e) => abort("grammar_from_json failed: \{e.message}")
+  }
+  // extras 数量应保持一致
+  assert_eq(g2.extras.length(), g.extras.length())
+}
+
+///|
+test "grammar_from_json_roundtrip_precedences" {
+  let dsl = "start e\nprecedence left plus\nprecedence right power\nrule e: /\\d+/\nrule plus: \"+\"\nrule power: \"**\""
+  let g = parse_ok_s(dsl)
+  let j = grammar_to_json(g)
+  let g2 = match grammar_from_json(j) {
+    Success(g) => g
+    Error(e) => abort("grammar_from_json failed: \{e.message}")
+  }
+  assert_eq(g2.precedences.length(), g.precedences.length())
+  assert_eq(g2.start, g.start)
 }

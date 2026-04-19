@@ -24,7 +24,14 @@ fn capture_to_json(c : @query.CaptureResult, tree : TreeEntry) -> String {
   buf.write_char(',')
   write_kvi(buf, "end_col", node.end_point.column)
   buf.write_char(',')
-  write_kvs(buf, "text", tree.input[node.start_byte:node.end_byte].to_string())
+
+  let text = if node.start_byte <= node.end_byte &&
+    node.end_byte <= tree.input.length() {
+    tree.input[node.start_byte:node.end_byte].to_string()
+  } else {
+    ""
+  }
+  write_kvs(buf, "text", text)
   buf.write_char('}')
   buf.to_string()
 }
@@ -74,16 +81,8 @@ pub fn query_exec(query_id : Int, tree_id : Int) -> String {
     Some(t) => t
     None => return "[]"
   }
-  let parser_entry = match parser_registry.get(tree.parser_id) {
-    Some(p) => p
-    None => return "[]"
-  }
-  let captures = @query.exec(
-    qentry.query,
-    tree.root,
-    tree.input,
-    parser_entry.table,
-  )
+
+  let captures = @query.exec(qentry.query, tree.root, tree.input, tree.table)
   // 序列化为 JSON 数组
   let buf = StringBuilder::new()
   buf.write_char('[')
@@ -94,6 +93,43 @@ pub fn query_exec(query_id : Int, tree_id : Int) -> String {
     buf.write_string(capture_to_json(captures[i], tree))
   }
   buf.write_char(']')
+  buf.to_string()
+}
+
+///|
+/// 在指定语法树上运行 locals 查询，返回局部变量解析结果 JSON 对象字符串。
+/// 格式：`{"<start_byte>": true, ...}`，每个 key 是被识别为本地引用的节点起始字节。
+/// 查询或树无效时返回 "{}"。
+pub fn query_resolve_locals(query_id : Int, tree_id : Int) -> String {
+  let qentry = match query_registry.get(query_id) {
+    Some(e) => e
+    None => return "{}"
+  }
+  let tree = match tree_registry.get(tree_id) {
+    Some(t) => t
+    None => return "{}"
+  }
+  let res = @query.resolve_locals(
+    tree.root,
+    tree.input,
+    tree.table,
+    qentry.query,
+  )
+  let buf = StringBuilder::new()
+  buf.write_char('{')
+  let mut first = true
+  res.local_refs.each(fn(k, v) {
+    if v {
+      if !first {
+        buf.write_char(',')
+      }
+      buf.write_char('"')
+      buf.write_string(k.to_string())
+      buf.write_string("\":true")
+      first = false
+    }
+  })
+  buf.write_char('}')
   buf.to_string()
 }
 

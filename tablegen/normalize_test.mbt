@@ -243,7 +243,7 @@ test "augment_grammar / 终结符注册正确" {
       Error(e) => fail("[\{case.name}] parse failed: \{e.message}")
     }
     let ag = augment_grammar(g)
-    if not(has_terminal_keys(ag, case.expected_terminals)) {
+    if !has_terminal_keys(ag, case.expected_terminals) {
       fail(
         "[\{case.name}] 缺少预期终结符，期望: \{case.expected_terminals}",
       )
@@ -326,10 +326,10 @@ test "augment_grammar / Field 元数据保留" {
       }
     }
   }
-  if not(found_left) {
+  if !found_left {
     fail("assign 产生式应含 field_name = \"lhs\"")
   }
-  if not(found_right) {
+  if !found_right {
     fail("assign 产生式应含 field_name = \"rhs\"")
   }
 }
@@ -355,7 +355,7 @@ test "augment_grammar / Prec 标注传递" {
       }
     }
   }
-  if not(found) {
+  if !found {
     fail("e 的产生式应携带 prec = 5")
   }
 }
@@ -377,7 +377,7 @@ test "augment_grammar / Repeat 左递归形态" {
       }
     }
   }
-  if not(has_left_rec) {
+  if !has_left_rec {
     fail("Repeat 应生成左递归产生式 (head → head x)")
   }
 }
@@ -463,7 +463,7 @@ test "augment_grammar / Plus - 无 epsilon、左递归2条产生式" {
     Error(e) => fail("parse failed: \{e.message}")
   }
   let ag = augment_grammar(g)
-  let digits_id = match ag.nonterminals.get("xs") {
+  let xs_id = match ag.nonterminals.get("xs") {
     Some(id) => id
     None => fail("NT xs not found")
   }
@@ -471,13 +471,13 @@ test "augment_grammar / Plus - 无 epsilon、左递归2条产生式" {
   let mut has_eps = false
   let mut has_left_rec = false
   for prod in ag.productions {
-    if prod.head == digits_id {
+    if prod.head == xs_id {
       count = count + 1
       if prod.body.length() == 0 {
         has_eps = true
       }
       if prod.body.length() == 2 &&
-        prod.body[0].symbol == Symbol::NonTerminal(digits_id) {
+        prod.body[0].symbol == Symbol::NonTerminal(xs_id) {
         has_left_rec = true
       }
     }
@@ -643,4 +643,397 @@ test "augment_grammar / And in Seq tail - production carries FollowedBy constrai
     }
   }
   assert_true(found_constraint)
+}
+
+// @hide 属性测试
+
+///|
+test "augment_grammar / @hide 规则的 NT 元数据 is_named = false" {
+  // @hide rule hidden: "x" — 规则名不以 _ 开头但有 @hide，应强制 is_named = false
+  let dsl = "start s\n@hide rule hidden: \"x\"\nrule s: hidden"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let mut found_is_named : Bool? = None
+  for m in ag.nt_metas {
+    if m.name == "hidden" {
+      found_is_named = Some(m.is_named)
+      break
+    }
+  }
+  match found_is_named {
+    Some(v) => assert_eq(v, false)
+    None => fail("NT 'hidden' not found in nt_metas")
+  }
+}
+
+///|
+test "augment_grammar / @hide 规则仍生成产生式（正常参与文法）" {
+  let dsl = "start s\n@hide rule hidden: \"x\"\nrule s: hidden"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let hidden_id = match ag.nonterminals.get("hidden") {
+    Some(id) => id
+    None => fail("NT 'hidden' not found")
+  }
+  let mut has_prod = false
+  for prod in ag.productions {
+    if prod.head == hidden_id {
+      has_prod = true
+      break
+    }
+  }
+  assert_true(has_prod)
+}
+
+///|
+test "augment_grammar / 普通规则 is_named 不受 @hide 影响" {
+  let dsl = "start s\n@hide rule hidden: \"x\"\nrule s: hidden"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let mut found_is_named : Bool? = None
+  for m in ag.nt_metas {
+    if m.name == "s" {
+      found_is_named = Some(m.is_named)
+      break
+    }
+  }
+  match found_is_named {
+    Some(v) => assert_eq(v, true)
+    None => fail("NT 's' not found in nt_metas")
+  }
+}
+
+// @inline 属性测试
+
+///|
+test "augment_grammar / @inline 规则不创建命名 NT" {
+  // @inline rule kw: "if" | "else" — 引用处展开，kw 本身不注册为命名 NT
+  let dsl = "start s\n@inline rule kw: \"if\" | \"else\"\nrule s: kw"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  assert_eq(ag.nonterminals.contains("kw"), false)
+}
+
+///|
+test "augment_grammar / @inline 规则引用处生成辅助 NT" {
+  let dsl = "start s\n@inline rule kw: \"a\" | \"b\"\nrule s: kw"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT 's' not found")
+  }
+  let mut body_has_nt = false
+  for prod in ag.productions {
+    if prod.head == s_id {
+      for bs in prod.body {
+        match bs.symbol {
+          NonTerminal(_) => body_has_nt = true
+          _ => ()
+        }
+      }
+    }
+  }
+  assert_true(body_has_nt)
+}
+
+///|
+test "augment_grammar / @inline 规则两处引用各自生成独立辅助 NT（不共享）" {
+  let dsl = "start s\n@inline rule op: \"+\" | \"-\"\nrule s: op op"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT 's' not found")
+  }
+  let mut nt_count = 0
+  for prod in ag.productions {
+    if prod.head == s_id {
+      for bs in prod.body {
+        match bs.symbol {
+          NonTerminal(_) => nt_count = nt_count + 1
+          _ => ()
+        }
+      }
+    }
+  }
+  assert_eq(nt_count, 2)
+}
+
+///|
+test "augment_grammar / declared_conflicts 字段透传" {
+  // conflicts 声明放在 rules 之前，避免 parse_sequence 将 "conflicts [[" 误读为模板实例化
+  let dsl = "start s\nconflicts [[a, b]]\nrule s: a | b\nrule a: \"x\"\nrule b: \"x\""
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  assert_eq(ag.declared_conflicts.length(), 1)
+  assert_eq(ag.declared_conflicts[0].contains("a"), true)
+  assert_eq(ag.declared_conflicts[0].contains("b"), true)
+}
+
+// ── field_slots 字段布局元数据测试 ─────────────────────────────────────────────
+
+///|
+test "augment_grammar / field_slots - Seq 含 Field 时收集字段名" {
+  let dsl =
+    #|start binary_expr
+    #|rule expr: binary_expr | number
+    #|rule number: /[0-9]+/
+    #|rule binary_expr: lhs: expr "+" rhs: expr
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let mut slots : Array[String] = []
+  for m in ag.nt_metas {
+    if m.name == "binary_expr" {
+      slots = m.field_slots
+      break
+    }
+  }
+  assert_true(slots.contains("lhs"))
+  assert_true(slots.contains("rhs"))
+  assert_eq(slots.length(), 2)
+}
+
+///|
+test "augment_grammar / field_slots - 无字段规则 field_slots 为空" {
+  let dsl = "start s\nrule s: \"hello\" \"world\""
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let mut slots : Array[String]? = None
+  for m in ag.nt_metas {
+    if m.name == "s" {
+      slots = Some(m.field_slots)
+      break
+    }
+  }
+  match slots {
+    None => fail("NT 's' not found")
+    Some(s) => assert_eq(s.length(), 0)
+  }
+}
+
+///|
+test "augment_grammar / field_slots - 同名字段只出现一次（去重）" {
+  let dsl =
+    #|start list
+    #|rule item: /[a-z]+/
+    #|rule list: items: item | list items: item
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let mut slots : Array[String]? = None
+  for m in ag.nt_metas {
+    if m.name == "list" {
+      slots = Some(m.field_slots)
+      break
+    }
+  }
+  match slots {
+    None => fail("NT 'list' not found")
+    Some(s) => {
+      assert_true(s.contains("items"))
+      let count = s.fold(
+        fn(acc, x) { if x == "items" { acc + 1 } else { acc } },
+        init=0,
+      )
+      assert_eq(count, 1)
+    }
+  }
+}
+
+///|
+test "augment_grammar / field_slots - 合成 NT field_slots 为空" {
+  // Repeat 出现在 Seq 内部时，to_symbol 会创建辅助合成 NT（is_synthetic = true）
+  // 辅助 NT 没有 Field/Tagged，field_slots 应为空
+  let dsl = "start s\nrule item: /[a-z]/\nrule s: \"a\" item* \"b\""
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let mut synthetic_count = 0
+  for m in ag.nt_metas {
+    if m.is_synthetic {
+      synthetic_count = synthetic_count + 1
+      assert_eq(m.field_slots.length(), 0)
+    }
+  }
+  // 至少有 $accept 和 Repeat 辅助 NT 两个合成 NT
+  assert_true(synthetic_count >= 2)
+}
+
+///|
+test "augment_grammar / 独立 Not 规则体 - 生成 ε 产生式带 NotFollowedBy 约束" {
+  // rule s: !"b"  →  expand_into.Not 分支  →  s → ε [NotFollowedBy([lit:b])]
+  let dsl = "start s\nrule s: !\"b\""
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT s not found")
+  }
+  let mut found = false
+  for prod in ag.productions {
+    if prod.head == s_id {
+      match prod.lookahead {
+        Some(NotFollowedBy(tids)) => {
+          assert_eq(prod.body.length(), 0)
+          assert_true(tids.length() > 0)
+          found = true
+        }
+        _ => ()
+      }
+    }
+  }
+  assert_true(found)
+}
+
+///|
+test "augment_grammar / 独立 And 规则体 - 生成 ε 产生式带 FollowedBy 约束" {
+  // rule s: &"b"  →  expand_into.And 分支  →  s → ε [FollowedBy([lit:b])]
+  let dsl = "start s\nrule s: &\"b\""
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT s not found")
+  }
+  let mut found = false
+  for prod in ag.productions {
+    if prod.head == s_id {
+      match prod.lookahead {
+        Some(FollowedBy(tids)) => {
+          assert_eq(prod.body.length(), 0)
+          assert_true(tids.length() > 0)
+          found = true
+        }
+        _ => ()
+      }
+    }
+  }
+  assert_true(found)
+}
+
+///|
+test "augment_grammar / Alias - alias_name 透传到产生式" {
+  // rule s: alias("foo", "x" | "y")
+  // expand_into.Alias 展开内层 Choice 到辅助 NT，并对辅助 NT 的每条产生式标记 alias_name = "foo"
+  let dsl = "start s\nrule s: alias(\"foo\", \"x\" | \"y\")"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT s not found")
+  }
+  // s 的两条产生式（Choice 展开）各自应携带 alias_name = Some("foo")
+  let mut alias_count = 0
+  for prod in ag.productions {
+    if prod.head == s_id {
+      match prod.alias_name {
+        Some("foo") => alias_count = alias_count + 1
+        _ => ()
+      }
+    }
+  }
+  assert_eq(alias_count, 2)
+}
+
+///|
+test "augment_grammar / 混用 & 和 ! 时 normalize 保留 FollowedBy" {
+  // rule s: "a" &"b" !"c"  →  Seq 尾部同时有 And 和 Not
+  // expand_into.Seq 中 FollowedBy 优先：约束应为 FollowedBy([lit:b])，
+  // NotFollowedBy 被丢弃（对应 validator 中 LookaheadMixedAssertions 的行为说明）
+  let dsl = "start s\nrule s: \"a\" &\"b\" !\"c\""
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT s not found")
+  }
+  let mut constraint_kind : String = "none"
+  for prod in ag.productions {
+    if prod.head == s_id {
+      match prod.lookahead {
+        Some(FollowedBy(_)) => constraint_kind = "followed_by"
+        Some(NotFollowedBy(_)) => constraint_kind = "not_followed_by"
+        None => ()
+      }
+    }
+  }
+  assert_eq(constraint_kind, "followed_by")
+}
+
+///|
+test "augment_grammar / externals 声明名称在规则体内映射为 Terminal" {
+  // externals 中声明 indent，在 rule 体内引用 indent 时，
+  // to_symbol.RuleRef 走 ext: 路径，返回 Terminal 而非 NonTerminal
+  let dsl = "start s\nexternals [indent]\nrule s: indent"
+  let g = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(e) => fail("parse failed: \{e.message}")
+  }
+  let ag = augment_grammar(g)
+  let s_id = match ag.nonterminals.get("s") {
+    Some(id) => id
+    None => fail("NT s not found")
+  }
+  // indent 的 ext: terminal 必须存在
+  let ext_tid = match ag.terminals.get("ext:indent") {
+    Some(id) => id
+    None => fail("terminal ext:indent not registered")
+  }
+  // s 的产生式 body 中应包含 Terminal(ext_tid)，而不是 NonTerminal
+  let mut mapped_as_terminal = false
+  for prod in ag.productions {
+    if prod.head == s_id {
+      for bs in prod.body {
+        match bs.symbol {
+          Terminal(tid) => if tid == ext_tid { mapped_as_terminal = true }
+          _ => ()
+        }
+      }
+    }
+  }
+  assert_true(mapped_as_terminal)
 }

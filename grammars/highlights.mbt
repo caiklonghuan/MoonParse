@@ -45,8 +45,8 @@ pub let json_highlight_query : String =
 /// 在 json_highlight_query 基础上增加注释和额外字面量。
 /// 对应 grammars/json5.mbt 中的 json5_grammar 规则集。
 pub let json5_highlight_query : String =
-  #|; 字符串（双引号 / 单引号 / 反引号）
-  #|(jstring) @string
+  #|; 字符串（双引号 / 单引号）
+  #|(string) @string
   #|
   #|; 数字（含十六进制、Infinity、NaN）
   #|(number) @number
@@ -59,8 +59,8 @@ pub let json5_highlight_query : String =
   #|"NaN"      @constant.builtin
   #|
   #|; 对象键
-  #|(pair (jstring) @property)
-  #|(pair (identifier) @property)
+  #|(member (property_name (string)) @property)
+  #|(member (property_name (identifier)) @property)
   #|
   #|; 括号
   #|"{" @punctuation.bracket

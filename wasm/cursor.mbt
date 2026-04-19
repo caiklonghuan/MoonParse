@@ -1,5 +1,6 @@
 ///|
 // 游标 API
+
 ///|
 // 生命周期
 
@@ -15,9 +16,9 @@ pub fn cursor_new(tree_id : Int) -> Int {
         current: te.root,
         current_index: -1,
         current_field: None,
+        parent_depth: 0,
         parent_nodes: [],
         parent_indices: [],
-        parent_fields: [],
       })
   }
 }
@@ -42,9 +43,16 @@ pub fn cursor_goto_first_child(cursor_id : Int) -> Int {
       if parent.children.is_empty() {
         0
       } else {
-        cursor.parent_nodes.push(parent)
-        cursor.parent_indices.push(cursor.current_index)
-        cursor.parent_fields.push(cursor.current_field)
+        // 按 parent_depth 索引写槽（覆盖旧数据或追加），正确处理回溯后再下探
+        let d = cursor.parent_depth
+        if d < cursor.parent_nodes.length() {
+          cursor.parent_nodes[d] = parent
+          cursor.parent_indices[d] = cursor.current_index
+        } else {
+          cursor.parent_nodes.push(parent)
+          cursor.parent_indices.push(cursor.current_index)
+        }
+        cursor.parent_depth = d + 1
         cursor.current = parent.children[0]
         cursor.current_index = 0
         cursor.current_field = if parent.field_names.length() > 0 {
@@ -65,10 +73,10 @@ pub fn cursor_goto_next_sibling(cursor_id : Int) -> Int {
   match cursor_registry.get(cursor_id) {
     None => 0
     Some(cursor) => {
-      if cursor.parent_nodes.is_empty() {
+      if cursor.parent_depth == 0 {
         return 0
       }
-      let parent = cursor.parent_nodes[cursor.parent_nodes.length() - 1]
+      let parent = cursor.parent_nodes[cursor.parent_depth - 1]
       let next_index = cursor.current_index + 1
       if next_index >= parent.children.length() {
         0
@@ -93,16 +101,25 @@ pub fn cursor_goto_parent(cursor_id : Int) -> Int {
   match cursor_registry.get(cursor_id) {
     None => 0
     Some(cursor) =>
-      if cursor.parent_nodes.is_empty() {
+      if cursor.parent_depth == 0 {
         0
       } else {
-        let last = cursor.parent_nodes.length() - 1
-        cursor.current = cursor.parent_nodes[last]
-        cursor.current_index = cursor.parent_indices[last]
-        cursor.current_field = cursor.parent_fields[last]
-        let _ = cursor.parent_nodes.pop()
-        let _ = cursor.parent_indices.pop()
-        let _ = cursor.parent_fields.pop()
+        let d = cursor.parent_depth - 1
+        cursor.current = cursor.parent_nodes[d]
+        cursor.current_index = cursor.parent_indices[d]
+        // 从祖父节点推算父节点的 field 名，无需存储 Array[String?]
+        cursor.current_field = if d > 0 {
+          let grandparent = cursor.parent_nodes[d - 1]
+          let idx = cursor.parent_indices[d]
+          if idx < grandparent.field_names.length() {
+            grandparent.field_names[idx]
+          } else {
+            None
+          }
+        } else {
+          None
+        }
+        cursor.parent_depth = d
         1
       }
   }
@@ -234,6 +251,25 @@ pub fn cursor_node_text(cursor_id : Int) -> String {
           }
         }
       }
+  }
+}
+
+///|
+/// 当前节点是否在增量解析中被重新解析（has_changes 标记）。1 = 是，0 = 否。
+/// 增量解析后，has_changes=false 的节点是从旧树复用的；true 的是新解析的。
+pub fn cursor_node_has_changes(cursor_id : Int) -> Int {
+  match cursor_registry.get(cursor_id) {
+    None => 0
+    Some(cursor) => if cursor.current.has_changes { 1 } else { 0 }
+  }
+}
+
+///|
+/// 当前节点是否为关键字 token（由文法的 word 规则匹配）。1 = 是，0 = 否。
+pub fn cursor_node_is_keyword(cursor_id : Int) -> Int {
+  match cursor_registry.get(cursor_id) {
+    None => 0
+    Some(cursor) => if cursor.current.is_keyword { 1 } else { 0 }
   }
 }
 

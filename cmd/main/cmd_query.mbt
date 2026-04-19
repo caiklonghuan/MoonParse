@@ -1,5 +1,6 @@
 ///|
 // 命令处理器
+
 ///|
 // 输出格式化
 
@@ -43,7 +44,7 @@ fn print_captures_json(
   buf.write_char('[')
   let mut first = true
   for r in results {
-    if not(first) {
+    if !first {
       buf.write_char(',')
     }
     let node = r.node

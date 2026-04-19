@@ -1,5 +1,6 @@
 ///|
 // JSON 序列化
+
 ///|
 /// 转义 JSON 字符串中的特殊字符
 fn json_escape(s : String) -> String {
@@ -319,7 +320,23 @@ pub fn table_to_json(table : ParseTable) -> String {
   // external_token_ids 数组
   let ext_json = jarray(table.external_token_ids.map(fn(tid) { "\{tid}" }))
 
-  jobj([
+  // word_token（可选；无 word 声明的文法省略此字段）
+  let word_token_json : String? = match table.word_token {
+    Some(wt) => Some("\{wt}")
+    None => None
+  }
+
+  // keyword_map：Literal 文本 → TerminalId（排序保证确定性输出）
+  let km_pairs : Array[(String, TerminalId)] = []
+  for text, tid in table.keyword_map {
+    km_pairs.push((text, tid))
+  }
+  km_pairs.sort_by(fn(a, b) { a.0.compare(b.0) })
+  let km_json = jarray(
+    km_pairs.map(fn(p) { jobj([("k", jstr(p.0)), ("v", "\{p.1}")]) }),
+  )
+
+  let fields : Array[(String, String)] = [
     ("states", "\{table.states}"),
     ("productions", prods_json),
     ("action", action_json),
@@ -330,7 +347,13 @@ pub fn table_to_json(table : ParseTable) -> String {
     ("extras", extras_json),
     ("external_token_ids", ext_json),
     ("lexer_dfa", lexer_dfa_to_json(table.lexer_dfa)),
-  ])
+    ("keyword_map", km_json),
+  ]
+  match word_token_json {
+    Some(wt) => fields.push(("word_token", wt))
+    None => ()
+  }
+  jobj(fields)
 }
 
 ///|
@@ -397,7 +420,7 @@ fn BinWriter::write_str(self : BinWriter, s : String) -> Unit {
 
 ///|
 /// 回填：将 v 以小端 u32 写入已预留的 offset 处（用于事后修正计数 / 长度字段）
-fn BinWriter::patch_u32_le(self : BinWriter, offset : Int, v : Int) -> Unit {
+fn BinWriter::_patch_u32_le(self : BinWriter, offset : Int, v : Int) -> Unit {
   self.buf[offset] = (v & 0xFF).to_byte()
   self.buf[offset + 1] = ((v >> 8) & 0xFF).to_byte()
   self.buf[offset + 2] = ((v >> 16) & 0xFF).to_byte()
@@ -406,7 +429,7 @@ fn BinWriter::patch_u32_le(self : BinWriter, offset : Int, v : Int) -> Unit {
 
 ///|
 /// 当前已写入字节数（可作为 patch_u32_le 的 offset 参数）
-fn BinWriter::len(self : BinWriter) -> Int {
+fn BinWriter::_len(self : BinWriter) -> Int {
   self.buf.length()
 }
 
@@ -443,7 +466,7 @@ fn BinReader::new(data : Bytes) -> BinReader {
 
 ///|
 /// 游标之后的剩余可读字节数
-fn BinReader::remaining(self : BinReader) -> Int {
+fn BinReader::_remaining(self : BinReader) -> Int {
   self.data.length() - self.pos
 }
 
@@ -661,6 +684,14 @@ fn write_production(w : BinWriter, prod : Production) -> Unit {
       }
     }
   }
+  // alias_name
+  match prod.alias_name {
+    None => w.write_u8(0)
+    Some(name) => {
+      w.write_u8(1)
+      w.write_str(name)
+    }
+  }
 }
 
 ///|
@@ -710,7 +741,10 @@ fn read_production(r : BinReader) -> Production raise BinError {
     }
     _ => raise InvalidData("lookahead tag=\{la_tag}")
   }
-  { id, head, body, prec, assoc, rule_name, lookahead, alias_name: None }
+  // alias_name
+  let has_alias = r.read_u8()
+  let alias_name = if has_alias == 1 { Some(r.read_str()) } else { None }
+  { id, head, body, prec, assoc, rule_name, lookahead, alias_name }
 }
 
 // ── SymbolMeta ───────────────────────────────────────────────────────────────
@@ -725,7 +759,7 @@ fn write_symbol_meta(w : BinWriter, meta : SymbolMeta) -> Unit {
 fn read_symbol_meta(r : BinReader) -> SymbolMeta raise BinError {
   let is_named = r.read_u8() != 0
   let name = r.read_str()
-  { name, is_named }
+  { name, is_named, is_synthetic: false, field_slots: [] }
 }
 
 // ── DfaState ─────────────────────────────────────────────────────────────────
@@ -852,20 +886,6 @@ fn read_terminal_patterns(
 }
 
 // 公开 API
-//
-// 格式版本 1 —— 节区顺序（全部小端）：
-//
-//   [0] magic        4 B   0x4D 0x50 0x54 0x01  ("MPT\x01")
-//   [1] states       u32   LR 状态总数
-//   [2] action table       act_count u32
-//                          每条：state_id u16, term_id u16,
-//                                per_count u8, per_count × write_action(…)
-//   [3] goto table         goto_count u32
-//                          每条：state_id u16, nt_id u16, target u16
-//   [4] productions        prod_count u32, prod_count × write_production(…)
-//   [5] lexer dfa          write_lexer_dfa(…)
-//   [6] symbol_metadata    meta_count u16, meta_count × write_symbol_meta(…)
-//   [7] terminal_patterns  write_terminal_patterns(…)
 
 ///|
 /// 将 ParseTable 序列化为二进制格式（版本 1，小端字节序）。
@@ -878,58 +898,24 @@ pub fn serialize_table(table : ParseTable) -> Bytes {
   w.write_u8(0x4D)
   w.write_u8(0x50)
   w.write_u8(0x54)
-  w.write_u8(0x01)
+  w.write_u8(0x03) // 版本 3：action/goto 表改用偏移量压缩（displacement encoding）
 
   // [1] states
   w.write_u32_le(table.states)
 
-  // [2] action table
-  // 收集 action 条目：同一 (state, terminal) 下可能有多个 Action（GLR）
-  let act_entries : Array[((StateId, TerminalId), Array[Action])] = []
-  for key, acts in table.action {
-    act_entries.push((key, acts))
-  }
-  act_entries.sort_by(fn(a, b) {
-    let ((sa, ta), _) = a
-    let ((sb, tb), _) = b
-    if sa != sb {
-      sa.compare(sb)
-    } else {
-      ta.compare(tb)
-    }
-  })
-  w.write_u32_le(act_entries.length())
-  for entry in act_entries {
-    let ((state, term), acts) = entry
-    w.write_u16_le(state)
-    w.write_u16_le(term)
-    w.write_u8(acts.length())
-    for act in acts {
-      write_action(w, act)
+  // [2] action table — displacement-compressed (version 3)
+  // eoi_sym = max_terminal_id + 1 (maps eoi_id=-1 to a non-negative index)
+  let mut eoi_sym = 0
+  for tid, _ in table.terminal_patterns {
+    if tid > eoi_sym {
+      eoi_sym = tid
     }
   }
+  eoi_sym = eoi_sym + 1
+  write_compressed_action(w, table.action, table.states, eoi_sym)
 
-  // [3] goto table
-  let goto_entries : Array[((StateId, NonTerminalId), StateId)] = []
-  for key, target in table.goto_table {
-    goto_entries.push((key, target))
-  }
-  goto_entries.sort_by(fn(a, b) {
-    let ((sa, na), _) = a
-    let ((sb, nb), _) = b
-    if sa != sb {
-      sa.compare(sb)
-    } else {
-      na.compare(nb)
-    }
-  })
-  w.write_u32_le(goto_entries.length())
-  for entry in goto_entries {
-    let ((state, nt), target) = entry
-    w.write_u16_le(state)
-    w.write_u16_le(nt)
-    w.write_u16_le(target)
-  }
+  // [3] goto table — displacement-compressed (version 3)
+  write_compressed_goto(w, table.goto_table, table.states)
 
   // [4] productions
   w.write_u32_le(table.productions.length())
@@ -978,6 +964,28 @@ pub fn serialize_table(table : ParseTable) -> Bytes {
     w.write_u16_le(tid)
   }
 
+  // [11] word_token（u8 flag: 0=None 1=Some; if Some: u16 value）
+  match table.word_token {
+    None => w.write_u8(0)
+    Some(wt) => {
+      w.write_u8(1)
+      w.write_u16_le(wt)
+    }
+  }
+
+  // [12] keyword_map（u32 count; then for each: str key, u16 tid）
+  let km_entries : Array[(String, TerminalId)] = []
+  for text, tid in table.keyword_map {
+    km_entries.push((text, tid))
+  }
+  km_entries.sort_by(fn(a, b) { a.0.compare(b.0) })
+  w.write_u32_le(km_entries.length())
+  for entry in km_entries {
+    let (text, tid) = entry
+    w.write_str(text)
+    w.write_u16_le(tid)
+  }
+
   w.to_bytes()
 }
 
@@ -993,37 +1001,57 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
     let m1 = r.read_u8()
     let m2 = r.read_u8()
     let m3 = r.read_u8()
-    if m0 != 0x4D || m1 != 0x50 || m2 != 0x54 || m3 != 0x01 {
+    if m0 != 0x4D ||
+      m1 != 0x50 ||
+      m2 != 0x54 ||
+      (m3 != 0x01 && m3 != 0x02 && m3 != 0x03) {
       raise InvalidData(
-        "bad magic: \{m0} \{m1} \{m2} \{m3}, expected 77 80 84 1",
+        "bad magic: \{m0} \{m1} \{m2} \{m3}, expected 77 80 84 1/2/3",
       )
     }
+    let version = m3
 
     // [1] states
     let states = r.read_u32_le()
 
     // [2] action table
-    let action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
-    let act_count = r.read_u32_le()
-    for _ in 0..<act_count {
-      let state = r.read_u16_le()
-      let term = r.read_u16_le()
-      let per = r.read_u8()
-      let acts : Array[Action] = []
-      for _ in 0..<per {
-        acts.push(read_action(r))
+    let action : Map[(StateId, TerminalId), Array[Action]] = if version >= 3 {
+      // version 3: displacement-compressed
+      read_compressed_action(r, states)
+    } else {
+      // version 1/2: flat sparse list
+      let act_map : Map[(StateId, TerminalId), Array[Action]] = Map::new()
+      let act_count = r.read_u32_le()
+      for _ in 0..<act_count {
+        let state = r.read_u16_le()
+        let term_raw = r.read_u16_le()
+        // 0xFFFF is the eoi_id (-1) sentinel; restore to -1
+        let term = if term_raw == 0xFFFF { -1 } else { term_raw }
+        let per = r.read_u8()
+        let acts : Array[Action] = []
+        for _ in 0..<per {
+          acts.push(read_action(r))
+        }
+        act_map.set((state, term), acts)
       }
-      action.set((state, term), acts)
+      act_map
     }
 
     // [3] goto table
-    let goto_table : Map[(StateId, NonTerminalId), StateId] = Map::new()
-    let goto_count = r.read_u32_le()
-    for _ in 0..<goto_count {
-      let state = r.read_u16_le()
-      let nt = r.read_u16_le()
-      let target = r.read_u16_le()
-      goto_table.set((state, nt), target)
+    let goto_table : Map[(StateId, NonTerminalId), StateId] = if version >= 3 {
+      // version 3: displacement-compressed
+      read_compressed_goto(r, states)
+    } else {
+      // version 1/2: flat sparse list
+      let gt_map : Map[(StateId, NonTerminalId), StateId] = Map::new()
+      let goto_count = r.read_u32_le()
+      for _ in 0..<goto_count {
+        let state = r.read_u16_le()
+        let nt = r.read_u16_le()
+        let target = r.read_u16_le()
+        gt_map.set((state, nt), target)
+      }
+      gt_map
     }
 
     // [4] productions
@@ -1069,6 +1097,36 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       external_token_ids.push(r.read_u16_le())
     }
 
+    // [11] word_token（仅版本 2+ 存在；版本 1 回退为 None）
+    let word_token : TerminalId? = if version >= 2 {
+      let flag = r.read_u8()
+      if flag == 1 {
+        Some(r.read_u16_le())
+      } else {
+        None
+      }
+    } else {
+      None
+    }
+
+    // [12] keyword_map（仅版本 2+ 存在；版本 1 从 terminal_patterns 重建）
+    let keyword_map : Map[String, TerminalId] = Map::new()
+    if version >= 2 {
+      let km_count = r.read_u32_le()
+      for _ in 0..<km_count {
+        let text = r.read_str()
+        let tid = r.read_u16_le()
+        keyword_map.set(text, tid)
+      }
+    } else {
+      for tid, def in terminal_patterns {
+        match def {
+          TerminalDef::Literal(s) => keyword_map.set(s, tid)
+          _ => ()
+        }
+      }
+    }
+
     Ok({
       states,
       action,
@@ -1080,6 +1138,8 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       terminal_names,
       extras,
       external_token_ids,
+      word_token,
+      keyword_map,
     })
   } catch {
     UnexpectedEof(msg) => Err("deserialize_table: unexpected EOF at \{msg}")
@@ -1312,7 +1372,12 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
       let o = jobj_v(m_j)
       let name = jstr_v(jfield(o, "name"))
       let is_named = jbool(jfield(o, "is_named"))
-      symbol_metadata.push({ name, is_named })
+      symbol_metadata.push({
+        name,
+        is_named,
+        is_synthetic: false,
+        field_slots: [],
+      })
     }
 
     // terminal_patterns
@@ -1349,6 +1414,32 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
       None => () // 向后兼容：旧格式无此字段
     }
 
+    // word_token（可选字段）
+    let word_token : TerminalId? = match root.get("word_token") {
+      Some(v) => Some(jint(v))
+      None => None
+    }
+
+    // keyword_map（可选字段；旧格式无此字段时从 terminal_patterns 重建）
+    let keyword_map : Map[String, TerminalId] = Map::new()
+    match root.get("keyword_map") {
+      Some(arr_j) =>
+        for entry_j in jarr(arr_j) {
+          let o = jobj_v(entry_j)
+          let k = jstr_v(jfield(o, "k"))
+          let v = jint(jfield(o, "v"))
+          keyword_map.set(k, v)
+        }
+      None =>
+        // 向后兼容：从 terminal_patterns 重建
+        for tid, def in terminal_patterns {
+          match def {
+            TerminalDef::Literal(s) => keyword_map.set(s, tid)
+            _ => ()
+          }
+        }
+    }
+
     // lexer_dfa
     let lexer_dfa = json_to_lexer_dfa(jfield(root, "lexer_dfa"))
 
@@ -1363,9 +1454,356 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
       terminal_names,
       extras,
       external_token_ids,
+      word_token,
+      keyword_map,
     })
   } catch {
     JBadField(msg) => Err("table_from_json: \{msg}")
     JBadType(msg) => Err("table_from_json: \{msg}")
   }
+}
+
+// ── Compressed table format (version 3): displacement / offset-vector encoding ─
+//
+// For each LR state s, a non-negative displacement disp[s] maps the state's
+// sparse row into a shared flat array pair (check[], value[]).
+//
+// Invariant:
+//   Slot p is owned by state s  iff  check[p] == s
+//   Lookup: pos = disp[s] + sym
+//           if pos < packed_len && check[pos] == s  →  value[pos]
+//           else                                    →  no entry
+//
+// Packing algorithm (greedy, rows sorted by density desc for better overlap):
+//   For each row, find minimum d ≥ 0 such that for every (sym, _) in the row,
+//   position d + sym is unoccupied (check[d + sym] == cmp_check_empty).
+//
+// Action value encoding in u16:
+//   0x0000..0x7FFF  Shift(state_id)       state_id = v
+//   0x8000..0xBFFF  Reduce(prod_id)       prod_id  = v & 0x3FFF
+//   0xC000          Accept
+//   0xFFFE          Empty action list     (nonassoc conflict; acts = [])
+//   0xFFFF          GLR overflow          (look up in overflow table)
+//
+// Goto value: u16 target state (direct; single-valued, no overflow needed).
+//
+// Binary layout for sections [2'] and [3'] (version 3):
+//
+//   [2'] action table (compressed):
+//       eoi_sym    : u16            mapped symbol ID for eoi_id = -1
+//       packed_len : u32
+//       disp[]     : num_states × u32
+//       check[]    : packed_len × u16   (cmp_check_empty = 0xFFFF → no owner)
+//       value[]    : packed_len × u16
+//       ovf_cnt    : u32
+//       ovf[]      : (state: u16, sym: u16, n: u8, acts: n × 3 bytes)
+//
+//   [3'] goto table (compressed):
+//       packed_len : u32
+//       disp[]     : num_states × u32
+//       check[]    : packed_len × u16
+//       value[]    : packed_len × u16
+
+// ─── encoding constants ───────────────────────────────────────────────────────
+
+///|
+let cmp_check_empty : Int = 0xFFFF // check[] sentinel: slot has no owner
+
+///|
+let cmp_accept : Int = 0xC000 // encoded Accept
+
+///|
+let cmp_reduce_base : Int = 0x8000 // Reduce prefix
+
+///|
+let cmp_empty_acts : Int = 0xFFFE // nonassoc: empty action list
+
+///|
+let cmp_overflow : Int = 0xFFFF // GLR overflow (look in overflow table)
+
+// ─── single-action codec ──────────────────────────────────────────────────────
+
+///|
+fn encode_act_u16(act : Action) -> Int {
+  match act {
+    Shift(s) => s & 0x7FFF
+    Reduce(p) => cmp_reduce_base | (p & 0x3FFF)
+    Accept => cmp_accept
+  }
+}
+
+///|
+fn decode_act_u16(v : Int) -> Action {
+  if v == cmp_accept {
+    Accept
+  } else if v >= cmp_reduce_base {
+    Reduce(v & 0x3FFF)
+  } else {
+    Shift(v)
+  }
+}
+
+// ─── greedy displacement packer ──────────────────────────────────────────────
+
+///|
+/// Greedy displacement-table packer.
+///
+/// - `num_rows` — row count; row IDs are in \[0, num_rows).
+/// - `rows`     — array of (row_id, entries) where entries = [(sym, val)].
+///               Only rows with at least one entry need to be listed; empty
+///               rows are implicitly assigned displacement 0.
+///
+/// Returns `(disp, check, value)`:
+///   `disp[r]`  = non-negative displacement for row r.
+///   `check[p]` = cmp_check_empty (0xFFFF) if slot is free; else the row_id.
+///   `value[p]` = packed value placed there.
+fn displacement_pack(
+  num_rows : Int,
+  rows : Array[(Int, Array[(Int, Int)])],
+) -> (Array[Int], Array[Int], Array[Int]) {
+  let disp : Array[Int] = []
+  for _ in 0..<num_rows {
+    disp.push(0)
+  }
+  let check : Array[Int] = []
+  let value : Array[Int] = []
+  // Sort rows: densest first → better overlap (greedy heuristic)
+  let sorted = rows.copy()
+  sorted.sort_by(fn(a, b) { b.1.length().compare(a.1.length()) })
+  for row in sorted {
+    let (row_id, entries) = row
+    if entries.length() > 0 {
+      // Find minimum displacement d ≥ 0 where all (sym, _) slots are free.
+      let mut d = 0
+      while true {
+        let mut fits = true
+        for e in entries {
+          let (sym, _) = e
+          let pos = d + sym
+          if pos < check.length() && check[pos] != cmp_check_empty {
+            fits = false
+            break
+          }
+        }
+        if fits {
+          break
+        }
+        d = d + 1
+      }
+      disp[row_id] = d
+      // Place entries at displacement d.
+      for e in entries {
+        let (sym, val) = e
+        let pos = d + sym
+        while pos >= check.length() {
+          check.push(cmp_check_empty)
+          value.push(0)
+        }
+        check[pos] = row_id
+        value[pos] = val
+      }
+    }
+  }
+  (disp, check, value)
+}
+
+// ─── compressed action table write / read ────────────────────────────────────
+
+///|
+/// Write the action table using displacement (offset-vector) compression.
+/// `eoi_sym` is the non-negative symbol ID assigned to eoi_id (= -1).
+fn write_compressed_action(
+  w : BinWriter,
+  action : Map[(StateId, TerminalId), Array[Action]],
+  num_states : Int,
+  eoi_sym : Int,
+) -> Unit {
+  // Build per-state entry lists; GLR conflicts go into overflow.
+  let state_rows : Array[Array[(Int, Int)]] = []
+  for _ in 0..<num_states {
+    state_rows.push([])
+  }
+  let overflow : Array[(Int, Int, Array[Action])] = []
+  for kv in action {
+    let ((state, term), acts) = kv
+    let sym = if term < 0 { eoi_sym } else { term }
+    let encoded = if acts.length() == 0 {
+      cmp_empty_acts
+    } else if acts.length() == 1 {
+      encode_act_u16(acts[0])
+    } else {
+      overflow.push((state, sym, acts))
+      cmp_overflow
+    }
+    if state >= 0 && state < num_states {
+      state_rows[state].push((sym, encoded))
+    }
+  }
+  // Sort each row's entries by sym for determinism.
+  for row in state_rows {
+    row.sort_by(fn(a, b) { a.0.compare(b.0) })
+  }
+  // Build rows array for packing.
+  let rows : Array[(Int, Array[(Int, Int)])] = []
+  for i in 0..<num_states {
+    rows.push((i, state_rows[i]))
+  }
+  let (disp, ck, vl) = displacement_pack(num_states, rows)
+  // Sort overflow for determinism.
+  overflow.sort_by(fn(a, b) {
+    let (sa, syma, _) = a
+    let (sb, symb, _) = b
+    if sa != sb {
+      sa.compare(sb)
+    } else {
+      syma.compare(symb)
+    }
+  })
+  // Write: eoi_sym, packed_len, disp[], check[], value[], overflow.
+  w.write_u16_le(eoi_sym)
+  w.write_u32_le(ck.length())
+  for d in disp {
+    w.write_u32_le(d)
+  }
+  for v in ck {
+    w.write_u16_le(v)
+  }
+  for v in vl {
+    w.write_u16_le(v)
+  }
+  w.write_u32_le(overflow.length())
+  for entry in overflow {
+    let (state, sym, acts) = entry
+    w.write_u16_le(state)
+    w.write_u16_le(sym)
+    w.write_u8(acts.length())
+    for act in acts {
+      write_action(w, act)
+    }
+  }
+}
+
+///|
+/// Read a compressed action table (version 3 format) and reconstruct the map.
+fn read_compressed_action(
+  r : BinReader,
+  num_states : Int,
+) -> Map[(StateId, TerminalId), Array[Action]] raise BinError {
+  let eoi_sym = r.read_u16_le()
+  let packed_len = r.read_u32_le()
+  let disp : Array[Int] = []
+  for _ in 0..<num_states {
+    disp.push(r.read_u32_le())
+  }
+  let ck : Array[Int] = []
+  for _ in 0..<packed_len {
+    ck.push(r.read_u16_le())
+  }
+  let vl : Array[Int] = []
+  for _ in 0..<packed_len {
+    vl.push(r.read_u16_le())
+  }
+  let ovf_cnt = r.read_u32_le()
+  let overflow : Map[(Int, Int), Array[Action]] = Map::new()
+  for _ in 0..<ovf_cnt {
+    let state = r.read_u16_le()
+    let sym = r.read_u16_le()
+    let n = r.read_u8()
+    let acts : Array[Action] = []
+    for _ in 0..<n {
+      acts.push(read_action(r))
+    }
+    overflow.set((state, sym), acts)
+  }
+  // Reconstruct: scan packed array; sym = pos - disp[state].
+  let action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
+  for pos in 0..<packed_len {
+    let state = ck[pos]
+    if state != cmp_check_empty {
+      let sym = pos - disp[state]
+      let term : TerminalId = if sym == eoi_sym { eoi_id } else { sym }
+      let v = vl[pos]
+      let acts : Array[Action] = if v == cmp_empty_acts {
+        []
+      } else if v == cmp_overflow {
+        match overflow.get((state, sym)) {
+          Some(a) => a
+          None => []
+        }
+      } else {
+        [decode_act_u16(v)]
+      }
+      action.set((state, term), acts)
+    }
+  }
+  action
+}
+
+// ─── compressed goto table write / read ──────────────────────────────────────
+
+///|
+/// Write the goto table using displacement compression.
+fn write_compressed_goto(
+  w : BinWriter,
+  goto_table : Map[(StateId, NonTerminalId), StateId],
+  num_states : Int,
+) -> Unit {
+  let state_rows : Array[Array[(Int, Int)]] = []
+  for _ in 0..<num_states {
+    state_rows.push([])
+  }
+  for kv in goto_table {
+    let ((state, nt), target) = kv
+    if state >= 0 && state < num_states {
+      state_rows[state].push((nt, target))
+    }
+  }
+  for row in state_rows {
+    row.sort_by(fn(a, b) { a.0.compare(b.0) })
+  }
+  let rows : Array[(Int, Array[(Int, Int)])] = []
+  for i in 0..<num_states {
+    rows.push((i, state_rows[i]))
+  }
+  let (disp, ck, vl) = displacement_pack(num_states, rows)
+  w.write_u32_le(ck.length())
+  for d in disp {
+    w.write_u32_le(d)
+  }
+  for v in ck {
+    w.write_u16_le(v)
+  }
+  for v in vl {
+    w.write_u16_le(v)
+  }
+}
+
+///|
+/// Read a compressed goto table (version 3 format) and reconstruct the map.
+fn read_compressed_goto(
+  r : BinReader,
+  num_states : Int,
+) -> Map[(StateId, NonTerminalId), StateId] raise BinError {
+  let packed_len = r.read_u32_le()
+  let disp : Array[Int] = []
+  for _ in 0..<num_states {
+    disp.push(r.read_u32_le())
+  }
+  let ck : Array[Int] = []
+  for _ in 0..<packed_len {
+    ck.push(r.read_u16_le())
+  }
+  let vl : Array[Int] = []
+  for _ in 0..<packed_len {
+    vl.push(r.read_u16_le())
+  }
+  let goto_table : Map[(StateId, NonTerminalId), StateId] = Map::new()
+  for pos in 0..<packed_len {
+    let state = ck[pos]
+    if state != cmp_check_empty {
+      let nt = pos - disp[state]
+      goto_table.set((state, nt), vl[pos])
+    }
+  }
+  goto_table
 }

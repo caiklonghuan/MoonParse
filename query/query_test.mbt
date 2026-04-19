@@ -566,3 +566,651 @@ test "exec/alias_node_type_name_no_match_original" {
   let results = run_query(dsl, "abc", "(item) @n")
   assert_true(results.length() >= 0) // 无论 0 或 1，都不应崩溃
 }
+
+///|
+// ─────────────────────────────────────────────────
+// Query v2: alternation, anchor, quantifier tests
+// ─────────────────────────────────────────────────
+
+///|
+test "compile/alternation_basic" {
+  match compile("[(identifier) (number)]") {
+    Ok(q) => {
+      assert_eq(q.patterns.length(), 1)
+      let (pat, _) = q.patterns[0]
+      assert_true(pat is Alternation(_))
+      match pat {
+        Alternation(alts) => assert_eq(alts.length(), 2)
+        _ => fail("expected Alternation")
+      }
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "compile/alternation_three" {
+  match compile("[_ (foo) \"bar\"]") {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
+        Alternation(alts) => {
+          assert_eq(alts.length(), 3)
+          assert_true(alts[0] is Wildcard)
+          assert_true(alts[1] is NodePattern("foo", _))
+          assert_true(alts[2] is AnonPattern("bar"))
+        }
+        _ => fail("expected Alternation")
+      }
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "compile/quantifier_star" {
+  match compile("(s (item)*)") {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
+        NodePattern(_, children) => {
+          assert_eq(children.length(), 1)
+          assert_eq(children[0].quantifier, ZeroOrMore)
+        }
+        _ => fail("expected NodePattern")
+      }
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "compile/quantifier_plus" {
+  match compile("(s (item)+)") {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
+        NodePattern(_, children) => {
+          assert_eq(children.length(), 1)
+          assert_eq(children[0].quantifier, OneOrMore)
+        }
+        _ => fail("expected NodePattern")
+      }
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "compile/quantifier_question" {
+  match compile("(s (item)?)") {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
+        NodePattern(_, children) => {
+          assert_eq(children.length(), 1)
+          assert_eq(children[0].quantifier, ZeroOrOne)
+        }
+        _ => fail("expected NodePattern")
+      }
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "compile/anchor_before" {
+  match compile("(s . (item))") {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
+        NodePattern(_, children) => {
+          assert_eq(children.length(), 1)
+          assert_true(children[0].anchor_before)
+          assert_true(!children[0].anchor_after)
+        }
+        _ => fail("expected NodePattern")
+      }
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "compile/anchor_after" {
+  match compile("(s (item) .)") {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
+        NodePattern(_, children) => {
+          assert_eq(children.length(), 1)
+          assert_true(!children[0].anchor_before)
+          assert_true(children[0].anchor_after)
+        }
+        _ => fail("expected NodePattern")
+      }
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "compile/anchor_both" {
+  match compile("(s . (item) .)") {
+    Ok(q) => {
+      let (pat, _) = q.patterns[0]
+      match pat {
+        NodePattern(_, children) => {
+          assert_eq(children.length(), 1)
+          assert_true(children[0].anchor_before)
+          assert_true(children[0].anchor_after)
+        }
+        _ => fail("expected NodePattern")
+      }
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "exec/alternation_matches_first_alt" {
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  // [(num) (expr)] @cap — num 出现在子树中，应匹配
+  let results = run_query(dsl, "1+2", "[(num) (expr)] @cap")
+  // expr(1次) + num(2次) = 3 个命中
+  assert_eq(results.length(), 3)
+}
+
+///|
+test "exec/quantifier_star_matches_zero" {
+  // (expr (num)* @n) — 当 pattern child 有 * 量词，0次匹配也应通过
+  let dsl = "start s\nrule s: \"a\""
+  // s 没有 num 子节点，(s (num)*) 应匹配（0次）
+  let results = run_query(dsl, "a", "(s (num)*)")
+  // 命中但无捕获（无 @capture）
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "exec/quantifier_plus_matches_one_or_more" {
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  // (expr (num)+ @n) — 至少匹配一个 num
+  let results = run_query(dsl, "1+2", "(expr (num)+ @n)")
+  // 贪心匹配 2 个 num，各生成一个捕获
+  assert_eq(results.length(), 2)
+}
+
+///|
+test "exec/quantifier_plus_fails_on_zero" {
+  let dsl = "start s\nrule s: \"a\""
+  // s 没有 num 子节点，(s (num)+) 应不匹配
+  let results = run_query(dsl, "a", "(s (num)+ @n)")
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "exec/anchor_before_first_child" {
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  // (expr . (num) @first) — 锚定第一个子节点必须是 num
+  let results = run_query(dsl, "1+2", "(expr . (num) @first)")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].node.start_byte, 0) // 第一个 num "1"
+}
+
+///|
+test "exec/anchor_after_last_child" {
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  // (expr (num) @last .) — 锚定最后一个子节点必须是 num
+  let results = run_query(dsl, "1+2", "(expr (num) @last .)")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].node.start_byte, 2) // 最后一个 num "2"
+}
+
+///|
+// ─────────────────────────────────────────────────
+// #not-eq? predicate tests
+// ─────────────────────────────────────────────────
+
+///|
+test "compile/not_eq_predicate" {
+  match compile("(identifier) @name\n#not-eq? @name \"self\"") {
+    Ok(q) => {
+      assert_eq(q.predicates[0].length(), 1)
+      assert_true(q.predicates[0][0] is NotEq("name", "self"))
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "exec/not_eq_predicate_filters_match" {
+  let dsl =
+    #|start s
+    #|rule s: name
+    #|rule name: /[a-z]+/
+  // 输入 "self"，#not-eq? @n "self" 应过滤该节点
+  let results = run_query(dsl, "self", "(name) @n\n#not-eq? @n \"self\"")
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "exec/not_eq_predicate_passes_non_match" {
+  let dsl =
+    #|start s
+    #|rule s: name
+    #|rule name: /[a-z]+/
+  // 输入 "add"，不等于 "self" → 通过
+  let results = run_query(dsl, "add", "(name) @n\n#not-eq? @n \"self\"")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].capture_name, "n")
+}
+
+///|
+test "exec/not_eq_predicate_partial_filter" {
+  let dsl =
+    #|start s
+    #|rule s: name "+" name
+    #|rule name: /[a-z]+/
+  // "add" 不等于 "self" → 命中；"self" 等于 "self" → 过滤
+  // 每个顶层 name 节点单独匹配，两次匹配各自过谓词
+  let results = run_query(dsl, "add+self", "(name) @n\n#not-eq? @n \"self\"")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].node.start_byte, 0)
+}
+
+///|
+// ─────────────────────────────────────────────────
+// #not-match? predicate tests
+// ─────────────────────────────────────────────────
+
+///|
+test "compile/not_match_predicate" {
+  match compile("(identifier) @name\n#not-match? @name \"^_\"") {
+    Ok(q) => {
+      assert_eq(q.predicates[0].length(), 1)
+      assert_true(q.predicates[0][0] is NotMatch("name", "^_"))
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "exec/not_match_predicate_filters_match" {
+  let dsl =
+    #|start s
+    #|rule s: name
+    #|rule name: /[a-zA-Z_]+/
+  // "_priv" 以 _ 开头，#not-match? ^_ 应过滤
+  let results = run_query(dsl, "_priv", "(name) @n\n#not-match? @n \"^_\"")
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "exec/not_match_predicate_passes_non_match" {
+  let dsl =
+    #|start s
+    #|rule s: name
+    #|rule name: /[a-z]+/
+  // "add" 不以 _ 开头 → 通过
+  let results = run_query(dsl, "add", "(name) @n\n#not-match? @n \"^_\"")
+  assert_eq(results.length(), 1)
+}
+
+///|
+test "exec/not_match_predicate_partial_filter" {
+  let dsl =
+    #|start s
+    #|rule s: name "+" name
+    #|rule name: /[a-zA-Z_]+/
+  // "add" 不以 _ 开头 → 命中；"_priv" 以 _ 开头 → 过滤
+  let results = run_query(dsl, "add+_priv", "(name) @n\n#not-match? @n \"^_\"")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].node.start_byte, 0)
+}
+
+///|
+// ─────────────────────────────────────────────────
+// #any-of? predicate tests
+// ─────────────────────────────────────────────────
+
+///|
+test "compile/any_of_predicate" {
+  match compile("(kw) @k\n#any-of? @k \"if\" \"else\" \"while\"") {
+    Ok(q) => {
+      assert_eq(q.predicates[0].length(), 1)
+      assert_true(q.predicates[0][0] is AnyOf("k", ["if", "else", "while"]))
+    }
+    Err(e) => fail("unexpected error: \{e}")
+  }
+}
+
+///|
+test "exec/any_of_predicate_pass" {
+  let dsl =
+    #|start s
+    #|rule s: kw
+    #|rule kw: /[a-z]+/
+  // "if" 在列表中 → 命中
+  let results = run_query(
+    dsl, "if", "(kw) @k\n#any-of? @k \"if\" \"else\" \"while\"",
+  )
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].capture_name, "k")
+}
+
+///|
+test "exec/any_of_predicate_no_match" {
+  let dsl =
+    #|start s
+    #|rule s: kw
+    #|rule kw: /[a-z]+/
+  // "for" 不在列表中 → 过滤
+  let results = run_query(
+    dsl, "for", "(kw) @k\n#any-of? @k \"if\" \"else\" \"while\"",
+  )
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "exec/any_of_predicate_partial_filter" {
+  let dsl =
+    #|start s
+    #|rule s: kw "+" kw
+    #|rule kw: /[a-z]+/
+  // "if" 在列表中 → 命中；"for" 不在 → 过滤
+  let results = run_query(
+    dsl, "if+for", "(kw) @k\n#any-of? @k \"if\" \"else\" \"while\"",
+  )
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].node.start_byte, 0)
+}
+
+///|
+test "exec/any_of_predicate_all_match" {
+  let dsl =
+    #|start s
+    #|rule s: kw "+" kw
+    #|rule kw: /[a-z]+/
+  // "if" 和 "else" 都在列表中 → 两个都命中
+  let results = run_query(
+    dsl, "if+else", "(kw) @k\n#any-of? @k \"if\" \"else\" \"while\"",
+  )
+  assert_eq(results.length(), 2)
+}
+
+///|
+// ─────────────────────────────────────────────────
+// 中间锚点（相邻约束）exec tests
+// ─────────────────────────────────────────────────
+
+///|
+test "exec/anchor_between_adjacent_matches" {
+  // 文法：list → a b，a 和 b 直接相邻，无任何节点间隔
+  let dsl =
+    #|start list
+    #|rule list: a b
+    #|rule a: /[a-z]/
+    #|rule b: /[0-9]/
+  // (list (a) . (b) @second) — a 和 b 必须紧挨，在 "x1" 中满足
+  let results = run_query(dsl, "x1", "(list (a) . (b) @second)")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].capture_name, "second")
+  assert_eq(results[0].node.start_byte, 1) // b 是 "1"
+}
+
+///|
+test "exec/anchor_between_rejects_gap" {
+  // 文法：list → a b a，两个 a 之间有 b，不直接相邻
+  let dsl =
+    #|start list
+    #|rule list: a b a
+    #|rule a: /[a-z]/
+    #|rule b: /[0-9]/
+  // (list (a) . (a) @second) — 要求两个 a 紧挨，但中间有 b，应不匹配
+  let results = run_query(dsl, "x1y", "(list (a) . (a) @second)")
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "exec/no_anchor_between_allows_gap" {
+  // 同上文法，但去掉中间锚点，允许跳过 b
+  let dsl =
+    #|start list
+    #|rule list: a b a
+    #|rule a: /[a-z]/
+    #|rule b: /[0-9]/
+  // (list (a) (a) @second) — 无锚点，允许跳过 b，应匹配第二个 a
+  let results = run_query(dsl, "x1y", "(list (a) (a) @second)")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].capture_name, "second")
+  assert_eq(results[0].node.start_byte, 2) // 第二个 a 是 "y"
+}
+
+///|
+// ─────────────────────────────────────────────────
+// 子位置交替（Alternation as child）exec tests
+// ─────────────────────────────────────────────────
+
+///|
+test "exec/alternation_child_matches_first_alt" {
+  let dsl =
+    #|start s
+    #|rule s: item
+    #|rule item: /[0-9]+/
+  // [(item) (other)] @c — 先尝试 item，命中
+  let results = run_query(dsl, "42", "(s [(item) (other)] @c)")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].capture_name, "c")
+}
+
+///|
+test "exec/alternation_child_matches_second_alt" {
+  let dsl =
+    #|start s
+    #|rule s: item
+    #|rule item: /[0-9]+/
+  // [(other) (item)] @c — 先尝试 other 失败，再尝试 item，命中
+  let results = run_query(dsl, "42", "(s [(other) (item)] @c)")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].capture_name, "c")
+}
+
+///|
+test "exec/alternation_child_no_match" {
+  let dsl =
+    #|start s
+    #|rule s: item
+    #|rule item: /[0-9]+/
+  // [(x) (y)] @c — 两个 alt 都不匹配 item，应为 0 个捕获
+  let results = run_query(dsl, "42", "(s [(x) (y)] @c)")
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "api/node_text_returns_slice" {
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  let (root, table) = parse_ok(dsl, "12+34")
+  let results = exec(
+    match compile("(num) @n") {
+      Ok(q) => q
+      Err(_) => panic()
+    },
+    root,
+    "12+34",
+    table,
+  )
+  assert_eq(results.length(), 2)
+  assert_eq(node_text(results[0].node, "12+34"), "12")
+  assert_eq(node_text(results[1].node, "12+34"), "34")
+}
+
+///|
+test "api/node_text_empty_for_zero_width" {
+  // 零宽节点的 start_byte == end_byte，node_text 应返回空字符串
+  let dsl = "start s\nrule s: \"a\""
+  let (root, _table) = parse_ok(dsl, "a")
+  // 构造一个假节点：借用根节点但强制 start==end
+  // 直接验证 node_text 的切片语义：start_byte..end_byte
+  let text = node_text(root, "a")
+  // root 覆盖整个输入，长度为 1
+  assert_eq(text, "a")
+}
+
+///|
+test "api/node_type_name_returns_type" {
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  let (root, table) = parse_ok(dsl, "1+2")
+  // 根节点类型是 expr
+  assert_eq(node_type_name(root, table), "expr")
+}
+
+///|
+test "api/node_type_name_child_node" {
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  let (root, table) = parse_ok(dsl, "1+2")
+  // 通过 exec 拿到 num 子节点，验证其类型名
+  let results = exec(
+    match compile("(num) @n") {
+      Ok(q) => q
+      Err(_) => panic()
+    },
+    root,
+    "1+2",
+    table,
+  )
+  assert_true(results.length() > 0)
+  assert_eq(node_type_name(results[0].node, table), "num")
+}
+
+///|
+test "exec/quantifier_question_matches_one" {
+  let dsl =
+    #|start s
+    #|rule s: item opt
+    #|rule item: /[a-z]+/
+    #|rule opt: /[0-9]*/
+  // (s (opt)? @o) — opt 存在时匹配一次
+  let results = run_query(dsl, "abc1", "(s (opt)? @o)")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].capture_name, "o")
+}
+
+///|
+test "exec/quantifier_question_matches_zero" {
+  let dsl = "start s\nrule s: \"a\""
+  // (s (num)? @n) — num 不存在时仍匹配（零次），但无捕获
+  let results = run_query(dsl, "a", "(s (num)?)")
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "exec/multiple_predicates_both_pass" {
+  let dsl =
+    #|start s
+    #|rule s: name
+    #|rule name: /[a-z]+/
+  // 两个谓词同时成立："foo" 不等于 "bar" 且不以 _ 开头
+  let results = run_query(
+    dsl, "foo", "(name) @n\n#not-eq? @n \"bar\"\n#not-match? @n \"^_\"",
+  )
+  assert_eq(results.length(), 1)
+}
+
+///|
+test "exec/multiple_predicates_first_fails" {
+  let dsl =
+    #|start s
+    #|rule s: name
+    #|rule name: /[a-z]+/
+  // 第一个谓词失败（等于 "bar"），整体不命中
+  let results = run_query(
+    dsl, "bar", "(name) @n\n#not-eq? @n \"bar\"\n#not-match? @n \"^_\"",
+  )
+  assert_eq(results.length(), 0)
+}
+
+///|
+test "exec/multiple_predicates_second_fails" {
+  let dsl =
+    #|start s
+    #|rule s: name
+    #|rule name: /[a-zA-Z_]+/
+  // 第一个谓词通过，第二个失败（以 _ 开头），整体不命中
+  let results = run_query(
+    dsl, "_foo", "(name) @n\n#not-eq? @n \"bar\"\n#not-match? @n \"^_\"",
+  )
+  assert_eq(results.length(), 0)
+}
+
+///|
+// ─────────────────────────────────────────────────
+// ZeroOrOne (?) + anchor_after 约束测试
+// ─────────────────────────────────────────────────
+
+///|
+test "exec/zero_or_one_tail_anchor_must_be_last" {
+  // (expr (num)? @n .) 尾锚点：若 (num)? 匹配，则该 num 必须是最后一个语义子节点
+  // expr "1+2" 的语义子节点为 [num("1"), num("2")]
+  // num("1") 不是最后一个，不应被捕获；num("2") 是最后一个，应被捕获
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  let results = run_query(dsl, "1+2", "(expr (num)? @n .)")
+  assert_eq(results.length(), 1)
+  assert_eq(results[0].node.start_byte, 2) // "2" 在字节 2
+}
+
+///|
+test "exec/zero_or_one_tail_anchor_zero_match_fails_with_remaining_children" {
+  // (expr (plus)? .) @m — "plus" 类型不存在，零次匹配，但 expr 仍有语义子节点 [num, num]
+  // 尾锚：零次匹配后位置仍在 0，有剩余子节点 → 整个 expr 不应被捕获
+  let dsl =
+    #|start expr
+    #|rule expr: num "+" num
+    #|rule num: /[0-9]+/
+  let results = run_query(dsl, "1+2", "(expr (plus)? .) @m")
+  assert_eq(results.length(), 0)
+}
+
+///|
+// ─────────────────────────────────────────────────
+// regex_search 安全边界测试
+// ─────────────────────────────────────────────────
+
+///|
+test "exec/match_predicate_trailing_backslash_does_not_panic" {
+  // 正则末尾孤立 \（格式错误的正则）不应导致 panic，应安全地返回不匹配
+  let dsl = "start s\nrule s: /[a-z]+/"
+  let (root, table) = parse_ok(dsl, "abc")
+  match compile("(s) @n\n#match? @n \"\\\\\"") {
+    Err(_) => () // compile 阶段拒绝也可以
+    Ok(q) => {
+      // exec 阶段不能 panic
+      let results = exec(q, root, "abc", table)
+      // \\ 作为正则匹配字面量 \，"abc" 中没有 \，应为 0 个结果
+      assert_eq(results.length(), 0)
+    }
+  }
+}

@@ -5,6 +5,7 @@
 fn main {
   // 初始化 reporter（自动检测终端颜色）
   init_reporter()
+  ignore(@utf8.decode_lossy(Bytes::new(0)))
 
   // 获取命令行参数（跳过程序名，即第一个元素）
   let all_args = @env.args()
@@ -27,6 +28,12 @@ fn main {
               Some("check") => check_usage()
               Some("fmt") => fmt_usage()
               Some("query") => query_usage()
+              Some("test") => test_usage()
+              Some("generate-types") => generate_types_usage()
+              Some("build") => build_usage()
+              Some("wasm") => wasm_usage()
+              Some("dump") => dump_usage()
+              Some("clean") => clean_usage()
               Some(other) => "unknown command '\{other}'\n\{global_usage()}"
             },
           )
@@ -42,6 +49,11 @@ fn main {
         Fmt(args) => cmd_fmt(args)
         Query(args) => cmd_query(args)
         Test(args) => cmd_run_tests(args)
+        GenerateTypes(args) => cmd_generate_types(args)
+        Build(args) => cmd_build(args)
+        Wasm(args) => cmd_wasm(args)
+        Dump(args) => cmd_dump(args)
+        Clean(args) => cmd_clean(args)
       }
   }
 

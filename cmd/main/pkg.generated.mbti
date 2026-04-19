@@ -6,10 +6,17 @@ import {
   "caiklonghuan/MoonParse/query",
   "caiklonghuan/MoonParse/runtime",
   "caiklonghuan/MoonParse/tablegen",
+  "moonbitlang/core/debug",
 }
 
 // Values
+pub fn cmd_build(BuildArgs) -> Int
+
 pub fn cmd_check(CheckArgs) -> Int
+
+pub fn cmd_clean(CleanArgs) -> Int
+
+pub fn cmd_dump(DumpArgs) -> Int
 
 pub fn cmd_fmt(FmtArgs) -> Int
 
@@ -21,9 +28,13 @@ pub fn cmd_query(QueryArgs) -> Int
 
 pub fn cmd_run_tests(TestArgs) -> Int
 
+pub fn cmd_wasm(WasmArgs) -> Int
+
 pub fn init_reporter() -> Unit
 
 pub fn isatty(Int) -> Bool
+
+pub fn make_dir(String) -> Result[Unit, String]
 
 pub fn parse_args(Array[String]) -> Result[Command, String]
 
@@ -41,6 +52,8 @@ pub fn read_file(String) -> Result[String, String]
 
 pub fn read_stdin() -> String
 
+pub fn remove_dir_all(String) -> Result[Unit, String]
+
 pub fn report_conflicts(Array[@tablegen.ConflictReport]) -> Unit
 
 pub fn report_grammar_parse_error(@grammar.ParseError, String?, String?) -> Unit
@@ -53,6 +66,8 @@ pub fn report_summary(Int, Int) -> Unit
 
 pub fn report_validation_errors(Array[@grammar.ValidationError], String?) -> Unit
 
+pub fn report_validation_warnings(Array[@grammar.ValidationError], String?) -> Unit
+
 pub fn set_color_output(Bool?) -> Unit
 
 pub fn set_quiet(Bool) -> Unit
@@ -64,10 +79,22 @@ pub fn write_file(String, String) -> Result[Unit, String]
 // Errors
 
 // Types and methods
+pub struct BuildArgs {
+  input : String
+  outdir : String?
+  wasm : Bool
+} derive(@debug.Debug)
+pub impl Show for BuildArgs
+
 pub struct CheckArgs {
   grammar_file : String
-}
+} derive(@debug.Debug)
 pub impl Show for CheckArgs
+
+pub struct CleanArgs {
+  force : Bool
+} derive(@debug.Debug)
+pub impl Show for CleanArgs
 
 pub enum Command {
   Generate(GenerateArgs)
@@ -76,16 +103,33 @@ pub enum Command {
   Fmt(FmtArgs)
   Query(QueryArgs)
   Test(TestArgs)
+  Build(BuildArgs)
+  Wasm(WasmArgs)
+  Dump(DumpArgs)
+  Clean(CleanArgs)
   Help(String?)
   Version
-}
+} derive(@debug.Debug)
 pub impl Show for Command
+
+pub struct DumpArgs {
+  target : DumpTarget
+  input : String
+} derive(@debug.Debug)
+pub impl Show for DumpArgs
+
+pub enum DumpTarget {
+  Ir
+  Table
+  Automaton
+} derive(@debug.Debug)
+pub impl Show for DumpTarget
 
 pub struct FmtArgs {
   grammar_file : String
   check : Bool
   stdout : Bool
-}
+} derive(@debug.Debug)
 pub impl Show for FmtArgs
 
 pub struct GenerateArgs {
@@ -94,15 +138,14 @@ pub struct GenerateArgs {
   json : Bool
   diagnostic : Bool
   force : Bool
-}
+} derive(@debug.Debug)
 pub impl Show for GenerateArgs
 
 pub enum OutputFormat {
   Sexp
   Json
   Dot
-}
-pub impl Eq for OutputFormat
+} derive(Eq, @debug.Debug)
 pub impl Show for OutputFormat
 
 pub struct ParseArgs {
@@ -112,7 +155,7 @@ pub struct ParseArgs {
   format : OutputFormat
   tokens : Bool
   error_summary : Bool
-}
+} derive(@debug.Debug)
 pub impl Show for ParseArgs
 
 pub struct QueryArgs {
@@ -122,13 +165,20 @@ pub struct QueryArgs {
   table_file : String?
   json : Bool
   count : Bool
-}
+} derive(@debug.Debug)
 pub impl Show for QueryArgs
 
 pub struct TestArgs {
   test_dir : String?
-}
+} derive(@debug.Debug)
 pub impl Show for TestArgs
+
+pub struct WasmArgs {
+  grammar_file : String?
+  table_file : String?
+  outdir : String?
+} derive(@debug.Debug)
+pub impl Show for WasmArgs
 
 // Type aliases
 

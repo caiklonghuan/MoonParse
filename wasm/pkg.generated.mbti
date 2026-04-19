@@ -7,6 +7,8 @@ import {
 }
 
 // Values
+pub fn builtin_grammars_json() -> String
+
 pub fn cst_to_json(@runtime.CstNode, String, @tablegen.ParseTable) -> String
 
 pub fn cursor_free(Int) -> Unit
@@ -31,7 +33,11 @@ pub fn cursor_node_extra(Int) -> Int
 
 pub fn cursor_node_field(Int) -> String
 
+pub fn cursor_node_has_changes(Int) -> Int
+
 pub fn cursor_node_is_error(Int) -> Int
+
+pub fn cursor_node_is_keyword(Int) -> Int
 
 pub fn cursor_node_is_missing(Int) -> Int
 
@@ -49,6 +55,8 @@ pub fn cursor_node_text(Int) -> String
 
 pub fn cursor_node_type(Int) -> String
 
+pub fn grammar_validate_dsl(String) -> String
+
 pub fn highlight_exec(Int, Int) -> String
 
 pub fn highlight_exec_with_locals(Int, Int, Int) -> String
@@ -57,19 +65,39 @@ pub fn highlight_names_json() -> String
 
 pub fn moonparse_version() -> String
 
+pub fn parse_config_reset() -> Unit
+
+pub fn parse_config_set(Int, Int, Int, Int, Int, Int, Int) -> Unit
+
+pub fn parse_error_last() -> String
+
 pub fn parse_full(Int, String) -> Int
 
 pub fn parse_incremental(Int, Int, String, Int, Int, Int, Int, Int, Int, Int, Int, Int) -> Int
 
+pub fn parser_create_from_base64(String) -> Int
+
+pub fn parser_create_from_bytes(Bytes) -> Int
+
 pub fn parser_create_from_dsl(String) -> Int
+
+pub fn parser_create_from_grammar_json(String) -> Int
 
 pub fn parser_create_from_json(String) -> Int
 
+pub fn parser_create_from_json_with_builtin(String, String) -> Int
+
 pub fn parser_diagnostics_json(Int) -> String
+
+pub fn parser_dsl_error_last() -> String
 
 pub fn parser_free(Int) -> Unit
 
 pub fn parser_get_dsl(Int) -> String
+
+pub fn parser_table_to_base64(Int) -> String
+
+pub fn parser_table_to_bytes(Int) -> Bytes
 
 pub fn parser_table_to_json(Int) -> String
 
@@ -80,6 +108,10 @@ pub fn query_compile_error_last() -> String
 pub fn query_exec(Int, Int) -> String
 
 pub fn query_free(Int) -> Unit
+
+pub fn query_resolve_locals(Int, Int) -> String
+
+pub fn tree_byte_offset_to_char_col(String, Int, Int) -> Int
 
 pub fn tree_error_summary(Int) -> String
 

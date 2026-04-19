@@ -1,6 +1,5 @@
 // serialize_test.mbt — table_to_json() / serialize_table / deserialize_table 黑盒测试
 
-
 ///|
 test "table_to_json 顶层结构" {
   let cases : Array[(String, String, Int)] = [
@@ -369,4 +368,266 @@ test "table_from_json: invalid JSON returns Err" {
     Err(_) => () // 期望失败
     Ok(_) => assert_true(false)
   }
+}
+
+// ── 版本 3 压缩格式测试 ────────────────────────────────────────────────────────
+
+///|
+/// 版本 3 二进制头：magic 第 4 字节应为 0x03
+test "serialize_table v3: magic byte is 0x03" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\"")
+  let b = serialize_table(table)
+  // bytes 0..3 = 0x4D 0x50 0x54 0x03
+  assert_eq(b[3].to_int(), 0x03)
+}
+
+///|
+/// 往返：states 数量不变（基础正确性）
+test "serialize_table v3 roundtrip: states" {
+  let cases = [
+    "start s\nrule s: \"a\"", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", "start s\nrule s: \"a\" | \"b\" | \"c\"",
+    "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
+  ]
+  for dsl in cases {
+    let (table, _) = gen_ok(dsl)
+    let b = serialize_table(table)
+    match deserialize_table(b) {
+      Err(msg) => assert_eq(msg, "")
+      Ok(t2) => assert_eq(t2.states, table.states)
+    }
+  }
+}
+
+///|
+/// 往返：action 表条目数量与每个 (state, terminal) 的动作数完全一致
+test "serialize_table v3 roundtrip: action table entries" {
+  let cases = [
+    "start s\nrule s: \"a\"", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
+  ]
+  for dsl in cases {
+    let (table, _) = gen_ok(dsl)
+    let b = serialize_table(table)
+    match deserialize_table(b) {
+      Err(msg) => assert_eq(msg, "")
+      Ok(t2) => {
+        assert_eq(t2.action.length(), table.action.length())
+        // 每个条目的动作列表长度一致
+        for key, acts in table.action {
+          match t2.action.get(key) {
+            None => assert_eq(false, true) // 条目缺失
+            Some(acts2) => assert_eq(acts2.length(), acts.length())
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 往返：goto 表条目数量与每个 (state, nt) 的目标状态完全一致
+test "serialize_table v3 roundtrip: goto table entries" {
+  let cases = [
+    "start s\nrule s: \"a\"", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",
+  ]
+  for dsl in cases {
+    let (table, _) = gen_ok(dsl)
+    let b = serialize_table(table)
+    match deserialize_table(b) {
+      Err(msg) => assert_eq(msg, "")
+      Ok(t2) => {
+        assert_eq(t2.goto_table.length(), table.goto_table.length())
+        for key, target in table.goto_table {
+          assert_eq(t2.goto_table.get(key), Some(target))
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 往返：productions 完整还原（id / head / body 长度一致）
+test "serialize_table v3 roundtrip: productions" {
+  let (table, _) = gen_ok("start e\nrule e: e \"+\" t | t\nrule t: \"n\"")
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      assert_eq(t2.productions.length(), table.productions.length())
+      for i in 0..<table.productions.length() {
+        assert_eq(t2.productions[i].id, table.productions[i].id)
+        assert_eq(t2.productions[i].head, table.productions[i].head)
+        assert_eq(
+          t2.productions[i].body.length(),
+          table.productions[i].body.length(),
+        )
+      }
+    }
+  }
+}
+
+///|
+/// 往返：GLR 冲突（悬挂 else）多动作条目经压缩后正确还原
+test "serialize_table v3 roundtrip: GLR conflict multi-action entries" {
+  // 悬挂 else 文法存在 S/R 冲突，action 表中有多动作条目
+  let dsl = "start s\nrule s: \"i\" s \"e\" s | \"i\" s | \"x\""
+  let (table, _) = gen_ok(dsl)
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      assert_eq(t2.action.length(), table.action.length())
+      // 验证有多动作条目存在且数量一致
+      let mut multi_orig = 0
+      let mut multi_restored = 0
+      for _, acts in table.action {
+        if acts.length() > 1 {
+          multi_orig = multi_orig + 1
+        }
+      }
+      for _, acts in t2.action {
+        if acts.length() > 1 {
+          multi_restored = multi_restored + 1
+        }
+      }
+      assert_eq(multi_restored, multi_orig)
+    }
+  }
+}
+
+///|
+/// 往返：nonassoc 空动作列表条目（acts = []）正确还原
+test "serialize_table v3 roundtrip: nonassoc empty action entries" {
+  let dsl = "start e\nprecedence nonassoc ==\nrule e: e \"==\" e | /[a-z]+/"
+  let (table, _) = gen_ok(dsl)
+  // 统计原始空动作条目数
+  let mut empty_orig = 0
+  for _, acts in table.action {
+    if acts.length() == 0 {
+      empty_orig = empty_orig + 1
+    }
+  }
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      let mut empty_restored = 0
+      for _, acts in t2.action {
+        if acts.length() == 0 {
+          empty_restored = empty_restored + 1
+        }
+      }
+      assert_eq(empty_restored, empty_orig)
+    }
+  }
+}
+
+// keyword_map / word_token / external_token_ids 往返
+
+///|
+test "serialize/deserialize preserves keyword_map" {
+  // 含关键字的文法：keyword_map 应含 "if"、"else" → TerminalId 映射
+  let (table, _) = gen_ok("start s\nrule s: \"if\" | \"else\" | /[a-z]+/")
+  assert_true(table.keyword_map.get("if") is Some(_))
+  assert_true(table.keyword_map.get("else") is Some(_))
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      assert_eq(t2.keyword_map.length(), table.keyword_map.length())
+      for text, tid in table.keyword_map {
+        assert_eq(t2.keyword_map.get(text), Some(tid))
+      }
+    }
+  }
+}
+
+///|
+test "serialize/deserialize: word_token None preserved" {
+  // 无 word 声明的文法：word_token 应为 None，往返后仍为 None
+  let (table, _) = gen_ok("start s\nrule s: \"a\"")
+  assert_eq(table.word_token, None)
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => assert_eq(t2.word_token, None)
+  }
+}
+
+///|
+test "serialize/deserialize preserves external_token_ids" {
+  // externals 声明：external_token_ids 应非空，往返后长度一致
+  let (table, _) = gen_ok("start s\nexternals [_ws]\nrule s: _ws \"a\"")
+  assert_true(table.external_token_ids.length() > 0)
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) =>
+      assert_eq(
+        t2.external_token_ids.length(),
+        table.external_token_ids.length(),
+      )
+  }
+}
+
+// production.prec / assoc 往返精确值
+
+///|
+test "serialize/deserialize preserves production prec and assoc" {
+  // prec.left(2, e "+" e)：对应产生式应有 prec=Some(2) 且 assoc=Left
+  let (table, _) = gen_ok("start e\nrule e: prec.left(2, e \"+\" e) | \"n\"")
+  let mut orig_prec : Int? = None
+  let mut orig_has_left = false
+  for prod in table.productions {
+    if prod.rule_name == "e" && prod.body.length() == 3 {
+      orig_prec = prod.prec
+      orig_has_left = match prod.assoc {
+        Some(@grammar.PrecKind::Left) => true
+        _ => false
+      }
+    }
+  }
+  assert_eq(orig_prec, Some(2))
+  assert_eq(orig_has_left, true)
+  let b = serialize_table(table)
+  match deserialize_table(b) {
+    Err(msg) => assert_eq(msg, "")
+    Ok(t2) => {
+      let mut found = false
+      for prod in t2.productions {
+        if prod.rule_name == "e" && prod.body.length() == 3 {
+          found = true
+          assert_eq(prod.prec, orig_prec)
+          assert_eq(
+            match prod.assoc {
+              Some(@grammar.PrecKind::Left) => true
+              _ => false
+            },
+            true,
+          )
+        }
+      }
+      assert_eq(found, true)
+    }
+  }
+}
+
+///|
+/// 序列化确定性：同一表多次压缩得到完全相同的字节
+test "serialize_table v3 deterministic" {
+  let (table, _) = gen_ok("start e\nrule e: e \"+\" t | t\nrule t: \"n\"")
+  let b1 = serialize_table(table)
+  let b2 = serialize_table(table)
+  assert_eq(b1.length(), b2.length())
+  for i in 0..<b1.length() {
+    assert_eq(b1[i], b2[i])
+  }
+}
+
+///|
+/// 压缩后二进制不超过预期上限（测试压缩效果）
+/// 对最简文法，压缩后字节数应远小于 4096 字节
+test "serialize_table v3: compressed size reasonable" {
+  let (table, _) = gen_ok("start s\nrule s: \"a\"")
+  let b = serialize_table(table)
+  assert_true(b.length() < 4096)
 }

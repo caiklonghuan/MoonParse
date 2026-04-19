@@ -8,15 +8,60 @@
 pub type ExternalScanner = (String, Int, Array[Int]) -> (Int, Int)?
 
 ///|
+/// 有状态外部词法器 trait
+///
+/// GLR 分支时需要对扫描器状态进行克隆，因此无法使用无状态函数回调。
+/// 实现者需要提供 scan（与 ExternalScanner 语义一致）和 clone_scanner
+/// 用于在 GLR 分支时复制一份独立的扫描器状态。
+/// clone_scanner 返回 &StatefulScanner 以保持 trait object-safe。
+pub(open) trait StatefulScanner {
+  scan(Self, String, Int, Array[Int]) -> (Int, Int)?
+  clone_scanner(Self) -> &StatefulScanner
+}
+
+///|
+/// 无状态 ExternalScanner 到 StatefulScanner 的适配器
+///
+/// 将无状态函数回调包装为 StatefulScanner trait object。
+/// clone 操作直接共享同一个函数引用（无状态，无需深拷贝）。
+pub struct ExternalScannerState {
+  func : ExternalScanner
+}
+
+///|
+impl StatefulScanner for ExternalScannerState with scan(self, input, pos, tids) {
+  (self.func)(input, pos, tids)
+}
+
+///|
+impl StatefulScanner for ExternalScannerState with clone_scanner(self) {
+  { func: self.func } as &StatefulScanner
+}
+
+///|
+/// 将无状态 ExternalScanner 包装为 &StatefulScanner trait object。
+///
+/// 用于将旧式无状态回调接入新的有状态 API 管线，
+/// 例如在 GLR 分支时不需要真正克隆状态的场景。
+pub fn external_scanner_to_stateful(
+  scanner : ExternalScanner,
+) -> &StatefulScanner {
+  ({ func: scanner } : ExternalScannerState) as &StatefulScanner
+}
+
+///|
 /// 词法引擎
 pub struct LexerEngine {
   dfa : @tablegen.LexerDfa
   /// 单槽 DFA 结果缓存：GLR 多版本同位置时避免重复扫描
   mut cached_pos : Int
   mut cached_valid_hash : Int
+  mut cached_valid_arr : Array[Int] // 精确匹配用，防止哈希碰撞
   mut cached_result : (Token?, Int)
   /// 外部词法器回调（可选）
   external_scanner : ExternalScanner?
+  /// 有状态外部词法器（可选，与 external_scanner 互斥，优先使用）
+  stateful_scanner : &StatefulScanner?
 }
 
 ///|
@@ -25,8 +70,10 @@ pub fn LexerEngine::new(dfa : @tablegen.LexerDfa) -> LexerEngine {
     dfa,
     cached_pos: -1,
     cached_valid_hash: 0,
+    cached_valid_arr: [],
     cached_result: (None, 0),
     external_scanner: None,
+    stateful_scanner: None,
   }
 }
 
@@ -40,8 +87,27 @@ pub fn LexerEngine::new_with_external(
     dfa,
     cached_pos: -1,
     cached_valid_hash: 0,
+    cached_valid_arr: [],
     cached_result: (None, 0),
     external_scanner: Some(scanner),
+    stateful_scanner: None,
+  }
+}
+
+///|
+/// 创建携带有状态外部词法器的 LexerEngine
+pub fn LexerEngine::new_with_stateful(
+  dfa : @tablegen.LexerDfa,
+  scanner : &StatefulScanner,
+) -> LexerEngine {
+  {
+    dfa,
+    cached_pos: -1,
+    cached_valid_hash: 0,
+    cached_valid_arr: [],
+    cached_result: (None, 0),
+    external_scanner: None,
+    stateful_scanner: Some(scanner),
   }
 }
 
@@ -107,45 +173,50 @@ fn LexerEngine::scan_with_valid(
   }
 
   // 外部词法器尝试（仅当有回调且有合法的外部 token）
-  match self.external_scanner {
+  // 优先使用有状态词法器（stateful_scanner），然后无状态回调（external_scanner）
+  let ext_result : (Int, Int)? = if ext_tids.is_empty() {
+    None
+  } else {
+    match self.stateful_scanner {
+      Some(ss) => ss.scan(input, pos, ext_tids)
+      None =>
+        match self.external_scanner {
+          Some(scanner) => scanner(input, pos, ext_tids)
+          None => None
+        }
+    }
+  }
+  match ext_result {
     None => (dfa_tok, dfa_pos)
-    Some(scanner) =>
-      if ext_tids.is_empty() {
-        (dfa_tok, dfa_pos)
-      } else {
-        match scanner(input, pos, ext_tids) {
-          None => (dfa_tok, dfa_pos) // 外部未匹配，使用 DFA 结果
-          Some((ext_tid, ext_end)) => {
-            if ext_end < pos {
-              return (dfa_tok, dfa_pos)
-            }
-            // 外部匹配成功：与 DFA 结果比较，取较长者（等长时外部优先）
-            let dfa_len = dfa_pos - pos
-            let ext_len = ext_end - pos
-            let prefer_external = ext_len == 0 || ext_len >= dfa_len
-            if prefer_external {
-              let mut is_extra = false
-              for t in table.extras {
-                if t == ext_tid {
-                  is_extra = true
-                  break
-                }
-              }
-              let ext_tok : Token = {
-                terminal_id: ext_tid,
-                start_byte: pos,
-                end_byte: ext_end,
-                lookahead_bytes: ext_end,
-                is_keyword: false,
-                is_extra,
-              }
-              (Some(ext_tok), ext_end)
-            } else {
-              (dfa_tok, dfa_pos)
-            }
+    Some((ext_tid, ext_end)) => {
+      if ext_end < pos {
+        return (dfa_tok, dfa_pos)
+      }
+      // 外部匹配成功：与 DFA 结果比较，取较长者（等长时外部优先）
+      let dfa_len = dfa_pos - pos
+      let ext_len = ext_end - pos
+      let prefer_external = ext_len == 0 || ext_len >= dfa_len
+      if prefer_external {
+        let mut is_extra = false
+        for t in table.extras {
+          if t == ext_tid {
+            is_extra = true
+            break
           }
         }
+        let ext_tok : Token = {
+          terminal_id: ext_tid,
+          start_byte: pos,
+          end_byte: ext_end,
+          lookahead_bytes: ext_end,
+          is_keyword: false,
+          is_extra,
+        }
+        (Some(ext_tok), ext_end)
+      } else {
+        (dfa_tok, dfa_pos)
       }
+    }
   }
 }
 
@@ -160,14 +231,27 @@ fn LexerEngine::run_dfa(
   table : @tablegen.ParseTable,
 ) -> (Token?, Int) {
   // 单槽缓存：同一起始位置且 valid 集相同时直接复用（GLR 多版本并行加速）
-  // 多项式滚动哈希：h = h * 31 + t，避免 XOR 对不同集合碰撞的问题
-  // （XOR 缺陷示例：{1,2} 与 {3} 均得到 3）
+  // 计算滞动哈希的同时收集 valid 元素到数组，用于库调后的精确匹配
+  let valid_arr : Array[Int] = []
   let mut valid_hash = 17
   for t in valid {
     valid_hash = valid_hash * 31 + t
+    valid_arr.push(t)
   }
   if pos == self.cached_pos && valid_hash == self.cached_valid_hash {
-    return self.cached_result
+    // 哈希命中后做精确集合比较，防止滚动哈希碰撞
+    if valid_arr.length() == self.cached_valid_arr.length() {
+      let mut all_match = true
+      for t in self.cached_valid_arr {
+        if !valid.contains(t) {
+          all_match = false
+          break
+        }
+      }
+      if all_match {
+        return self.cached_result
+      }
+    }
   }
   let dfa = self.dfa
   let n = input.length()
@@ -222,6 +306,7 @@ fn LexerEngine::run_dfa(
     }
     self.cached_pos = pos
     self.cached_valid_hash = valid_hash
+    self.cached_valid_arr = valid_arr
     self.cached_result = (Some(err_tok), pos + 1)
     return self.cached_result
   }
@@ -235,24 +320,41 @@ fn LexerEngine::run_dfa(
     }
   }
 
-  // 两阶段 keyword 检查：若最佳 terminal 对应 Regex/AnyChar 模式，
-  // 检查匹配文本是否等于某个合法 Literal terminal，若是则提升为该 keyword terminal。
+  // 两阶段 keyword 检查：
+  // 若文法声明了 word_token，仅在 best_tid == word_token 时触发关键字提升（O(1) 查表）；
+  // 否则回退到线性扫描（兼容无 word 声明的旧文法，O(|valid|)）。
   let matched_text = input[pos:best_pos].to_string()
   let mut final_tid = best_tid
   let mut is_keyword = false
-  match table.terminal_patterns.get(best_tid) {
-    Some(@tablegen.TerminalDef::Literal(_)) => () // 已经是 Literal，无需检查
-    _ =>
-      for t in valid {
-        match table.terminal_patterns.get(t) {
-          Some(@tablegen.TerminalDef::Literal(lit)) =>
-            if lit == matched_text {
-              final_tid = t
+  match table.word_token {
+    Some(wt) =>
+      // 有 word 声明：仅 best_tid == word_token 时尝试提升
+      if best_tid == wt {
+        match table.keyword_map.get(matched_text) {
+          Some(kw_tid) =>
+            if valid.contains(kw_tid) {
+              final_tid = kw_tid
               is_keyword = true
-              break
             }
-          _ => ()
+          None => ()
         }
+      }
+    None =>
+      // 无 word 声明：线性扫描 valid 中的 Literal（向后兼容）
+      match table.terminal_patterns.get(best_tid) {
+        Some(@tablegen.TerminalDef::Literal(_)) => () // 已经是 Literal，无需检查
+        _ =>
+          for t in valid {
+            match table.terminal_patterns.get(t) {
+              Some(@tablegen.TerminalDef::Literal(lit)) =>
+                if lit == matched_text {
+                  final_tid = t
+                  is_keyword = true
+                  break
+                }
+              _ => ()
+            }
+          }
       }
   }
 
@@ -266,6 +368,7 @@ fn LexerEngine::run_dfa(
   }
   self.cached_pos = pos
   self.cached_valid_hash = valid_hash
+  self.cached_valid_arr = valid_arr
   self.cached_result = (Some(tok), best_pos)
   self.cached_result
 }

@@ -52,11 +52,18 @@ fn[T] Registry::remove(self : Registry[T], id : Int) -> Bool {
 // 条目类型
 
 ///|
+priv enum ParserScannerKind {
+  None
+  PythonIndent
+}
+
+///|
 /// 解析器条目：已编译的解析表 + 原始 DSL（调试用）+ 编译诊断信息
 priv struct ParserEntry {
   table : @tablegen.ParseTable
   dsl : String
   diagnostics : Array[String]
+  scanner_kind : ParserScannerKind
 }
 
 ///|
@@ -64,7 +71,7 @@ priv struct ParserEntry {
 priv struct TreeEntry {
   root : @runtime.CstNode
   input : String
-  parser_id : Int
+  table : @tablegen.ParseTable
 }
 
 ///|
@@ -78,11 +85,6 @@ let tree_registry : Registry[TreeEntry] = Registry::new()
 
 ///|
 /// 游标条目：持有游标在 CST 树中的当前位置和父节点回溯路径。
-///
-/// 导航模型（三向移动）：
-///   - goto_first_child  → 下移，将当前节点压入父节点栈
-///   - goto_next_sibling → 平移，在父节点栈顶的 children 中前进一位
-///   - goto_parent       → 上移，从父节点栈弹出
 priv struct CursorEntry {
   /// 关联的语法树 ID（查询 input / table 用）
   tree_id : Int
@@ -92,10 +94,12 @@ priv struct CursorEntry {
   mut current_index : Int
   /// 当前节点在父节点中的字段名（根节点时为 None）
   mut current_field : String?
-  /// 父节点栈（由根到直接父节点），与 parent_indices / parent_fields 等长
+  /// parent_depth 是当前栈深度
+  mut parent_depth : Int
+  /// 父节点栈（按 parent_depth 索引覆盖写，避免对 Array[String?] 任何操作）
   parent_nodes : Array[@runtime.CstNode]
   parent_indices : Array[Int]
-  parent_fields : Array[String?]
+  // parent_fields 已移除：回退时从 parent_nodes 动态推算 field 名，彻底规避 Array[String?] bug
 }
 
 ///|

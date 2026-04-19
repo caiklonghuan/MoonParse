@@ -70,13 +70,17 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
             continue
           } else if next_c == '*' {
             // 块注释：跳到 */
+            let block_start_line = line
+            let block_start_col = column
             i = i + 2
             column = column + 2
+            let mut closed = false
             while i + 1 < len {
               if input[i].to_int().to_char().unwrap() == '*' &&
                 input[i + 1].to_int().to_char().unwrap() == '/' {
                 i = i + 2
                 column = column + 2
+                closed = true
                 break
               }
               if input[i].to_int().to_char().unwrap() == '\n' {
@@ -87,10 +91,19 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
               }
               i = i + 1
             }
+            if !closed {
+              // 未关闭的块注释：产生错误 token
+              tokens.push({
+                token: Token::Identifier("<unclosed block comment>"),
+                location: { line: block_start_line, column: block_start_col },
+              })
+              i = len
+            }
             continue
           }
         }
         // 正则表达式 /…/
+        let start_line = line
         let start_col = column
         let mut j = i + 1
         column = column + 1
@@ -113,19 +126,25 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           }
         }
         if j < len {
-          let regex = input.substring(start=i + 1, end=j)
+          let regex = input[i + 1:j].to_string()
           tokens.push({
             token: Token::RegexLiteral(regex),
-            location: { line, column: start_col },
+            location: { line: start_line, column: start_col },
           })
           i = j + 1
           column = column + 1
         } else {
-          i = i + 1
-          column = column + 1
+          // 未关闭的正则：产生错误 token 而非静默丢弃
+          let partial = input[i + 1:len].to_string()
+          tokens.push({
+            token: Token::RegexLiteral(partial),
+            location: { line: start_line, column: start_col },
+          })
+          i = len
         }
       }
       '"' => {
+        let start_line = line
         let start_col = column
         let mut j = i + 1
         column = column + 1
@@ -148,16 +167,21 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           j = j + 1
         }
         if j < len {
-          let literal = input.substring(start=i + 1, end=j)
+          let literal = input[i + 1:j].to_string()
           tokens.push({
             token: Token::StringLiteral(literal),
-            location: { line, column: start_col },
+            location: { line: start_line, column: start_col },
           })
           i = j + 1
           column = column + 1
         } else {
-          i = i + 1
-          column = column + 1
+          // 未关闭的字符串：产生错误 token 而非静默丢弃
+          let partial = input[i + 1:len].to_string()
+          tokens.push({
+            token: Token::StringLiteral(partial),
+            location: { line: start_line, column: start_col },
+          })
+          i = len
         }
       }
       ':'
@@ -209,12 +233,14 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           column = column + 1
           continue
         }
-        let word = input.substring(start=i, end=j)
+        let word = input[i:j].to_string()
         if word == "rule" ||
           word == "start" ||
           word == "precedence" ||
           word == "left" ||
           word == "right" ||
+          word == "nonassoc" ||
+          word == "dynamic" ||
           word == "prec" ||
           word == "extras" ||
           word == "externals" ||

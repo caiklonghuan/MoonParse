@@ -1,10 +1,10 @@
 ///|
 // JSON 语法定义
 //
-// 覆盖标准 JSON（RFC 8259）的完整子集：
+// 覆盖标准 JSON 规范：
 //   - 对象 {}，数组 []，字符串，数字，true/false/null
 //   - 忽略空白（extras）
-// 限制：字符串转义序列简化为 /\"[^\"]*\"/（不处理 \uXXXX 转义）
+//   - 字符串支持转义序列：\" \\ \b \f \n \r \t 以及 \uXXXX
 
 ///|
 /// JSON Grammar DSL 字符串
@@ -18,36 +18,27 @@ pub let json_grammar : String =
   #|rule pair:   jstring ":" value
   #|rule array:    "[" elements? "]"
   #|rule elements: value ("," value)*
-  #|rule jstring: /"[ -!#-~]*"/
+  #|rule jstring: /"([^"\\]|\\["\\bfnrt]|\\u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])*"/
   #|rule number:  /-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
 
 ///|
 // 预编译 ParseTable（模块加载时编译一次，后续复用）
 
 ///|
-fn make_json_table() -> @tablegen.ParseTable {
-  let g = match @grammar.parse_grammar(json_grammar) {
-    Success(g) => g
-    Error(_) => panic()
-  }
-  match @tablegen.generate_parse_table(g) {
-    Ok((t, _)) => t
-    Err(_) => panic()
-  }
-}
+let json_table : @tablegen.ParseTable = compile_builtin_grammar(json_grammar)
 
 ///|
-let json_table : @tablegen.ParseTable = make_json_table()
-
-///|
-// 公开解析接口
-
-///|
-/// 用内置 JSON 语法解析 source，返回 CST 根节点。
-///
-/// 解析结果始终为 Ok（语法错误以 ERROR 节点形式嵌入 CST）。
 pub fn parse_json(
   source : String,
 ) -> Result[@runtime.CstNode, @runtime.ParseError] {
   @runtime.parse(json_table, source)
+}
+
+///|
+/// 解析 JSON 并返回 S-expression 树结构字符串，用于结构 snapshot 测试。
+pub fn json_sexp(source : String) -> String {
+  match @runtime.parse(json_table, source) {
+    Ok(root) => cst_to_sexp(root, source, json_table)
+    Err(e) => "ERROR: " + e.message
+  }
 }

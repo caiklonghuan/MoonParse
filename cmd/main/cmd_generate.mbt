@@ -44,11 +44,24 @@ pub fn cmd_generate(args : GenerateArgs) -> Int {
     }
   }
 
-  // 语义校验：有错误则中止（--force 覆盖第一类情况：ValidationError）
-  let val_errors = @grammar.validate_grammar(grammar)
-  if not(val_errors.is_empty()) {
+  // 语义校验：左递归由 GLR 引擎原生支持，降级为警告；其余错误阻塞构建
+  let val_all = @grammar.validate_grammar(grammar)
+  let val_errors : Array[@grammar.ValidationError] = []
+  let val_warnings : Array[@grammar.ValidationError] = []
+  for e in val_all {
+    match e.kind {
+      @grammar.ValidationErrorKind::DirectLeftRecursion(_)
+      | @grammar.ValidationErrorKind::IndirectLeftRecursion(_) =>
+        val_warnings.push(e)
+      _ => val_errors.push(e)
+    }
+  }
+  if !val_warnings.is_empty() {
+    report_validation_warnings(val_warnings, Some(args.grammar_file))
+  }
+  if !val_errors.is_empty() {
     report_validation_errors(val_errors, Some(args.grammar_file))
-    if not(args.force) {
+    if !args.force {
       return 2
     }
   }
@@ -64,7 +77,7 @@ pub fn cmd_generate(args : GenerateArgs) -> Int {
   }
 
   // 打印冲突报告到 stderr
-  if not(conflict_reports.is_empty()) {
+  if !conflict_reports.is_empty() {
     report_conflicts(conflict_reports)
   }
 
@@ -83,7 +96,7 @@ pub fn cmd_generate(args : GenerateArgs) -> Int {
       _ => ()
     }
   }
-  if has_ambiguous && not(args.force) {
+  if has_ambiguous && !args.force {
     print_err("error: ambiguity conflicts found; use --force to output anyway")
     return 2
   }
@@ -118,7 +131,7 @@ pub fn cmd_generate(args : GenerateArgs) -> Int {
 
   // 统计诊断汇总（按错误/警告分种类计数）
   let mut summary_errors = val_errors.length()
-  let mut summary_warns = 0
+  let mut summary_warns = val_warnings.length()
   for r in conflict_reports {
     match r.severity {
       Ambiguous(_) => summary_errors = summary_errors + 1

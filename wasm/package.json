@@ -1,0 +1,16 @@
+{
+  "name": "moonparse",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "moonparse.js",
+  "types": "moonparse.d.ts",
+  "files": [
+    "moonparse.js",
+    "moonparse.d.ts",
+    "moonparse.wasm",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "pwsh ../build_dist.ps1"
+  }
+}

@@ -34,7 +34,7 @@ fn highlight_ranges_to_json(ranges : Array[@query.HighlightRange]) -> String {
   buf.write_char('[')
   let mut first = true
   for r in ranges {
-    if not(first) {
+    if !first {
       buf.write_char(',')
     }
     highlight_range_to_json(r, buf)
@@ -54,10 +54,7 @@ pub fn highlight_exec(query_id : Int, tree_id : Int) -> String {
     Some(e) => e
     None => return "[]"
   }
-  let table = match parser_registry.get(tree_entry.parser_id) {
-    Some(pe) => pe.table
-    None => return "[]"
-  }
+  // BUG 2 修复：table 已嵌入 TreeEntry，无需再查 parser_registry
   let q_entry = match query_registry.get(query_id) {
     Some(e) => e
     None => return "[]"
@@ -65,7 +62,7 @@ pub fn highlight_exec(query_id : Int, tree_id : Int) -> String {
   let ranges = @query.apply_highlights(
     tree_entry.root,
     tree_entry.input,
-    table,
+    tree_entry.table,
     q_entry.query,
   )
   highlight_ranges_to_json(ranges)
@@ -82,10 +79,7 @@ pub fn highlight_exec_with_locals(
     Some(e) => e
     None => return "[]"
   }
-  let table = match parser_registry.get(tree_entry.parser_id) {
-    Some(pe) => pe.table
-    None => return "[]"
-  }
+  // BUG 2 修复：table 已嵌入 TreeEntry，无需再查 parser_registry
   let hl_entry = match query_registry.get(hl_query_id) {
     Some(e) => e
     None => return "[]"
@@ -97,7 +91,7 @@ pub fn highlight_exec_with_locals(
   let ranges = @query.apply_highlights_with_locals(
     tree_entry.root,
     tree_entry.input,
-    table,
+    tree_entry.table,
     hl_entry.query,
     loc_entry.query,
   )
@@ -111,7 +105,7 @@ pub fn highlight_names_json() -> String {
   buf.write_char('[')
   let mut first = true
   for name in @query.highlight_names {
-    if not(first) {
+    if !first {
       buf.write_char(',')
     }
     write_jstr(buf, name)

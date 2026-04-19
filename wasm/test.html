@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>MoonParse 测试</title>
+  <style>
+    body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; }
+    pre  { background: #252526; padding: 16px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; }
+    h2   { color: #9cdcfe; }
+    .ok  { color: #4ec9b0; }
+    .err { color: #f44747; }
+    .label { color: #c586c0; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>MoonParse 运行测试</h2>
+  <pre id="out">正在加载 WASM…</pre>
+
+<script type="module">
+import { loadMoonParse } from "./moonparse.js";
+
+const out = document.getElementById("out");
+const log = (...args) => {
+  out.textContent += args.join(" ") + "\n";
+  console.log(...args);
+};
+const err = (...args) => {
+  out.innerHTML += `<span class="err">${args.join(" ")}</span>\n`;
+  console.error(...args);
+};
+
+out.textContent = "";
+
+async function main() {
+  // 1. 加载 WASM
+  const mp = await loadMoonParse("./moonparse.wasm");
+  log("✅ 版本:", mp.version());
+
+  // 2. 创建 Parser
+  const parser = mp.createParser(`
+    start array
+    rule array: "[" (value ("," value)*)? "]"
+    rule value: /[0-9]+/ | /-[0-9]+/ | array
+    extras [/\\s+/]
+  `);
+  log("✅ Parser 创建成功");
+
+  // 3. 解析
+  const src1 = "[1, 2, [3, 4]]";
+  const tree1 = parser.parse(src1);
+  log("\n=== S-expression ===");
+  log(tree1.sexp());
+  log("errorSummary:", tree1.errorSummary());
+
+  // 4. Cursor 遍历
+  const values = [];
+  const cursor = tree1.walk();
+  const collectValues = () => {
+    if (!cursor.isNamed && /^-?[0-9]+$/.test(cursor.nodeText)) {
+      values.push(cursor.nodeText);
+    }
+    if (cursor.gotoFirstChild()) {
+      do { collectValues(); } while (cursor.gotoNextSibling());
+      cursor.gotoParent();
+    }
+  };
+  collectValues();
+  cursor.free();
+  log("\n=== Cursor 收集到的数值 ===");
+  log(JSON.stringify(values));
+
+  // 5. Query
+  const q = mp.compileQuery("(value) @v");
+  const captures = q.exec(tree1);
+  log("\n=== Query 结果 ===");
+  for (const c of captures) {
+    log(`  @${c.capture}: "${c.text}" [${c.start}..${c.end}]`);
+  }
+
+  // 6. 增量解析
+  const src2 = "[1, 2, [3, 99]]";
+  const tree2 = parser.parseIncremental(src2, tree1, {
+    start_byte: 11, old_end_byte: 12, new_end_byte: 13,
+    start_row: 0,   start_col: 11,
+    old_end_row: 0, old_end_col: 12,
+    new_end_row: 0, new_end_col: 13,
+  });
+  log("\n=== 增量解析 ===");
+  log("新 sexp:", tree2.sexp());
+  log("errorSummary:", tree2.errorSummary());
+
+  // 7. 清理
+  const r2 = q.exec(tree2);
+  log("增量后 query:", r2.length, "个捕获");
+  log("\n所有捕获:");
+  for (const c of r2) log(`  @${c.capture}: "${c.text}" [${c.start}..${c.end}]`);
+
+  q.free();
+  tree2.free();
+  parser.free();
+
+  log("\n✅ 全部完成，资源已释放");
+}
+
+main().catch(e => err("❌ 错误:", e.message ?? e));
+</script>
+</body>
+</html>

@@ -24,9 +24,22 @@ pub fn cmd_check(args : CheckArgs) -> Int {
     }
   }
 
-  // 语义校验
-  let val_errors = @grammar.validate_grammar(grammar)
-  if not(val_errors.is_empty()) {
+  // 语义校验：左递归由 GLR 引擎原生支持，降级为警告
+  let val_all = @grammar.validate_grammar(grammar)
+  let val_errors : Array[@grammar.ValidationError] = []
+  let val_warnings : Array[@grammar.ValidationError] = []
+  for e in val_all {
+    match e.kind {
+      @grammar.ValidationErrorKind::DirectLeftRecursion(_)
+      | @grammar.ValidationErrorKind::IndirectLeftRecursion(_) =>
+        val_warnings.push(e)
+      _ => val_errors.push(e)
+    }
+  }
+  if !val_warnings.is_empty() {
+    report_validation_warnings(val_warnings, Some(args.grammar_file))
+  }
+  if !val_errors.is_empty() {
     report_validation_errors(val_errors, Some(args.grammar_file))
   }
 
@@ -38,17 +51,18 @@ pub fn cmd_check(args : CheckArgs) -> Int {
       return 2
     }
   }
-  if not(conflict_reports.is_empty()) {
+  if !conflict_reports.is_empty() {
     report_conflicts(conflict_reports)
   }
 
   // 按退出码矩阵统计：
   //   ValidationError  → error  (exit=2)
   //   Ambiguous        → error  (exit=2)
+  //   Left recursion   → warning (exit=1)
   //   Warn / Dynamic   → warning (exit=1)
   //   无任何诊断       → ok     (exit=0)
   let mut err_count = val_errors.length()
-  let mut warn_count = 0
+  let mut warn_count = val_warnings.length()
   for r in conflict_reports {
     match r.severity {
       Ambiguous(_) => err_count = err_count + 1

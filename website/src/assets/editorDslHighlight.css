@@ -1,0 +1,74 @@
+.cm-editor .cm-dsl-keyword {
+  color: #8a3ffc;
+  font-weight: 600;
+}
+
+.cm-editor .cm-dsl-predicate {
+  color: #7c3aed;
+  font-weight: 700;
+}
+
+.cm-editor .cm-dsl-name {
+  color: #1857b6;
+}
+
+.cm-editor .cm-dsl-rule-name {
+  color: #0050b3;
+  font-weight: 700;
+}
+
+.cm-editor .cm-dsl-attribute {
+  color: #9f1853;
+  font-weight: 600;
+}
+
+.cm-editor .cm-dsl-tag {
+  color: #c2410c;
+  font-weight: 600;
+}
+
+.cm-editor .cm-dsl-string {
+  color: #1f8f52;
+}
+
+.cm-editor .cm-dsl-regex {
+  color: #007d79;
+}
+
+.cm-editor .cm-dsl-regex-charclass {
+  color: #0f766e;
+  font-weight: 600;
+}
+
+.cm-editor .cm-dsl-regex-escape {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.cm-editor .cm-dsl-number {
+  color: #b27000;
+}
+
+.cm-editor .cm-dsl-operator {
+  color: #5f6c7d;
+}
+
+.cm-editor .cm-dsl-capture {
+  color: #c73e1d;
+  font-weight: 600;
+}
+
+.cm-editor .cm-dsl-field {
+  color: #a83f7a;
+}
+
+.cm-editor .cm-dsl-comment {
+  color: #8a97a8;
+  font-style: italic;
+}
+
+.cm-editor .cm-dsl-error {
+  color: #c81e1e;
+  text-decoration: underline wavy rgba(200, 30, 30, 0.85);
+  text-underline-offset: 2px;
+}

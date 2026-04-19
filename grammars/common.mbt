@@ -174,3 +174,12 @@ pub fn parse_expression(
 ) -> Result[@runtime.CstNode, @runtime.ParseError] {
   @runtime.parse(expression_table, source)
 }
+
+///|
+/// 解析表达式并返回 S-expression 树结构字符串，用于结构 snapshot 测试。
+pub fn expression_sexp(source : String) -> String {
+  match @runtime.parse(expression_table, source) {
+    Ok(root) => cst_to_sexp(root, source, expression_table)
+    Err(e) => "ERROR: " + e.message
+  }
+}

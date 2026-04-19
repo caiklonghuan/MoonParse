@@ -2,7 +2,6 @@
 // Prefer high-level behaviors over implementation details.
 // Run `moon test` to execute and `moon test --update` to refresh snapshots.
 
-
 ///|
 test "generate/valid_grammar_returns_json" {
   let dsl =
@@ -20,6 +19,19 @@ test "generate/invalid_dsl_returns_error_prefix" {
 }
 
 ///|
+test "generate/invalid_grammar_includes_validation_hint" {
+  let dsl =
+    #|start s
+    #|word ident
+    #|rule s: ident
+    #|rule ident: /[a-z]+/
+  let result = @MoonParse.generate(dsl)
+  assert_true(result.has_prefix("Error:"))
+  assert_true(result.contains("hint:"))
+  assert_true(result.contains("token rule"))
+}
+
+///|
 test "generate/output_contains_states_key" {
   // 生成的表 JSON 应包含 "states" 字段
   let dsl =
@@ -29,7 +41,6 @@ test "generate/output_contains_states_key" {
   assert_true(result.contains("states"))
 }
 
-
 ///|
 test "parse/number_grammar" {
   let dsl =
@@ -37,7 +48,7 @@ test "parse/number_grammar" {
     #|rule num: /[0-9]+/
   let result = @MoonParse.parse(dsl, "42")
   // 不应含有 ERROR 节点
-  assert_true(not(result.contains("ERROR")))
+  assert_true(!result.contains("ERROR"))
 }
 
 ///|
@@ -49,7 +60,7 @@ test "parse/expression_grammar" {
     #|rule expr: expr plus expr | /[0-9]+/
     #|rule plus: "+"
   let result = @MoonParse.parse(dsl, "1 + 2 + 3")
-  assert_true(not(result.contains("ERROR")))
+  assert_true(!result.contains("ERROR"))
 }
 
 ///|
@@ -58,23 +69,22 @@ test "parse/invalid_dsl_returns_error_prefix" {
   assert_true(result.has_prefix("Error:"))
 }
 
-
 ///|
 test "parse_json/object" {
   let result = @MoonParse.parse_json("{\"key\": 42}")
-  assert_true(not(result.contains("ERROR")))
+  assert_true(!result.contains("ERROR"))
 }
 
 ///|
 test "parse_json/array" {
   let result = @MoonParse.parse_json("[1, 2, 3]")
-  assert_true(not(result.contains("ERROR")))
+  assert_true(!result.contains("ERROR"))
 }
 
 ///|
 test "parse_json/null_literal" {
   let result = @MoonParse.parse_json("null")
-  assert_true(not(result.contains("ERROR")))
+  assert_true(!result.contains("ERROR"))
 }
 
 ///|
@@ -89,7 +99,7 @@ test "parse_json/invalid_input_contains_error_node" {
 ///|
 test "parse_json5/object_with_comments" {
   let result = @MoonParse.parse_json5("{name: 'moon', list: [1, 2,],}")
-  assert_true(not(result.contains("ERROR")))
+  assert_true(!result.contains("ERROR"))
 }
 
 ///|
@@ -97,7 +107,7 @@ test "parse_moonbit/type_alias" {
   let source =
     #|pub type IntList = Array[Int]
   let result = @MoonParse.parse_moonbit(source)
-  assert_true(not(result.contains("ERROR")))
+  assert_true(!result.contains("ERROR"))
 }
 
 ///|
@@ -106,7 +116,7 @@ test "parse_python/indented_function" {
     #|def identity(x):
     #|    return x
   let result = @MoonParse.parse_python(source)
-  assert_true(not(result.contains("ERROR")))
+  assert_true(!result.contains("ERROR"))
 }
 
 ///|
@@ -116,7 +126,7 @@ test "parse_c/function" {
     #|  return a + b;
     #|}
   let result = @MoonParse.parse_c(source)
-  assert_true(not(result.contains("ERROR")))
+  assert_true(!result.contains("ERROR"))
 }
 
 ///|
@@ -129,7 +139,7 @@ test "generate_then_reload/json_round_trip_can_parse" {
     #|extras [/[ \t]+/]
     #|rule expr: /[0-9]+/
   let json = @MoonParse.generate(dsl)
-  assert_true(not(json.has_prefix("Error:")))
+  assert_true(!json.has_prefix("Error:"))
   // 2. 从 JSON 还原 ParseTable，然后解析输入
   match @tablegen.table_from_json(json) {
     Err(msg) => {
@@ -138,7 +148,7 @@ test "generate_then_reload/json_round_trip_can_parse" {
     }
     Ok(table) =>
       match @runtime.parse(table, "42") {
-        Ok(node) => assert_true(not(node.is_error))
+        Ok(node) => assert_true(!node.is_error)
         Err(e) => {
           println("parse failed: \{e.message}")
           assert_true(false)

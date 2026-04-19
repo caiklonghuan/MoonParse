@@ -1,7 +1,13 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "caiklonghuan/MoonParse"
 
+import {
+  "caiklonghuan/MoonParse/grammar",
+}
+
 // Values
+pub fn compile_grammar(@grammar.Grammar) -> String
+
 pub fn generate(String) -> String
 
 pub fn parse(String, String) -> String
@@ -15,6 +21,8 @@ pub fn parse_json5(String) -> String
 pub fn parse_moonbit(String) -> String
 
 pub fn parse_python(String) -> String
+
+pub fn parse_with_grammar(@grammar.Grammar, String) -> String
 
 // Errors
 

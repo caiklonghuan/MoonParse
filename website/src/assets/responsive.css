@@ -1,0 +1,222 @@
+
+
+@media (max-width: 768px) {
+  .navbar-burger {
+    display: flex !important;
+  }
+
+  .navbar-links {
+    display: none;
+    position: fixed;
+    top: 60px;
+    left: 12px;
+    right: 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    flex-direction: column;
+    padding: 8px;
+    gap: 0;
+    z-index: 99;
+    box-shadow: var(--shadow-md);
+  }
+
+  .navbar-links.navbar-links--open {
+    display: flex;
+  }
+
+  .navbar-links li {
+    width: 100%;
+  }
+
+  .navbar-links .nav-link {
+    display: block;
+    padding: 10px 12px;
+    margin: 0;
+    border-radius: var(--radius-md);
+    width: 100%;
+    color: var(--text-muted);
+  }
+
+  .navbar-links .nav-link:hover {
+    background: var(--surface-3);
+    color: var(--text-h);
+  }
+
+  .navbar-inner {
+    gap: 12px;
+  }
+
+  .navbar-actions {
+    margin-left: auto;
+  }
+}
+
+.navbar-burger {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 6px;
+  border-radius: var(--radius-md);
+  flex-direction: column;
+  gap: 4px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.navbar-burger:hover {
+  background: var(--surface-3);
+  border-color: var(--line-strong);
+  color: var(--text-h);
+}
+.navbar-burger span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  transition: transform 0.2s, opacity 0.2s;
+}
+.navbar-burger.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.navbar-burger.open span:nth-child(2) { opacity: 0; }
+.navbar-burger.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+
+
+@media (max-width: 768px) {
+  .docs-layout {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto 1fr;
+    height: auto !important;
+    min-height: calc(100vh - 56px);
+  }
+
+  .docs-sidebar {
+    border-right: none !important;
+    border-bottom: none;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .sidebar-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px !important;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .sidebar-heading::after {
+    content: '▾';
+    font-size: 14px;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+  }
+
+  .docs-layout.sidebar-open .sidebar-heading::after {
+    transform: rotate(180deg);
+  }
+
+  .docs-nav {
+    display: none;
+  }
+
+  .docs-layout.sidebar-open .docs-nav {
+    display: block;
+    padding-bottom: 8px;
+  }
+
+  .docs-content {
+    padding: 24px 20px !important;
+    overflow-y: auto;
+    height: auto;
+  }
+}
+
+
+
+@media (max-width: 768px) {
+  .playground-mobile-tabs {
+    display: flex;
+    border-bottom: none;
+    background: var(--surface-3);
+    flex-shrink: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .playground-mobile-tab {
+    flex: 1;
+    min-width: max-content;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+
+  .playground-mobile-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .playground-mobile-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .playground-mobile-panel {
+    position: absolute;
+    inset: 0;
+    display: none;
+  }
+
+  .playground-mobile-panel.active {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+
+
+@media (max-width: 768px) {
+  .debug-view,
+  .bench-view,
+  .compare-view,
+  .roadmap-view {
+    padding: 28px 16px !important;
+  }
+
+  .home-editors {
+    grid-template-columns: 1fr !important;
+  }
+
+  .editors-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .symbols-section {
+    grid-template-columns: 1fr !important;
+  }
+
+  .compare-table th:last-child,
+  .compare-table td:last-child {
+    display: none;
+  }
+
+  .footer-inner {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  h1 { font-size: 22px !important; }
+}

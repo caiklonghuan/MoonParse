@@ -25,7 +25,7 @@ pub(all) struct HighlightRange {
   /// 高亮类型，即查询中 @capture_name 去掉 @ 后的字符串。
   /// 例："keyword"  "string.escape"  "variable.local"
   highlight_name : String
-} derive(Show)
+} derive(Debug)
 
 ///|
 // 内部辅助：稳定插入排序（按 start_byte 升序，相同则按 end_byte 降序保持最宽在前）
@@ -64,7 +64,7 @@ pub fn apply_highlights(
   for c in captures {
     let node = c.node
     // 跳过零宽节点（MISSING 等特殊节点，除非是 ERROR）
-    if node.start_byte >= node.end_byte && not(node.is_error) {
+    if node.start_byte >= node.end_byte && !node.is_error {
       continue
     }
     // 跳过 local.* 系列捕获名（供 locals 引擎使用，不直接映射为高亮色）
