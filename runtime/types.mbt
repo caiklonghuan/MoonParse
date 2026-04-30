@@ -179,6 +179,46 @@ pub fn CstNode::leaf(
 }
 
 ///|
+fn is_unpositioned_zero_width(node : CstNode) -> Bool {
+  node.start_byte == 0 &&
+  node.end_byte == 0 &&
+  node.start_point.row == 0 &&
+  node.start_point.column == 0 &&
+  node.end_point.row == 0 &&
+  node.end_point.column == 0 &&
+  !node.is_missing &&
+  !node.is_error &&
+  !node.extra
+}
+
+///|
+fn first_positioned_child(children : Array[CstNode]) -> CstNode {
+  let mut i = 0
+  while i < children.length() &&
+        (children[i].extra || is_unpositioned_zero_width(children[i])) {
+    i = i + 1
+  }
+  if i < children.length() {
+    children[i]
+  } else {
+    children[0]
+  }
+}
+
+///|
+fn last_positioned_child(children : Array[CstNode]) -> CstNode {
+  let mut i = children.length() - 1
+  while i >= 0 && is_unpositioned_zero_width(children[i]) {
+    i = i - 1
+  }
+  if i >= 0 {
+    children[i]
+  } else {
+    children[children.length() - 1]
+  }
+}
+
+///|
 /// 构造内部节点（内部用）
 /// parse_state：归约时 goto 查表前的栈顶 LR 状态（base_state），增量复用匹配用。
 pub fn CstNode::inner(
@@ -195,40 +235,26 @@ pub fn CstNode::inner(
   let start_byte = if children.is_empty() {
     0
   } else {
-    // 跳过前置 extra 节点（如注释、空白），以第一个非 extra 子节点确定语义起始位置。
-    // extra 子节点出现在 children 列表中，但不影响产生节点的 start 坐标。
-    let mut i = 0
-    while i < children.length() && children[i].extra {
-      i = i + 1
-    }
-    if i < children.length() {
-      children[i].start_byte
-    } else {
-      children[0].start_byte
-    }
+    // 跳过前置 extra 与未定位的 ε/synthetic 零宽节点，以第一个真实定位的
+    // 子节点确定语义起始位置。
+    first_positioned_child(children).start_byte
   }
   let end_byte = if children.is_empty() {
     0
   } else {
-    children[children.length() - 1].end_byte
+    // 归约体尾部可能带有未定位的 ε/synthetic 零宽节点。它们的坐标固定
+    // 为 [0,0]，不能覆盖前面真实 token 的结束位置。
+    last_positioned_child(children).end_byte
   }
   let start_point = if children.is_empty() {
     { row: 0, column: 0 }
   } else {
-    let mut i = 0
-    while i < children.length() && children[i].extra {
-      i = i + 1
-    }
-    if i < children.length() {
-      children[i].start_point
-    } else {
-      children[0].start_point
-    }
+    first_positioned_child(children).start_point
   }
   let end_point = if children.is_empty() {
     { row: 0, column: 0 }
   } else {
-    children[children.length() - 1].end_point
+    last_positioned_child(children).end_point
   }
   {
     symbol,
@@ -377,6 +403,8 @@ pub(all) struct ParseConfig {
   max_version_count : Int
   /// 超出 max_version_count 后触发截尾前的容忍量（默认 4）
   max_version_count_overflow : Int
+  /// 打印错误恢复路径调试信息（默认关闭）
+  trace_recovery : Bool
 }
 
 ///|
@@ -390,5 +418,6 @@ pub fn ParseConfig::default() -> ParseConfig {
     error_cost_per_recovery: 500,
     max_version_count: 6,
     max_version_count_overflow: 4,
+    trace_recovery: false,
   }
 }
