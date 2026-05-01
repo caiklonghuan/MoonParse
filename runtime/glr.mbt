@@ -14,6 +14,42 @@ fn error_cost_for_skipped_node(node : CstNode, config : ParseConfig) -> Int {
 }
 
 ///|
+fn trace_terminal_name(table : @tablegen.ParseTable, tid : Int) -> String {
+  if tid == @tablegen.eoi_id {
+    return "EOF"
+  }
+  if tid == sym_error {
+    return "ERROR"
+  }
+  match table.terminal_names.get(tid) {
+    Some(name) => name
+    None => "<terminal:" + tid.to_string() + ">"
+  }
+}
+
+///|
+fn trace_point(point : Point) -> String {
+  point.row.to_string() + ":" + point.column.to_string()
+}
+
+///|
+fn trace_token(table : @tablegen.ParseTable, tok : Token) -> String {
+  trace_terminal_name(table, tok.terminal_id) +
+  " [" +
+  tok.start_byte.to_string() +
+  "," +
+  tok.end_byte.to_string() +
+  ")"
+}
+
+///|
+fn GlrEngine::trace_recovery(self : GlrEngine, message : String) -> Unit {
+  if self.config.trace_recovery {
+    println("[recovery] " + message)
+  }
+}
+
+///|
 /// GSS 结点引用（Arena 下标，避免循环引用）
 type GssRef = Int
 
@@ -262,7 +298,7 @@ fn GlrEngine::run(
             pos = new_pos2
             continue
           }
-          self.skip_token(tok, cur_point, input, pending_extras)
+          self.skip_token(table, tok, cur_point, input, pending_extras)
           cur_point = bytes_to_point(
             input,
             tok.start_byte,
@@ -337,7 +373,7 @@ fn GlrEngine::run(
           }
           // 降级：skip 当前 token，error_node 标为 extra 追加到 pending_extras，
           // active_tops 不变（避免自环 GssNode 污染产生式体）
-          self.skip_token(tok, cur_point, input, pending_extras)
+          self.skip_token(table, tok, cur_point, input, pending_extras)
           cur_point = bytes_to_point(
             input,
             tok.start_byte,
@@ -678,6 +714,7 @@ fn GlrEngine::run_shift(
 ///|
 fn GlrEngine::skip_token(
   self : GlrEngine,
+  table : @tablegen.ParseTable,
   tok : Token,
   cur_point : Point,
   input : String,
@@ -727,6 +764,16 @@ fn GlrEngine::skip_token(
       0
     }
     let new_cost = base_cost + recovery_penalty + skip_cost
+    self.trace_recovery(
+      "skip_token state=" +
+      self.gss_nodes[top_ref].state.to_string() +
+      " lookahead=" +
+      trace_token(table, tok) +
+      " point=" +
+      trace_point(cur_point) +
+      " cost=" +
+      new_cost.to_string(),
+    )
     let existing_cost = match self.error_status.get(top_ref) {
       Some(s) => s.cost
       None => 1_000_000
@@ -866,8 +913,7 @@ fn GlrEngine::insert_missing(
   let result_tops : Array[GssRef] = []
   let result_costs : Array[(GssRef, Int)] = []
   for top_ref in saved_tops {
-    let state = self.gss_nodes[top_ref].state
-    match table.lexer_dfa.valid_tokens.get(state) {
+    match table.lexer_dfa.valid_tokens.get(self.gss_nodes[top_ref].state) {
       None => ()
       Some(valid_tids) => {
         let (base_cost, is_first_error) = match self.error_status.get(top_ref) {
@@ -889,66 +935,94 @@ fn GlrEngine::insert_missing(
           if is_extra {
             continue
           }
-          // 枚举该 terminal 的所有 Shift 动作
-          match table.action.get((state, tid)) {
-            None => ()
-            Some(acts) =>
-              for act in acts {
-                match act {
-                  Shift(next_state) => {
-                    // 构造零宽 MISSING 叶节点
-                    let is_named = if tid < table.symbol_metadata.length() {
-                      table.symbol_metadata[tid].is_named
-                    } else {
-                      false
-                    }
-                    let missing = CstNode::missing_leaf(
-                      tid, is_named, byte_pos, cur_point,
-                    )
-                    let link : GssLink = {
-                      predecessor: top_ref,
-                      node: Some(missing),
-                      leading_extras: [],
-                    }
-                    // 新建「missing 后」状态的 GssNode，临时压入 active_tops
-                    let new_ref = self.gss_nodes.length()
-                    self.gss_nodes.push({ state: next_state, links: [link] })
-                    // 有状态词法器：继承前驱的 scanner 状态
-                    match self.scanner_states.get(top_ref) {
-                      Some(ss) =>
-                        self.scanner_states[new_ref] = ss.clone_scanner()
-                      None => ()
-                    }
-                    while !self.active_tops.is_empty() {
-                      let _ = self.active_tops.pop()
-                    }
-                    self.active_tops.push(new_ref)
-                    // 模拟：以真实 token 为前瞻做 Reduce 到不动点，再尝试 Shift
-                    self.run_reduce_worklist(table, actual_tok.terminal_id)
-                    let shifted = self.run_shift(
-                      table,
-                      actual_tok,
-                      cur_point,
-                      input,
-                      [],
-                    )
-                    if !shifted.is_empty() {
-                      let new_cost = base_cost +
-                        (if is_first_error {
-                          self.config.error_cost_per_recovery
-                        } else {
-                          0
-                        }) +
-                        self.config.error_cost_per_missing_tree
-                      for r in shifted {
-                        result_tops.push(r)
-                        result_costs.push((r, new_cost))
+          self.trace_recovery(
+            "insert_missing try state=" +
+            self.gss_nodes[top_ref].state.to_string() +
+            " lookahead=" +
+            trace_token(table, actual_tok) +
+            " missing=" +
+            trace_terminal_name(table, tid) +
+            " point=" +
+            trace_point(cur_point),
+          )
+          // 先按候选 missing token 做 reduce，再检查该 token 是否可 shift。
+          // 这允许在如 C 声明这类“需先归约 declarator，再补 ';'”的场景命中恢复。
+          while !self.active_tops.is_empty() {
+            let _ = self.active_tops.pop()
+          }
+          self.active_tops.push(top_ref)
+          self.run_reduce_worklist(table, tid)
+          let reduced_tops = self.active_tops.copy()
+          for reduced_top_ref in reduced_tops {
+            let state = self.gss_nodes[reduced_top_ref].state
+            match table.action.get((state, tid)) {
+              None => ()
+              Some(acts) =>
+                for act in acts {
+                  match act {
+                    Shift(next_state) => {
+                      let is_named = if tid < table.symbol_metadata.length() {
+                        table.symbol_metadata[tid].is_named
+                      } else {
+                        false
+                      }
+                      let missing = CstNode::missing_leaf(
+                        tid, is_named, byte_pos, cur_point,
+                      )
+                      let link : GssLink = {
+                        predecessor: reduced_top_ref,
+                        node: Some(missing),
+                        leading_extras: [],
+                      }
+                      let new_ref = self.gss_nodes.length()
+                      self.gss_nodes.push({ state: next_state, links: [link] })
+                      match self.scanner_states.get(reduced_top_ref) {
+                        Some(ss) =>
+                          self.scanner_states[new_ref] = ss.clone_scanner()
+                        None => ()
+                      }
+                      while !self.active_tops.is_empty() {
+                        let _ = self.active_tops.pop()
+                      }
+                      self.active_tops.push(new_ref)
+                      self.run_reduce_worklist(table, actual_tok.terminal_id)
+                      let shifted = self.run_shift(
+                        table,
+                        actual_tok,
+                        cur_point,
+                        input,
+                        [],
+                      )
+                      if !shifted.is_empty() {
+                        let new_cost = base_cost +
+                          (if is_first_error {
+                            self.config.error_cost_per_recovery
+                          } else {
+                            0
+                          }) +
+                          self.config.error_cost_per_missing_tree
+                        self.trace_recovery(
+                          "insert_missing success state=" +
+                          state.to_string() +
+                          " lookahead=" +
+                          trace_token(table, actual_tok) +
+                          " missing=" +
+                          trace_terminal_name(table, tid) +
+                          " next_state=" +
+                          next_state.to_string() +
+                          " cost=" +
+                          new_cost.to_string(),
+                        )
+                        for r in shifted {
+                          result_tops.push(r)
+                          result_costs.push((r, new_cost))
+                        }
                       }
                     }
+                    _ => ()
                   }
-                  _ => ()
                 }
-              }
+            }
           }
         }
       }
@@ -960,6 +1034,9 @@ fn GlrEngine::insert_missing(
   }
   if result_tops.is_empty() {
     // 全部失败：还原
+    self.trace_recovery(
+      "insert_missing failed lookahead=" + trace_token(table, actual_tok),
+    )
     for r in saved_tops {
       self.active_tops.push(r)
     }
@@ -1012,8 +1089,7 @@ fn GlrEngine::insert_missing_and_relex(
   let mut result_new_pos = pos
   let mut result_new_point = cur_point
   for top_ref in saved_tops {
-    let state = self.gss_nodes[top_ref].state
-    match table.lexer_dfa.valid_tokens.get(state) {
+    match table.lexer_dfa.valid_tokens.get(self.gss_nodes[top_ref].state) {
       None => ()
       Some(valid_tids) => {
         let (base_cost, is_first_error) = match self.error_status.get(top_ref) {
@@ -1034,93 +1110,122 @@ fn GlrEngine::insert_missing_and_relex(
           if is_extra {
             continue
           }
-          match table.action.get((state, tid)) {
-            None => ()
-            Some(acts) =>
-              for act in acts {
-                match act {
-                  Shift(next_state) => {
-                    let is_named = if tid < table.symbol_metadata.length() {
-                      table.symbol_metadata[tid].is_named
-                    } else {
-                      false
-                    }
-                    let missing = CstNode::missing_leaf(
-                      tid, is_named, pos, cur_point,
-                    )
-                    let link : GssLink = {
-                      predecessor: top_ref,
-                      node: Some(missing),
-                      leading_extras: [],
-                    }
-                    let new_ref = self.gss_nodes.length()
-                    self.gss_nodes.push({ state: next_state, links: [link] })
-                    // 有状态词法器：继承前驱的 scanner 状态
-                    match self.scanner_states.get(top_ref) {
-                      Some(ss) =>
-                        self.scanner_states[new_ref] = ss.clone_scanner()
-                      None => ()
-                    }
-                    while !self.active_tops.is_empty() {
-                      let _ = self.active_tops.pop()
-                    }
-                    self.active_tops.push(new_ref)
-                    // 重新计算 valid 集合（missing 后的状态）并重新词法
-                    let new_valid : Set[Int] = Set::new()
-                    for t2 in self.active_tops {
-                      let st2 = self.gss_nodes[t2].state
-                      match table.lexer_dfa.valid_tokens.get(st2) {
-                        Some(ts) =>
-                          for t in ts {
-                            new_valid.add(t)
-                          }
+          self.trace_recovery(
+            "insert_missing_and_relex try state=" +
+            self.gss_nodes[top_ref].state.to_string() +
+            " pos=" +
+            pos.to_string() +
+            " missing=" +
+            trace_terminal_name(table, tid) +
+            " point=" +
+            trace_point(cur_point),
+          )
+          while !self.active_tops.is_empty() {
+            let _ = self.active_tops.pop()
+          }
+          self.active_tops.push(top_ref)
+          self.run_reduce_worklist(table, tid)
+          let reduced_tops = self.active_tops.copy()
+          for reduced_top_ref in reduced_tops {
+            let state = self.gss_nodes[reduced_top_ref].state
+            match table.action.get((state, tid)) {
+              None => ()
+              Some(acts) =>
+                for act in acts {
+                  match act {
+                    Shift(next_state) => {
+                      let is_named = if tid < table.symbol_metadata.length() {
+                        table.symbol_metadata[tid].is_named
+                      } else {
+                        false
+                      }
+                      let missing = CstNode::missing_leaf(
+                        tid, is_named, pos, cur_point,
+                      )
+                      let link : GssLink = {
+                        predecessor: reduced_top_ref,
+                        node: Some(missing),
+                        leading_extras: [],
+                      }
+                      let new_ref = self.gss_nodes.length()
+                      self.gss_nodes.push({ state: next_state, links: [link] })
+                      match self.scanner_states.get(reduced_top_ref) {
+                        Some(ss) =>
+                          self.scanner_states[new_ref] = ss.clone_scanner()
                         None => ()
                       }
-                    }
-                    for t in table.extras {
-                      new_valid.add(t)
-                    }
-                    let (maybe_retok, new_pos2) = self.lexer.scan_with_valid(
-                      input, pos, new_valid, table,
-                    )
-                    match maybe_retok {
-                      None => ()
-                      Some(retok) =>
-                        if retok.terminal_id != sym_error && !retok.is_extra {
-                          self.run_reduce_worklist(table, retok.terminal_id)
-                          let shifted = self.run_shift(
-                            table,
-                            retok,
-                            cur_point,
-                            input,
-                            [],
-                          )
-                          if !shifted.is_empty() {
-                            let new_cost = base_cost +
-                              (if is_first_error {
-                                self.config.error_cost_per_recovery
-                              } else {
-                                0
-                              }) +
-                              self.config.error_cost_per_missing_tree
-                            for r in shifted {
-                              result_tops.push(r)
-                              result_costs.push((r, new_cost))
+                      while !self.active_tops.is_empty() {
+                        let _ = self.active_tops.pop()
+                      }
+                      self.active_tops.push(new_ref)
+                      let new_valid : Set[Int] = Set::new()
+                      for t2 in self.active_tops {
+                        let st2 = self.gss_nodes[t2].state
+                        match table.lexer_dfa.valid_tokens.get(st2) {
+                          Some(ts) =>
+                            for t in ts {
+                              new_valid.add(t)
                             }
-                            result_new_pos = new_pos2
-                            result_new_point = bytes_to_point(
-                              input,
-                              retok.start_byte,
-                              cur_point,
-                              retok.end_byte,
-                            )
-                          }
+                          None => ()
                         }
+                      }
+                      for t in table.extras {
+                        new_valid.add(t)
+                      }
+                      let (maybe_retok, new_pos2) = self.lexer.scan_with_valid(
+                        input, pos, new_valid, table,
+                      )
+                      match maybe_retok {
+                        None => ()
+                        Some(retok) =>
+                          if retok.terminal_id != sym_error && !retok.is_extra {
+                            self.run_reduce_worklist(table, retok.terminal_id)
+                            let shifted = self.run_shift(
+                              table,
+                              retok,
+                              cur_point,
+                              input,
+                              [],
+                            )
+                            if !shifted.is_empty() {
+                              let new_cost = base_cost +
+                                (if is_first_error {
+                                  self.config.error_cost_per_recovery
+                                } else {
+                                  0
+                                }) +
+                                self.config.error_cost_per_missing_tree
+                              self.trace_recovery(
+                                "insert_missing_and_relex success state=" +
+                                state.to_string() +
+                                " retok=" +
+                                trace_token(table, retok) +
+                                " missing=" +
+                                trace_terminal_name(table, tid) +
+                                " next_state=" +
+                                next_state.to_string() +
+                                " cost=" +
+                                new_cost.to_string(),
+                              )
+                              for r in shifted {
+                                result_tops.push(r)
+                                result_costs.push((r, new_cost))
+                              }
+                              result_new_pos = new_pos2
+                              result_new_point = bytes_to_point(
+                                input,
+                                retok.start_byte,
+                                cur_point,
+                                retok.end_byte,
+                              )
+                            }
+                          }
+                      }
                     }
+                    _ => ()
                   }
-                  _ => ()
                 }
-              }
+            }
           }
         }
       }
@@ -1131,6 +1236,9 @@ fn GlrEngine::insert_missing_and_relex(
     let _ = self.active_tops.pop()
   }
   if result_tops.is_empty() {
+    self.trace_recovery(
+      "insert_missing_and_relex failed pos=" + pos.to_string(),
+    )
     for r in saved_tops {
       self.active_tops.push(r)
     }
@@ -1258,6 +1366,18 @@ fn GlrEngine::recover_to_state(
             0
           }
           let new_cost = base_cost + recovery_penalty + path_cost
+          self.trace_recovery(
+            "recover_to_state success from_state=" +
+            self.gss_nodes[top_ref].state.to_string() +
+            " ancestor_state=" +
+            self.gss_nodes[anc_ref].state.to_string() +
+            " lookahead=" +
+            trace_token(table, tok) +
+            " skipped_nodes=" +
+            collected.length().to_string() +
+            " cost=" +
+            new_cost.to_string(),
+          )
           for r in shifted {
             result_tops.push(r)
             result_costs.push((r, new_cost))
@@ -1271,6 +1391,9 @@ fn GlrEngine::recover_to_state(
     let _ = self.active_tops.pop()
   }
   if result_tops.is_empty() {
+    self.trace_recovery(
+      "recover_to_state failed lookahead=" + trace_token(table, tok),
+    )
     for r in saved_tops {
       self.active_tops.push(r)
     }
