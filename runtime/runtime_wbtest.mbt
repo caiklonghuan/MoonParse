@@ -867,6 +867,33 @@ test "insert_missing — 缺少中间 token 的代价标记" {
 }
 
 ///|
+test "insert_missing — 先 reduce 再补缺失 token" {
+  let label = "insert_missing / reduce before shift"
+  let dsl = "start s\n" +
+    "rule s: decl \"b\"\n" +
+    "rule decl: spec ident \";\"\n" +
+    "rule spec: \"a\"\n" +
+    "rule ident: \"x\""
+  let input = "axb"
+  let table = must_make_table(dsl)
+  let root = must_parse_glr(label, table, input)
+  ignore(
+    assert_recovery_tree_usable(
+      label,
+      table,
+      input,
+      root,
+      0,
+      input.length(),
+      false,
+      true,
+      ["(s", "(decl"],
+    ),
+  )
+  assert_eq(count_missing_nodes(root), 1)
+}
+
+///|
 test "error recovery / 非法 token 前缀产生 ERROR 节点且保留根树" {
   let label = "error recovery / 非法 token 前缀"
   let dsl = "start s\nrule s: \"a\" \"b\""
