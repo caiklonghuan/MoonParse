@@ -1,24 +1,28 @@
 start translation_unit
 extras [/[ \t\n\r]+/, /\/\/[^\n\r]*/, /\/\*([^*]|\*+[^*/])*\*+\//]
-conflicts [[labeled_statement, expression_statement]]
+conflicts [[labeled_statement, expression_statement], [primary_expression]]
 rule translation_unit: item*
 rule item: preproc_directive | function_definition | declaration
 rule preproc_directive: /#[^\n\r]*/
 rule function_definition: declaration_specifiers declarator compound_statement
-rule declaration: declaration_specifiers init_declarator_list? ";"
+rule declaration: typedef_declaration | ordinary_declaration
+rule typedef_declaration: "typedef" declaration_specifiers init_declarator_list ";"
+rule ordinary_declaration: declaration_specifiers init_declarator_list? ";"
 rule declaration_specifiers: declaration_specifier+
-rule declaration_specifier: type_specifier | "const" | "static" | "extern" | "typedef" | "volatile" | "inline" | "register"
+rule declaration_specifier: type_specifier | "const" | "static" | "extern" | "volatile" | "inline" | "register"
 rule type_specifier: "void" | "char" | "short" | "int" | "long" | "float" | "double" | "signed" | "unsigned" | struct_or_union_specifier | enum_specifier
-rule struct_or_union_specifier: ("struct" | "union") identifier "{" struct_field* "}" | ("struct" | "union") "{" struct_field* "}" | ("struct" | "union") identifier
+rule struct_or_union_specifier: struct_or_union struct_or_union_body
+rule struct_or_union: "struct" | "union"
+rule struct_or_union_body: identifier "{" struct_field* "}" | "{" struct_field* "}" | identifier
 rule struct_field: declaration_specifiers struct_field_declarator_list ";"
 rule struct_field_declarator_list: declarator ("," declarator)*
-rule enum_specifier: "enum" identifier "{" enumerator_list ","? "}" | "enum" "{" enumerator_list ","? "}" | "enum" identifier
-rule enumerator_list: enumerator ("," enumerator)*
+rule enum_specifier: "enum" identifier "{" enumerator_list "}" | "enum" "{" enumerator_list "}" | "enum" identifier
+rule enumerator_list: enumerator | enumerator "," | enumerator "," enumerator_list
 rule enumerator: identifier ("=" conditional_expression)?
 rule init_declarator_list: init_declarator ("," init_declarator)*
 rule init_declarator: declarator ("=" initializer)?
-rule initializer: assignment_expression | "{" initializer_list ","? "}"
-rule initializer_list: initializer ("," initializer)*
+rule initializer: assignment_expression | "{" initializer_list "}"
+rule initializer_list: initializer | initializer "," | initializer "," initializer_list
 rule declarator: pointer? identifier declarator_suffix*
 rule declarator_suffix: function_suffix | array_suffix
 rule pointer: "*" pointer?
