@@ -10,6 +10,61 @@ fn parse_c_ok(source : String) -> @runtime.CstNode {
 }
 
 ///|
+fn c_has_error_or_missing(node : @runtime.CstNode) -> Bool {
+  if node.is_error || node.is_missing {
+    return true
+  }
+  for child in node.children {
+    if c_has_error_or_missing(child) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn c_count_missing_nodes(node : @runtime.CstNode) -> Int {
+  let mut total = if node.is_missing { 1 } else { 0 }
+  for child in node.children {
+    total = total + c_count_missing_nodes(child)
+  }
+  total
+}
+
+///|
+fn c_count_fragment(text : String, fragment : String) -> Int {
+  if fragment.is_empty() {
+    return 0
+  }
+  let mut total = 0
+  let limit = text.length() - fragment.length()
+  if limit < 0 {
+    return 0
+  }
+  for i in 0..<(limit + 1) {
+    if text[i:i + fragment.length()].to_string() == fragment {
+      total = total + 1
+    }
+  }
+  total
+}
+
+///|
+fn assert_c_invariants(
+  label : String,
+  root : @runtime.CstNode,
+  source : String,
+) -> Unit {
+  match @runtime.check_cst_invariants(root, source) {
+    Some(msg) => {
+      println("\{label} invariant failed: \{msg}")
+      panic()
+    }
+    None => ()
+  }
+}
+
+///|
 fn nested_c_function(depth : Int) -> String {
   let buf = StringBuilder::new()
   buf.write_string("int stress(int x) {")
@@ -158,7 +213,7 @@ test "c snapshot / 全局变量声明" {
   inspect(
     @grammars.c_sexp("int x;"),
     content=(
-      #|(translation_unit (EOF) (item (declaration (declaration_specifiers (declaration_specifier (type_specifier))) (init_declarator_list (init_declarator (declarator (identifier)))))))
+      #|(translation_unit (EOF) (item (declaration (ordinary_declaration (declaration_specifiers (declaration_specifier (type_specifier))) (init_declarator_list (init_declarator (declarator (identifier))))))))
     ),
   )
 }
@@ -258,6 +313,40 @@ test "c_typedef_basic" {
 }
 
 ///|
+test "c recovery / typedef 缺分号后保留后续 enum" {
+  let source =
+    #|#include <stdio.h>
+    #|
+    #|typedef unsigned long size_t
+    #|
+    #|enum Color { RED, GREEN, BLUE };
+  let root = parse_c_ok(source)
+  assert_true(c_has_error_or_missing(root))
+  assert_true(c_count_missing_nodes(root) > 0)
+  assert_c_invariants("c recovery / typedef missing semicolon", root, source)
+  let sexp = @grammars.c_sexp(source)
+  assert_eq(c_count_fragment(sexp, "(item "), 3)
+  assert_true(sexp.contains("(item (preproc_directive))"))
+  assert_true(sexp.contains("(enum_specifier"))
+}
+
+///|
+test "c recovery / typedef 缺分号 init_declarator_list span 最小复现" {
+  let source =
+    #|typedef unsigned long size_t
+    #|enum Color { RED };
+  let root = parse_c_ok(source)
+  assert_true(c_has_error_or_missing(root))
+  assert_true(c_count_missing_nodes(root) > 0)
+  assert_c_invariants(
+    "c recovery / init_declarator_list span minimal", root, source,
+  )
+  let sexp = @grammars.c_sexp(source)
+  assert_eq(c_count_fragment(sexp, "(item "), 2)
+  assert_true(sexp.contains("(enum_specifier"))
+}
+
+///|
 test "c_typedef_struct" {
   let source =
     #|typedef struct Point {
@@ -273,6 +362,13 @@ test "c_enum_definition" {
   let source =
     #|enum Color { RED, GREEN, BLUE };
     #|enum Status { OK = 0, ERROR = -1, PENDING = 1 };
+  let node = parse_c_ok(source)
+  assert_true(!node.is_error)
+}
+
+///|
+test "c_enum_definition_with_trailing_comma" {
+  let source = "enum Color { RED, GREEN, BLUE, };"
   let node = parse_c_ok(source)
   assert_true(!node.is_error)
 }
@@ -329,6 +425,13 @@ test "c_array_declaration" {
     #|int arr[10];
     #|int matrix[3][4];
     #|const char *names[] = {"hello", "world"};
+  let node = parse_c_ok(source)
+  assert_true(!node.is_error)
+}
+
+///|
+test "c_initializer_list_with_trailing_comma" {
+  let source = "int xs[] = {1, 2, 3,};"
   let node = parse_c_ok(source)
   assert_true(!node.is_error)
 }
@@ -411,6 +514,16 @@ test "c_goto_error_handling" {
     #|  return fd;
     #|  error:
     #|    return -1;
+    #|}
+  let node = parse_c_ok(source)
+  assert_true(!node.is_error)
+}
+
+///|
+test "c_conditional_expression_identifier_before_colon" {
+  let source =
+    #|int f(int x, int y, int z) {
+    #|  return x ? y : z;
     #|}
   let node = parse_c_ok(source)
   assert_true(!node.is_error)
