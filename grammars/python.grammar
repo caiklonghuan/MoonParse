@@ -2,8 +2,8 @@ start module
 extras [/[ \t]+/, /#[^\n\r]*/]
 externals [indent dedent newline]
 rule module: (newline | statement)*
-rule statement: compound_statement newline* | simple_statement newline*
-rule simple_statement: import_statement | return_statement | pass_statement | break_statement | continue_statement | raise_statement | del_statement | global_statement | nonlocal_statement | assert_statement | augmented_assign_statement | assign_statement | expression_statement
+rule statement: compound_statement | simple_statement newline
+rule simple_statement: import_statement | return_statement | pass_statement | break_statement | continue_statement | raise_statement | del_statement | global_statement | nonlocal_statement | assert_statement | assignment_or_expression_statement
 rule compound_statement: if_statement | while_statement | for_statement | decorated_statement | try_statement | with_statement
 rule import_statement: "import" import_alias ("," import_alias)* | "from" dotted_name "import" import_targets
 rule import_alias: dotted_name ("as" identifier)?
@@ -18,11 +18,10 @@ rule del_statement: "del" expression ("," expression)*
 rule global_statement: "global" identifier ("," identifier)*
 rule nonlocal_statement: "nonlocal" identifier ("," identifier)*
 rule assert_statement: "assert" expression ("," expression)?
-rule assign_statement: target ("," target)* ","? (":" type_hint)? "=" expression
-rule augmented_assign_statement: target augmented_operator expression
+rule assignment_or_expression_statement: expression assignment_or_expression_tail?
+rule assignment_or_expression_tail: augmented_operator expression | assignment_tail
+rule assignment_tail: ("," expression)* ","? (":" type_hint)? "=" expression
 rule augmented_operator: "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "//=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-rule expression_statement: expression
-rule target: identifier | postfix_expression | "*" identifier
 rule if_statement: "if" expression ":" suite ("elif" expression ":" suite)* ("else" ":" suite)?
 rule while_statement: "while" expression ":" suite
 rule for_statement: "for" for_target "in" expression ":" suite
@@ -33,9 +32,9 @@ rule try_statement: "try" ":" suite except_clause* ("else" ":" suite)? ("finally
 rule except_clause: "except" exception_spec? ":" suite
 rule exception_spec: expression ("as" identifier)?
 rule with_statement: "with" with_item ("," with_item)* ":" suite
-rule with_item: expression ("as" target)?
+rule with_item: expression ("as" expression)?
 rule async_def_statement: "async" "def" identifier "(" parameter_list? ")" return_hint? ":" suite
-rule suite: simple_statement | newline indent statement+ dedent
+rule suite: simple_statement | newline indent (newline | statement)+ dedent
 rule return_hint: "->" type_hint
 rule type_hint: dotted_name ("[" type_hint ("," type_hint)* "]")?
 rule parameter_list: parameter_item ("," parameter_item)* ("," "/" ("," parameter_item)*)?
@@ -47,23 +46,22 @@ rule parameter_names: identifier ("," identifier)*
 rule conditional_expression: or_expression ("if" or_expression "else" expression)?
 rule or_expression: and_expression ("or" and_expression)*
 rule and_expression: not_expression ("and" not_expression)*
-rule not_expression: "not" not_expression | comparison_expression
-rule comparison_expression: bitwise_or_expression (comparison_operator bitwise_or_expression)*
-rule comparison_operator: "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "not" "in" | "is" "not" | "is"
+rule not_expression: "not" not_expression | prec.right(1, comparison_expression)
+rule comparison_expression: bitwise_or_expression | prec.right(1, comparison_expression "==" bitwise_or_expression) | prec.right(1, comparison_expression "!=" bitwise_or_expression) | prec.right(1, comparison_expression "<" bitwise_or_expression) | prec.right(1, comparison_expression ">" bitwise_or_expression) | prec.right(1, comparison_expression "<=" bitwise_or_expression) | prec.right(1, comparison_expression ">=" bitwise_or_expression) | prec.right(1, comparison_expression "in" bitwise_or_expression) | prec.right(1, comparison_expression "not" "in" bitwise_or_expression) | prec.right(1, comparison_expression "is" "not" bitwise_or_expression) | prec.right(1, comparison_expression "is" bitwise_or_expression)
 rule bitwise_or_expression: bitwise_xor_expression ("|" bitwise_xor_expression)*
 rule bitwise_xor_expression: bitwise_and_expression ("^" bitwise_and_expression)*
 rule bitwise_and_expression: shift_expression ("&" shift_expression)*
-rule shift_expression: additive_expression (("<<" | ">>") additive_expression)*
-rule additive_expression: multiplicative_expression (("+" | "-") multiplicative_expression)*
-rule multiplicative_expression: power_expression (("*" | "/" | "%" | "//") power_expression)*
+rule shift_expression: prec.left(2, additive_expression) | prec.left(2, shift_expression "<<" additive_expression) | prec.left(2, shift_expression ">>" additive_expression)
+rule additive_expression: multiplicative_expression | prec.left(3, additive_expression "+" multiplicative_expression) | prec.left(3, additive_expression "-" multiplicative_expression)
+rule multiplicative_expression: power_expression | prec.left(4, multiplicative_expression "*" power_expression) | prec.left(4, multiplicative_expression "/" power_expression) | prec.left(4, multiplicative_expression "%" power_expression) | prec.left(4, multiplicative_expression "//" power_expression)
 rule power_expression: unary_expression ("**" unary_expression)?
-rule unary_expression: postfix_expression | await_expression | ("+" | "-" | "~") unary_expression
-rule postfix_expression: primary_expression postfix_suffix*
-rule postfix_suffix: "(" argument_list? ")" | "[" subscript "]" | "." identifier
+rule unary_expression: prec.right(5, postfix_expression) | await_expression | ("+" | "-" | "~") unary_expression
+rule postfix_expression: primary_expression | prec.left(5, postfix_expression "(" argument_list? ")") | prec.left(5, postfix_expression "[" subscript "]") | prec.left(5, postfix_expression "." identifier)
 rule subscript: slice | expression
 rule slice: expression? ":" expression? (":" expression?)?
 rule argument_list: argument_item ("," argument_item)*
-rule argument_item: "**" expression | "*" expression | identifier "=" expression | expression
+rule argument_item: "**" expression | "*" expression | expression argument_item_tail?
+rule argument_item_tail: "=" expression
 rule primary_expression: literal | identifier | tuple_literal | list_literal | set_literal | dict_literal | "(" expression ")"
 rule tuple_literal: "(" expression ("," expression)* "," ")"
 rule list_literal: "[" expression_list? "]" | "[" expression comp_clause+ "]"
