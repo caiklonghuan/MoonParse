@@ -94,6 +94,37 @@ test "python_nested_if_in_function" {
 }
 
 ///|
+test "python_return_call_expression_stays_on_one_line" {
+  let source = "def fib(n: int) -> int:\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)"
+  let node = parse_python_ok(source)
+  assert_true(!node.is_error)
+  let tree = @grammars.python_tree(source)
+  assert_true(tree.contains("[return_statement]"))
+  assert_true(tree.contains("[additive_expression]"))
+  assert_true(tree.contains("[postfix_expression]"))
+  assert_true(!tree.contains("[expression_statement]"))
+  assert_true(!tree.contains("MISSING"))
+}
+
+///|
+test "python_expression_conflict_regressions" {
+  let source =
+    #|if name not in seen:
+    #|    seen.add(name)
+    #|value = data << offset + width
+    #|result = factory(1)(name=value)[0]
+    #|call(name=value, **extra)
+  let node = parse_python_ok(source)
+  assert_true(!node.is_error)
+  let tree = @grammars.python_tree(source)
+  assert_true(tree.contains("[comparison_expression]"))
+  assert_true(tree.contains("[shift_expression]"))
+  assert_true(tree.contains("[additive_expression]"))
+  assert_true(tree.contains("[argument_item_tail]"))
+  assert_true(!tree.contains("MISSING"))
+}
+
+///|
 test "python_class_with_method" {
   let source =
     #|class Point:
@@ -169,7 +200,7 @@ test "python snapshot / 赋值语句" {
   inspect(
     @grammars.python_sexp("x = 1"),
     content=(
-      #|(module (EOF) (statement (simple_statement (assign_statement (target (identifier)) (expression (conditional_expression (or_expression (and_expression (not_expression (comparison_expression (bitwise_or_expression (bitwise_xor_expression (bitwise_and_expression (shift_expression (additive_expression (multiplicative_expression (power_expression (unary_expression (postfix_expression (primary_expression (literal (number_literal))))))))))))))))))))))
+      #|(module (EOF) (statement (simple_statement (assignment_or_expression_statement (expression (conditional_expression (or_expression (and_expression (not_expression (comparison_expression (bitwise_or_expression (bitwise_xor_expression (bitwise_and_expression (shift_expression (additive_expression (multiplicative_expression (power_expression (unary_expression (postfix_expression (primary_expression (identifier))))))))))))))))) (assignment_or_expression_tail (assignment_tail (expression (conditional_expression (or_expression (and_expression (not_expression (comparison_expression (bitwise_or_expression (bitwise_xor_expression (bitwise_and_expression (shift_expression (additive_expression (multiplicative_expression (power_expression (unary_expression (postfix_expression (primary_expression (literal (number_literal))))))))))))))))))))))))
     ),
   )
 }
@@ -979,7 +1010,7 @@ test "python_snapshot / nested if suite" {
   inspect(
     @grammars.python_sexp("if True:\n    x = 1"),
     content=(
-      #|(module (EOF) (statement (compound_statement (if_statement (expression (conditional_expression (or_expression (and_expression (not_expression (comparison_expression (bitwise_or_expression (bitwise_xor_expression (bitwise_and_expression (shift_expression (additive_expression (multiplicative_expression (power_expression (unary_expression (postfix_expression (primary_expression (literal))))))))))))))))) (suite (statement (simple_statement (assign_statement (target (identifier)) (expression (conditional_expression (or_expression (and_expression (not_expression (comparison_expression (bitwise_or_expression (bitwise_xor_expression (bitwise_and_expression (shift_expression (additive_expression (multiplicative_expression (power_expression (unary_expression (postfix_expression (primary_expression (literal (number_literal))))))))))))))))))))))))))
+      #|(module (EOF) (statement (compound_statement (if_statement (expression (conditional_expression (or_expression (and_expression (not_expression (comparison_expression (bitwise_or_expression (bitwise_xor_expression (bitwise_and_expression (shift_expression (additive_expression (multiplicative_expression (power_expression (unary_expression (postfix_expression (primary_expression (literal))))))))))))))))) (suite (statement (simple_statement (assignment_or_expression_statement (expression (conditional_expression (or_expression (and_expression (not_expression (comparison_expression (bitwise_or_expression (bitwise_xor_expression (bitwise_and_expression (shift_expression (additive_expression (multiplicative_expression (power_expression (unary_expression (postfix_expression (primary_expression (identifier))))))))))))))))) (assignment_or_expression_tail (assignment_tail (expression (conditional_expression (or_expression (and_expression (not_expression (comparison_expression (bitwise_or_expression (bitwise_xor_expression (bitwise_and_expression (shift_expression (additive_expression (multiplicative_expression (power_expression (unary_expression (postfix_expression (primary_expression (literal (number_literal))))))))))))))))))))))))))))
     ),
   )
 }
