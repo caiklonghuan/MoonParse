@@ -1707,7 +1707,7 @@ test "json recovery / 中间非法 token 仍保留 object 结构" {
 test "json recovery / 截断数组 EOF 仍保留外层 object" {
   let input = "{\"a\": [1, 2, 3}"
   assert_json_recovery_usable(
-    "json recovery / 截断数组 EOF", input, 0, true, false, "(object",
+    "json recovery / 截断数组 EOF", input, 0, false, true, "(object",
   )
 }
 
