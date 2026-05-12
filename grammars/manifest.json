@@ -1,0 +1,55 @@
+{
+  "languages": [
+    {
+      "id": "json",
+      "name": "JSON",
+      "status": "stable",
+      "extensions": [".json"],
+      "entryRule": "json",
+      "grammar": "json.grammar",
+      "corpus": "corpus/json",
+      "highlightQuery": "builtin"
+    },
+    {
+      "id": "json5",
+      "name": "JSON5",
+      "status": "stable",
+      "extensions": [".json5"],
+      "entryRule": "json5",
+      "grammar": "json5.grammar",
+      "corpus": "corpus/json5",
+      "highlightQuery": "builtin"
+    },
+    {
+      "id": "c",
+      "name": "C",
+      "status": "subset",
+      "extensions": [".c", ".h"],
+      "entryRule": "translation_unit",
+      "grammar": "c.grammar",
+      "corpus": "corpus/c",
+      "highlightQuery": "builtin"
+    },
+    {
+      "id": "python",
+      "name": "Python",
+      "status": "subset",
+      "extensions": [".py", ".pyw"],
+      "entryRule": "module",
+      "grammar": "python.grammar",
+      "corpus": "corpus/python",
+      "highlightQuery": "builtin"
+    },
+    {
+      "id": "moonbit",
+      "name": "MoonBit",
+      "status": "experimental",
+      "extensions": [".mbt"],
+      "entryRule": "module",
+      "grammar": "moonbit.grammar",
+      "corpus": "corpus/moonbit",
+      "highlightQuery": "builtin",
+      "localsQuery": "builtin"
+    }
+  ]
+}
