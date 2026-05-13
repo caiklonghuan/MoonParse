@@ -1,0 +1,55 @@
+====
+unquoted key
+====
+{key: "value"}
+----
+error: ok
+sexp-contains:
+  json5
+  object
+  member
+
+====
+single quoted string
+====
+{'single': "double"}
+----
+error: ok
+sexp-contains:
+  json5
+  string
+
+====
+trailing comma in object
+====
+{a: 1,}
+----
+error: ok
+sexp-contains:
+  json5
+  object
+  number
+
+====
+trailing comma in array
+====
+[1, 2, 3,]
+----
+error: ok
+sexp-contains:
+  json5
+  array
+
+====
+comment
+====
+{
+  // line comment
+  key: /* block */ "value"
+}
+----
+error: ok
+sexp-contains:
+  json5
+  object
+  comment

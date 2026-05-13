@@ -1,0 +1,55 @@
+====
+basic object
+====
+{"key": "value"}
+----
+error: ok
+sexp-contains:
+  json
+  object
+  pair
+  jstring
+
+====
+nested object
+====
+{"a": {"b": [1, 2, 3]}, "c": true}
+----
+error: ok
+sexp-contains:
+  json
+  object
+  array
+  number
+
+====
+arrays
+====
+[1, "two", true, null]
+----
+error: ok
+sexp-contains:
+  json
+  array
+  number
+  jstring
+
+====
+empty object
+====
+{}
+----
+error: ok
+sexp-contains:
+  json
+  object
+
+====
+empty array
+====
+[]
+----
+error: ok
+sexp-contains:
+  json
+  array

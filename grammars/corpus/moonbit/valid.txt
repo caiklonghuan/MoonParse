@@ -1,0 +1,49 @@
+====
+function definition
+====
+fn main() {
+  "hello"
+}
+----
+error: ok
+sexp-contains:
+  module
+  function_decl
+
+====
+let binding
+====
+let x = 42
+----
+error: ok
+sexp-contains:
+  module
+  let_statement
+  number_literal
+
+====
+struct definition
+====
+struct Point {
+  x : Int
+  y : Int
+}
+----
+error: ok
+sexp-contains:
+  module
+  struct_decl
+
+====
+enum definition
+====
+enum Color {
+  Red
+  Green
+  Blue
+}
+----
+error: ok
+sexp-contains:
+  module
+  enum_decl

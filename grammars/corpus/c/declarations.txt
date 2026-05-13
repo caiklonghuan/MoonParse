@@ -1,0 +1,17 @@
+====
+typedef recovery and enum declaration
+====
+#include <stdio.h>
+
+typedef unsigned long size_t
+
+enum Color { RED, GREEN, BLUE };
+----
+error: error:4:0
+sexp-contains:
+  translation_unit
+  preproc_directive
+  typedef_declaration
+  MISSING
+  enum_specifier
+

@@ -1,0 +1,17 @@
+====
+typed recursive function
+====
+def fib(n: int) -> int:
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+----
+error: ok
+sexp-contains:
+  (module
+  def_statement
+  parameter_list
+  return_hint
+  if_statement
+  return_statement
+
