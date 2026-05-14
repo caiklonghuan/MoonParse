@@ -267,6 +267,204 @@ pub fn report_validation_warnings(
 
 ///|
 /// 打印解析表冲突报告到 stderr
+fn conflict_terminal_name(
+  table : @tablegen.ParseTable,
+  tid : @tablegen.TerminalId,
+) -> String {
+  if tid == @tablegen.eoi_id {
+    "$"
+  } else {
+    match table.terminal_names.get(tid) {
+      Some(name) => name
+      None => "<terminal:" + tid.to_string() + ">"
+    }
+  }
+}
+
+///|
+fn conflict_symbol_name(
+  table : @tablegen.ParseTable,
+  sym : @tablegen.Symbol,
+) -> String {
+  match sym {
+    Terminal(tid) => conflict_terminal_name(table, tid)
+    NonTerminal(nt) => table.symbol_metadata[nt].name
+    EndOfInput => "$"
+  }
+}
+
+///|
+fn conflict_production_text(
+  table : @tablegen.ParseTable,
+  pid : @tablegen.ProductionId,
+) -> String {
+  if pid < 0 || pid >= table.productions.length() {
+    return "<production:" + pid.to_string() + ">"
+  }
+  let prod = table.productions[pid]
+  let head = table.symbol_metadata[prod.head].name
+  let body : Array[String] = []
+  for item in prod.body {
+    body.push(conflict_symbol_name(table, item.symbol))
+  }
+  let body_text = if body.is_empty() { "<empty>" } else { body.join(" ") }
+  "#" +
+  pid.to_string() +
+  " " +
+  prod.rule_name +
+  ": " +
+  head +
+  " -> " +
+  body_text
+}
+
+///|
+fn conflict_action_text(
+  table : @tablegen.ParseTable,
+  action : @tablegen.Action,
+) -> String {
+  match action {
+    Shift(state) => "shift, consume lookahead -> state " + state.to_string()
+    Reduce(pid) => "reduce " + conflict_production_text(table, pid)
+    Accept => "accept"
+  }
+}
+
+///|
+fn conflict_action_node(
+  table : @tablegen.ParseTable,
+  action : @tablegen.Action,
+) -> String {
+  match action {
+    Shift(state) => "shift -> state " + state.to_string()
+    Reduce(pid) =>
+      "reduce #" +
+      pid.to_string() +
+      " (" +
+      table.productions[pid].rule_name +
+      ")"
+    Accept => "accept"
+  }
+}
+
+///|
+fn conflict_severity_text(severity : @tablegen.ConflictSeverity) -> String {
+  match severity {
+    Warn(msg) => "warn: " + msg
+    Ambiguous(msg) => "error: " + msg
+    DynamicConflict(id) => "dynamic: prec id=" + id.to_string()
+    Declared(msg) => "declared: " + msg
+  }
+}
+
+///|
+fn conflict_hint(actions : Array[@tablegen.Action]) -> String {
+  let mut shifts = 0
+  let mut reduces = 0
+  for action in actions {
+    match action {
+      Shift(_) | Accept => shifts = shifts + 1
+      Reduce(_) => reduces = reduces + 1
+    }
+  }
+  if shifts > 0 && reduces > 0 {
+    "hint: Shift/Reduce usually means the grammar can either consume the lookahead now or finish a rule first; add precedence/associativity, split the rule, or declare the conflict if GLR ambiguity is intended."
+  } else if reduces > 1 {
+    "hint: Reduce/Reduce means two completed rules match the same prefix; prefer making one rule syntactically distinct, factoring their common prefix, or declaring the conflict only if both parses are intentional."
+  } else {
+    "hint: inspect the action paths below together with `moonparse dump automaton <grammar>` when you need the full LR item set."
+  }
+}
+
+///|
+fn conflict_mermaid_id(prefix : String, n : Int) -> String {
+  if n < 0 {
+    prefix + "m" + (0 - n).to_string()
+  } else {
+    prefix + n.to_string()
+  }
+}
+
+///|
+pub fn report_conflict_details(
+  table : @tablegen.ParseTable,
+  reports : Array[@tablegen.ConflictReport],
+) -> Unit {
+  if reports.is_empty() {
+    return
+  }
+  print_err("")
+  print_err(ansi_bold("Conflict detail report"))
+  print_err(
+    "  note: paths below are parser action alternatives at the conflict cell; reduce goto depends on the stack predecessor state.",
+  )
+  for i in 0..<reports.length() {
+    let r = reports[i]
+    let terminal = conflict_terminal_name(table, r.terminal)
+    print_err("")
+    print_err(
+      "  [" +
+      (i + 1).to_string() +
+      "] state " +
+      r.state.to_string() +
+      " on " +
+      terminal +
+      " (terminal " +
+      r.terminal.to_string() +
+      ")",
+    )
+    print_err("      " + conflict_severity_text(r.severity))
+    print_err("      actions:")
+    for action in r.actions {
+      print_err("        - " + conflict_action_text(table, action))
+    }
+    print_err("      possible paths:")
+    for action in r.actions {
+      print_err("        - " + conflict_action_node(table, action))
+    }
+    print_err("      ascii graph:")
+    print_err(
+      "        state " +
+      r.state.to_string() +
+      " -- lookahead " +
+      terminal +
+      " --> {",
+    )
+    for action in r.actions {
+      print_err("          " + conflict_action_node(table, action))
+    }
+    print_err("        }")
+    print_err("      mermaid:")
+    let sid = conflict_mermaid_id("S", r.state)
+    let tid = conflict_mermaid_id("T", r.terminal)
+    print_err("        graph LR")
+    print_err("          " + sid + "[\"state " + r.state.to_string() + "\"]")
+    print_err(
+      "          " +
+      tid +
+      "[\"lookahead terminal " +
+      r.terminal.to_string() +
+      "\"]",
+    )
+    print_err("          " + sid + " --> " + tid)
+    for j in 0..<r.actions.length() {
+      let action = r.actions[j]
+      let aid = "A" + i.to_string() + "_" + j.to_string()
+      print_err(
+        "          " +
+        tid +
+        " --> " +
+        aid +
+        "[\"" +
+        conflict_action_node(table, action) +
+        "\"]",
+      )
+    }
+    print_err("      " + conflict_hint(r.actions))
+  }
+}
+
+///|
 pub fn report_conflicts(reports : Array[@tablegen.ConflictReport]) -> Unit {
   if reports.is_empty() {
     return
