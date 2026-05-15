@@ -69,6 +69,76 @@ fn cst_to_sexp(
 }
 
 ///|
+fn tree_text_escape(s : String) -> String {
+  json_escape(s)
+}
+
+///|
+fn write_tree_text(
+  buf : StringBuilder,
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+  indent : Int,
+  field : String?,
+) -> Unit {
+  for _ in 0..<indent {
+    buf.write_string("  ")
+  }
+  if !node.children.is_empty() {
+    buf.write_string("▾")
+  } else {
+    buf.write_string("·")
+  }
+  match field {
+    Some(name) => {
+      buf.write_string(name)
+      buf.write_string(": ")
+    }
+    None => ()
+  }
+  let type_name = @query.node_type_name(node, table)
+  if node.is_missing {
+    buf.write_string("MISSING ")
+  } else if node.is_error {
+    buf.write_string("ERROR ")
+  }
+  buf.write_string(type_name)
+  buf.write_string(
+    " [\{node.start_point.row}:\{node.start_point.column}–\{node.end_point.row}:\{node.end_point.column}]",
+  )
+  if node.children.is_empty() {
+    let text = node_text(node, input)
+    if !text.is_empty() {
+      buf.write_string(" \"")
+      buf.write_string(tree_text_escape(text))
+      buf.write_char('"')
+    }
+  }
+  buf.write_char('\n')
+  for i in 0..<node.children.length() {
+    let child = node.children[i]
+    let cf = if i < node.field_names.length() {
+      node.field_names[i]
+    } else {
+      None
+    }
+    write_tree_text(buf, child, input, table, indent + 1, cf)
+  }
+}
+
+///|
+fn cst_to_tree_text(
+  root : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> String {
+  let buf = StringBuilder::new()
+  write_tree_text(buf, root, input, table, 0, None)
+  buf.to_string()
+}
+
+///|
 // Graphviz DOT 导出（--format dot）
 
 ///|
