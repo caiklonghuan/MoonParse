@@ -25,8 +25,12 @@ pub struct ParseArgs {
   table_file : String?
   /// 输入文件路径（None = 从 stdin 读取）
   input_file : String?
-  /// 输出格式：sexp（默认）或 json
+  /// 输出格式：sexp（默认）/ json / dot / tree
   format : OutputFormat
+  /// 直接输出到指定文件；None = 默认写到 stdout
+  output : String?
+  /// 输出目录；会按输入文件名自动生成输出文件名
+  outdir : String?
   /// 是否先输出 token 流
   tokens : Bool
   /// 是否只输出 ERROR 节点摘要
@@ -37,6 +41,7 @@ pub struct ParseArgs {
 pub struct CheckArgs {
   /// 语法文件路径
   grammar_file : String
+  conflict_detail : Bool
 } derive(Debug)
 
 ///|
@@ -77,6 +82,8 @@ pub enum OutputFormat {
   Json
   /// Graphviz DOT 格式，输出后可用 `dot -Tsvg` 渲染为 SVG
   Dot
+  /// 带 spans 和叶子文本的树形文本，便于和 website 树面板对照
+  Tree
 } derive(Debug, Eq)
 
 ///|
@@ -87,6 +94,7 @@ pub struct BuildArgs {
   outdir : String?
   /// 是否同时输出 wasm 扩展名产物
   wasm : Bool
+  conflict_detail : Bool
 } derive(Debug)
 
 ///|
@@ -148,13 +156,15 @@ pub impl Show for GenerateArgs with output(self, logger) {
 ///|
 pub impl Show for ParseArgs with output(self, logger) {
   logger.write_string(
-    "ParseArgs(grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, input_file: \{self.input_file}, format: \{self.format}, tokens: \{self.tokens}, error_summary: \{self.error_summary})",
+    "ParseArgs(grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, input_file: \{self.input_file}, format: \{self.format}, output: \{self.output}, outdir: \{self.outdir}, tokens: \{self.tokens}, error_summary: \{self.error_summary})",
   )
 }
 
 ///|
 pub impl Show for CheckArgs with output(self, logger) {
-  logger.write_string("CheckArgs(grammar_file: \{self.grammar_file})")
+  logger.write_string(
+    "CheckArgs(grammar_file: \{self.grammar_file}, conflict_detail: \{self.conflict_detail})",
+  )
 }
 
 ///|
@@ -179,7 +189,7 @@ pub impl Show for TestArgs with output(self, logger) {
 ///|
 pub impl Show for BuildArgs with output(self, logger) {
   logger.write_string(
-    "BuildArgs(input: \{self.input}, outdir: \{self.outdir}, wasm: \{self.wasm})",
+    "BuildArgs(input: \{self.input}, outdir: \{self.outdir}, wasm: \{self.wasm}, conflict_detail: \{self.conflict_detail})",
   )
 }
 
@@ -215,6 +225,7 @@ pub impl Show for OutputFormat with output(self, logger) {
     Sexp => logger.write_string("Sexp")
     Json => logger.write_string("Json")
     Dot => logger.write_string("Dot")
+    Tree => logger.write_string("Tree")
   }
 }
 
@@ -399,6 +410,8 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
   let mut table_file : String? = None
   let mut input_file : String? = None
   let mut format = Sexp
+  let mut output : String? = None
+  let mut outdir : String? = None
   let mut tokens = false
   let mut error_summary = false
   while !p.at_end() {
@@ -424,10 +437,25 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
           Ok("sexp") => format = Sexp
           Ok("json") => format = Json
           Ok("dot") => format = Dot
+          Ok("tree") => format = Tree
           Ok(v) =>
             return Err(
-              "unknown format '\{v}', expected 'sexp', 'json', or 'dot'\n\{parse_usage()}",
+              "unknown format '\{v}', expected 'sexp', 'json', 'dot', or 'tree'\n\{parse_usage()}",
             )
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--output") | Some("-o") => {
+        let _ = p.next()
+        match p.require_value("--output") {
+          Ok(v) => output = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--outdir") => {
+        let _ = p.next()
+        match p.require_value("--outdir") {
+          Ok(v) => outdir = Some(v)
           Err(e) => return Err(e)
         }
       }
@@ -464,6 +492,11 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
       "parse: cannot use --grammar and --table together\n\{parse_usage()}",
     )
   }
+  if output is Some(_) && outdir is Some(_) {
+    return Err(
+      "parse: cannot use --output and --outdir together\n\{parse_usage()}",
+    )
+  }
   if grammar_file is None && table_file is None {
     return Err("parse: grammar or table file required\n\{parse_usage()}")
   }
@@ -473,6 +506,8 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
       table_file,
       input_file,
       format,
+      output,
+      outdir,
       tokens,
       error_summary,
     }),
@@ -482,9 +517,14 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
 ///|
 fn parse_check(p : ArgParser) -> Result[Command, String] {
   let mut grammar_file : String? = None
+  let mut conflict_detail = false
   while !p.at_end() {
     match p.peek() {
       Some("--help") | Some("-h") => return Ok(Help(Some("check")))
+      Some("--conflict-detail") | Some("--explain-conflicts") => {
+        let _ = p.next()
+        conflict_detail = true
+      }
       Some(s) =>
         if s[0].to_int() == '-'.to_int() {
           return Err("unknown flag '\{s}' for check\n\{check_usage()}")
@@ -497,7 +537,7 @@ fn parse_check(p : ArgParser) -> Result[Command, String] {
   }
   match grammar_file {
     None => Err("check: grammar file required\n\{check_usage()}")
-    Some(gf) => Ok(Check({ grammar_file: gf }))
+    Some(gf) => Ok(Check({ grammar_file: gf, conflict_detail }))
   }
 }
 
@@ -679,7 +719,9 @@ fn parse_usage() -> String {
     #|Options:
     #|  -g, --grammar <file>  Grammar file (.grammar)
     #|  -t, --table   <file>  Parse table file (.parse_table)
-    #|  --format <fmt>        Output format: sexp (default), json, dot (Graphviz)
+    #|  --format <fmt>        Output format: sexp (default), json, dot (Graphviz), tree
+    #|  -o, --output <file>   Write output to file instead of stdout
+    #|  --outdir <dir>        Write output to auto-named file under directory
     #|  --tokens              Also print token stream
     #|  --error-summary       Only print ERROR node summary
     #|  --stdin               Read input from stdin
@@ -711,7 +753,9 @@ fn check_usage() -> String {
     #|Exit codes: 0 = ok, 1 = warnings, 2 = errors
     #|
     #|Options:
-    #|  -h, --help  Show this help
+    #|  --conflict-detail     Explain each conflict with actions and Mermaid graph
+    #|  --explain-conflicts   Alias for --conflict-detail
+    #|  -h, --help            Show this help
   )
 }
 
@@ -746,6 +790,7 @@ fn parse_build(p : ArgParser) -> Result[Command, String] {
   let mut input : String? = None
   let mut outdir : String? = None
   let mut wasm = false
+  let mut conflict_detail = false
   while !p.at_end() {
     match p.peek() {
       Some("--help") | Some("-h") => return Ok(Help(Some("build")))
@@ -760,6 +805,10 @@ fn parse_build(p : ArgParser) -> Result[Command, String] {
         let _ = p.next()
         wasm = true
       }
+      Some("--conflict-detail") | Some("--explain-conflicts") => {
+        let _ = p.next()
+        conflict_detail = true
+      }
       Some(s) =>
         if s[0].to_int() == '-'.to_int() {
           return Err("unknown flag '\{s}' for build\n\{build_usage()}")
@@ -772,7 +821,7 @@ fn parse_build(p : ArgParser) -> Result[Command, String] {
   }
   match input {
     None => Err("build: input file required\n\{build_usage()}")
-    Some(f) => Ok(Build({ input: f, outdir, wasm }))
+    Some(f) => Ok(Build({ input: f, outdir, wasm, conflict_detail }))
   }
 }
 
@@ -908,6 +957,8 @@ fn build_usage() -> String {
     #|Options:
     #|  -o, --output <dir>   Output directory (default: build/)
     #|  --wasm               Also write parser.wasm alongside parser.parse_table
+    #|  --conflict-detail    Explain each grammar conflict with actions and graph
+    #|  --explain-conflicts  Alias for --conflict-detail
     #|  -h, --help           Show this help
   )
 }
