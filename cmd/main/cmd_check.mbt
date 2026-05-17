@@ -44,7 +44,8 @@ pub fn cmd_check(args : CheckArgs) -> Int {
   }
 
   // 生成解析表，收集冲突报告
-  let (_, conflict_reports) = match @tablegen.generate_parse_table(grammar) {
+  let (table, conflict_reports) = match
+    @tablegen.generate_parse_table(grammar) {
     Ok(r) => r
     Err(msg) => {
       print_err("error: " + msg)
@@ -53,6 +54,9 @@ pub fn cmd_check(args : CheckArgs) -> Int {
   }
   if !conflict_reports.is_empty() {
     report_conflicts(conflict_reports)
+    if args.conflict_detail {
+      report_conflict_details(table, conflict_reports)
+    }
   }
 
   // 按退出码矩阵统计：

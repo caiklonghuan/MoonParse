@@ -50,7 +50,7 @@ pub fn cmd_build(args : BuildArgs) -> Int {
     }
   } else {
     // 从 .grammar 文件生成
-    let result = build_from_grammar(args.input)
+    let result = build_from_grammar(args.input, args.conflict_detail)
     match result {
       Err(code) => return code
       Ok(pair) => pair
@@ -86,7 +86,10 @@ pub fn cmd_build(args : BuildArgs) -> Int {
 
 ///|
 /// 从 .grammar 文件生成 parse table 二进制，返回 (bytes, exit_code) 或 Err(fatal_exit_code)
-fn build_from_grammar(grammar_file : String) -> Result[(Bytes, Int), Int] {
+fn build_from_grammar(
+  grammar_file : String,
+  conflict_detail : Bool,
+) -> Result[(Bytes, Int), Int] {
   // 读取语法文件
   let src = match read_file(grammar_file) {
     Ok(s) => s
@@ -137,6 +140,9 @@ fn build_from_grammar(grammar_file : String) -> Result[(Bytes, Int), Int] {
 
   if !conflict_reports.is_empty() {
     report_conflicts(conflict_reports)
+    if conflict_detail {
+      report_conflict_details(table, conflict_reports)
+    }
   }
 
   let mut summary_warns = val_warnings.length()
