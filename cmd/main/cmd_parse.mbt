@@ -71,6 +71,135 @@ fn cst_to_json_str(
 }
 
 ///|
+fn error_summary_str(
+  root : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> String {
+  let errors : Array[@runtime.CstNode] = []
+  collect_errors(root, errors)
+  if errors.is_empty() {
+    return "no errors"
+  }
+  let buf = StringBuilder::new()
+  buf.write_string("\{errors.length()} diagnostic node(s):\n")
+  for i in 0..<errors.length() {
+    let node = errors[i]
+    let type_name = @query.node_type_name(node, table)
+    let text = node_text(node, input)
+    let row = node.start_point.row + 1
+    let col = node.start_point.column + 1
+    let kind = if node.is_error { "ERROR" } else { "MISSING" }
+    buf.write_string("  [\{row}:\{col}] \{kind} \{type_name}")
+    if !text.is_empty() {
+      buf.write_string(" \"")
+      buf.write_string(json_escape(text))
+      buf.write_char('"')
+    }
+    if i + 1 < errors.length() {
+      buf.write_char('\n')
+    }
+  }
+  buf.to_string()
+}
+
+///|
+fn last_path_sep(path : String) -> Int {
+  let mut pos = -1
+  for i in 0..<path.length() {
+    let ch = path[i].to_int().to_char().unwrap()
+    if ch == '/' || ch == '\\' {
+      pos = i
+    }
+  }
+  pos
+}
+
+///|
+fn basename(path : String) -> String {
+  let pos = last_path_sep(path)
+  if pos < 0 {
+    path
+  } else {
+    path[pos + 1:path.length()].to_string()
+  }
+}
+
+///|
+fn join_dir(dir : String, name : String) -> String {
+  if dir.is_empty() {
+    return name
+  }
+  let last = dir[dir.length() - 1].to_int().to_char().unwrap()
+  if last == '/' || last == '\\' {
+    dir + name
+  } else {
+    dir + "/" + name
+  }
+}
+
+///|
+fn parse_output_suffix(args : ParseArgs) -> String {
+  if args.error_summary {
+    return ".errors.txt"
+  }
+  match args.format {
+    Sexp => ".sexp.txt"
+    Json => ".json"
+    Dot => ".dot"
+    Tree => ".tree.txt"
+  }
+}
+
+///|
+fn derive_parse_output_path(args : ParseArgs) -> String? {
+  match args.output {
+    Some(path) => Some(path)
+    None =>
+      match args.outdir {
+        Some(dir) => {
+          let stem = match args.input_file {
+            Some(path) => basename(path)
+            None => "stdin"
+          }
+          Some(join_dir(dir, stem + parse_output_suffix(args)))
+        }
+        None => None
+      }
+  }
+}
+
+///|
+fn emit_parse_output(args : ParseArgs, content : String) -> Int {
+  match derive_parse_output_path(args) {
+    None => {
+      print_info(content)
+      0
+    }
+    Some(path) => {
+      match args.outdir {
+        Some(dir) =>
+          match make_dir(dir) {
+            Ok(_) => ()
+            Err(msg) => {
+              print_err("error: cannot create output dir '\{dir}': " + msg)
+              return 2
+            }
+          }
+        None => ()
+      }
+      match write_file(path, content) {
+        Ok(_) => 0
+        Err(msg) => {
+          print_err("error: cannot write parse output: " + msg)
+          2
+        }
+      }
+    }
+  }
+}
+
+///|
 // Token 流输出（--tokens 调试用）
 
 ///|
@@ -114,33 +243,11 @@ fn collect_errors(
   node : @runtime.CstNode,
   errors : Array[@runtime.CstNode],
 ) -> Unit {
-  if node.is_error {
+  if node.is_error || node.is_missing {
     errors.push(node)
   }
   for child in node.children {
     collect_errors(child, errors)
-  }
-}
-
-///|
-fn print_error_summary(
-  root : @runtime.CstNode,
-  input : String,
-  table : @tablegen.ParseTable,
-) -> Unit {
-  let errors : Array[@runtime.CstNode] = []
-  collect_errors(root, errors)
-  if errors.is_empty() {
-    print_info("no errors")
-    return
-  }
-  print_info("\{errors.length()} error node(s):")
-  for node in errors {
-    let type_name = @query.node_type_name(node, table)
-    let text = node_text(node, input)
-    let row = node.start_point.row + 1
-    let col = node.start_point.column + 1
-    print_info("  [\{row}:\{col}] \{type_name} \"\{text}\"")
   }
 }
 
@@ -205,16 +312,27 @@ pub fn cmd_parse(args : ParseArgs) -> Int {
 
   // 输出
   if args.error_summary {
-    print_error_summary(root, input, table)
+    let exit_code = emit_parse_output(
+      args,
+      error_summary_str(root, input, table),
+    )
+    if exit_code != 0 {
+      return exit_code
+    }
   } else {
-    match args.format {
-      Sexp => print_info(cst_to_sexp(root, input, table))
-      Json => print_info(cst_to_json_str(root, input, table))
-      Dot => print_info(cst_to_dot(root, input, table))
+    let output = match args.format {
+      Sexp => cst_to_sexp(root, input, table)
+      Json => cst_to_json_str(root, input, table)
+      Dot => cst_to_dot(root, input, table)
+      Tree => cst_to_tree_text(root, input, table)
+    }
+    let exit_code = emit_parse_output(args, output)
+    if exit_code != 0 {
+      return exit_code
     }
   }
 
-  // 若有错误节点，以退出码 1 提示
+  // 若有 ERROR 或 MISSING 节点，以退出码 1 提示
   let errors : Array[@runtime.CstNode] = []
   collect_errors(root, errors)
   if errors.is_empty() {
