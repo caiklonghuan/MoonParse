@@ -44,13 +44,22 @@ fn join_lines(lines : Array[String]) -> String {
 
 ///|
 /// 判断一行是否是 tree-sitter corpus 分隔线（三个以上 '=' 字符）
+fn strip_cr(line : String) -> String {
+  if line.length() > 0 && line[line.length() - 1] == '\r' {
+    line[0:line.length() - 1].to_string()
+  } else {
+    line
+  }
+}
+
 fn is_separator_line(line : String) -> Bool {
-  let n = line.length()
+  let s = strip_cr(line)
+  let n = s.length()
   if n < 3 {
     return false
   }
   for i in 0..<n {
-    if line[i] != '=' {
+    if s[i] != '=' {
       return false
     }
   }
@@ -97,16 +106,16 @@ fn parse_corpus(content : String) -> Array[TestCase] {
       continue
     }
     i = i + 1
-    // 收集 input（直到遇到 "---" 行）
+    // 收集 input（直到遇到 "---" 或 "----" 行）
     let input_lines : Array[String] = []
-    while i < n && lines[i] != "---" {
+    while i < n && strip_cr(lines[i]) != "---" && strip_cr(lines[i]) != "----" {
       input_lines.push(lines[i])
       i = i + 1
     }
     if i >= n {
       break
     }
-    i = i + 1 // 跳过 "---"
+    i = i + 1 // 跳过 "---" / "----"
     // 收集 expected（直到下一条分隔线或文件结尾）
     let expected_lines : Array[String] = []
     while i < n && !is_separator_line(lines[i]) {

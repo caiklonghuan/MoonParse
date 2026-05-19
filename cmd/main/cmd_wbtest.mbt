@@ -91,7 +91,22 @@ test "parse_args/generate_command_with_json_flag" {
 test "parse_args/check_command" {
   let result = parse_args(["check", "my.grammar"])
   match result {
-    Ok(Check(args)) => assert_eq(args.grammar_file, "my.grammar")
+    Ok(Check(args)) => {
+      assert_eq(args.grammar_file, "my.grammar")
+      assert_eq(args.conflict_detail, false)
+    }
+    other => fail("expected Check, got \{other}")
+  }
+}
+
+///|
+test "parse_args/check_command_with_conflict_detail" {
+  let result = parse_args(["check", "my.grammar", "--conflict-detail"])
+  match result {
+    Ok(Check(args)) => {
+      assert_eq(args.grammar_file, "my.grammar")
+      assert_eq(args.conflict_detail, true)
+    }
     other => fail("expected Check, got \{other}")
   }
 }
@@ -115,6 +130,91 @@ test "parse_args/fmt_command_with_check_flag" {
     Ok(Fmt(args)) => assert_eq(args.check, true)
     other => fail("expected Fmt, got \{other}")
   }
+}
+
+///|
+test "parse_args/parse_command_with_tree_format" {
+  let result = parse_args(["parse", "json.grammar", "--format", "tree"])
+  match result {
+    Ok(Parse(args)) => assert_eq(args.format, Tree)
+    other => fail("expected Parse, got \{other}")
+  }
+}
+
+///|
+test "parse_args/parse_command_with_output_file" {
+  let result = parse_args(["parse", "json.grammar", "--output", "out/tree.txt"])
+  match result {
+    Ok(Parse(args)) => assert_eq(args.output, Some("out/tree.txt"))
+    other => fail("expected Parse, got \{other}")
+  }
+}
+
+///|
+test "parse_args/parse_command_with_outdir" {
+  let result = parse_args([
+    "parse", "json.grammar", "sample.txt", "--outdir", "tmp/tree",
+  ])
+  match result {
+    Ok(Parse(args)) => {
+      assert_eq(args.input_file, Some("sample.txt"))
+      assert_eq(args.outdir, Some("tmp/tree"))
+    }
+    other => fail("expected Parse, got \{other}")
+  }
+}
+
+///|
+test "parse_args/parse_command_rejects_output_and_outdir_together" {
+  let result = parse_args([
+    "parse", "json.grammar", "--output", "tree.txt", "--outdir", "tmp/tree",
+  ])
+  match result {
+    Err(_) => ()
+    Ok(other) => fail("expected Err, got \{other}")
+  }
+}
+
+///|
+test "parse_args/build_command_with_conflict_detail" {
+  let result = parse_args(["build", "my.grammar", "--explain-conflicts"])
+  match result {
+    Ok(Build(args)) => {
+      assert_eq(args.input, "my.grammar")
+      assert_eq(args.conflict_detail, true)
+    }
+    other => fail("expected Build, got \{other}")
+  }
+}
+
+///|
+fn must_make_table(dsl : String) -> @tablegen.ParseTable {
+  let grammar = match @grammar.parse_grammar(dsl) {
+    Success(g) => g
+    Error(err) => {
+      println("grammar parse failed: \{err.message}")
+      panic()
+    }
+  }
+  match @tablegen.generate_parse_table(grammar) {
+    Ok((table, _)) => table
+    Err(msg) => {
+      println("tablegen failed: \{msg}")
+      panic()
+    }
+  }
+}
+
+///|
+test "cst_to_tree_text/prints_ranges_and_leaf_text" {
+  let table = must_make_table("start s\nrule s: \"a\"")
+  let root = match @runtime.parse(table, "a") {
+    Ok(node) => node
+    Err(err) => fail("parse failed: \{err.message}")
+  }
+  let text = cst_to_tree_text(root, "a", table)
+  assert_true(text.contains("▾s [0:0–0:1]"))
+  assert_true(text.contains("·EOF [0:0–0:1] \"a\""))
 }
 
 ///|
