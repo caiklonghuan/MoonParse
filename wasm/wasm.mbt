@@ -70,6 +70,368 @@ fn write_sexp(
 }
 
 ///|
+fn write_tree_text(
+  buf : StringBuilder,
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+  indent : Int,
+  field : String?,
+) -> Unit {
+  for _ in 0..<indent {
+    buf.write_string("  ")
+  }
+  if !node.children.is_empty() {
+    buf.write_string("▾")
+  } else {
+    buf.write_string("·")
+  }
+  match field {
+    Some(f) => {
+      buf.write_string(f)
+      buf.write_string(": ")
+    }
+    None => ()
+  }
+  if node.is_missing {
+    buf.write_string("MISSING ")
+  } else if node.is_error {
+    buf.write_string("ERROR ")
+  }
+  buf.write_string(node_type_name(node, table))
+  buf.write_string(
+    " [\{node.start_point.row}:\{node.start_point.column}–\{node.end_point.row}:\{node.end_point.column}]",
+  )
+  if node.children.is_empty() {
+    let text = if node.start_byte < node.end_byte &&
+      node.end_byte <= input.length() {
+      input[node.start_byte:node.end_byte].to_string()
+    } else {
+      ""
+    }
+    if !text.is_empty() {
+      buf.write_string(" \"")
+      write_escaped(buf, text)
+      buf.write_char('"')
+    }
+  }
+  buf.write_char('\n')
+  for i in 0..<node.children.length() {
+    let child = node.children[i]
+    let cf = if i < node.field_names.length() {
+      node.field_names[i]
+    } else {
+      None
+    }
+    write_tree_text(buf, child, input, table, indent + 1, cf)
+  }
+}
+
+///|
+fn pretty_node_text(node : @runtime.CstNode, input : String) -> String {
+  if node.start_byte < node.end_byte && node.end_byte <= input.length() {
+    input[node.start_byte:node.end_byte].to_string()
+  } else {
+    ""
+  }
+}
+
+///|
+fn pretty_is_zero_width(node : @runtime.CstNode) -> Bool {
+  node.start_byte == node.end_byte
+}
+
+///|
+fn pretty_is_operator_token(
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> Bool {
+  if node.is_named ||
+    !node.children.is_empty() ||
+    node.is_error ||
+    node.is_missing {
+    return false
+  }
+  let _name = node_type_name(node, table)
+  match pretty_node_text(node, input) {
+    "+"
+    | "-"
+    | "*"
+    | "/"
+    | "%"
+    | "**"
+    | "//"
+    | "&"
+    | "|"
+    | "^"
+    | "<<"
+    | ">>"
+    | "=="
+    | "!="
+    | "<"
+    | ">"
+    | "<="
+    | ">="
+    | "="
+    | "+="
+    | "-="
+    | "*="
+    | "/="
+    | "%="
+    | "**="
+    | "//="
+    | "&="
+    | "|="
+    | "^="
+    | "<<="
+    | ">>="
+    | ":="
+    | "->"
+    | "not"
+    | "in"
+    | "is"
+    | "and"
+    | "or"
+    | "if"
+    | "else" => true
+    _ => false
+  }
+}
+
+///|
+fn pretty_should_skip(
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> Bool {
+  if node.is_error || node.is_missing {
+    return false
+  }
+  if pretty_is_operator_token(node, input, table) {
+    return false
+  }
+  if node.extra {
+    return true
+  }
+  if pretty_is_zero_width(node) {
+    return true
+  }
+  false
+}
+
+///|
+fn pretty_has_visible_descendant(
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> Bool {
+  if pretty_should_skip(node, input, table) {
+    return false
+  }
+  if node.is_named ||
+    node.is_error ||
+    node.is_missing ||
+    pretty_is_operator_token(node, input, table) {
+    return true
+  }
+  for child in node.children {
+    if pretty_has_visible_descendant(child, input, table) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn pretty_visible_child_count(
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> Int {
+  let mut count = 0
+  for child in node.children {
+    if pretty_has_visible_descendant(child, input, table) {
+      count = count + 1
+    }
+  }
+  count
+}
+
+///|
+fn pretty_first_visible_child(
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> @runtime.CstNode? {
+  for child in node.children {
+    if pretty_has_visible_descendant(child, input, table) {
+      return Some(child)
+    }
+  }
+  None
+}
+
+///|
+fn pretty_is_wrapper_name(name : String) -> Bool {
+  name.has_prefix("_") ||
+  name == "item" ||
+  name == "declaration" ||
+  name == "declaration_specifier" ||
+  name == "type_specifier" ||
+  name == "statement" ||
+  name == "expression" ||
+  name == "assignment_expression" ||
+  name == "conditional_expression" ||
+  name == "logical_or_expression" ||
+  name == "logical_and_expression" ||
+  name == "bitwise_or_expression" ||
+  name == "bitwise_xor_expression" ||
+  name == "bitwise_and_expression" ||
+  name == "equality_expression" ||
+  name == "relational_expression" ||
+  name == "shift_expression" ||
+  name == "additive_expression" ||
+  name == "multiplicative_expression" ||
+  name == "unary_expression" ||
+  name == "postfix_expression" ||
+  name == "primary_expression"
+}
+
+///|
+fn pretty_collapse_unary(
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> @runtime.CstNode {
+  let mut cur = node
+  while !cur.is_error && !cur.is_missing {
+    let name = node_type_name(cur, table)
+    if !pretty_is_wrapper_name(name) ||
+      pretty_visible_child_count(cur, input, table) != 1 {
+      break
+    }
+    match pretty_first_visible_child(cur, input, table) {
+      Some(child) => cur = child
+      None => break
+    }
+  }
+  cur
+}
+
+///|
+fn pretty_has_printed_children(
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+) -> Bool {
+  for child in node.children {
+    if pretty_has_visible_descendant(child, input, table) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn write_pretty_node(
+  buf : StringBuilder,
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+  indent : Int,
+  field : String?,
+) -> Unit {
+  for _ in 0..<indent {
+    buf.write_string("  ")
+  }
+  match field {
+    Some(f) => {
+      buf.write_string(f)
+      buf.write_string(": ")
+    }
+    None => ()
+  }
+  if node.is_missing {
+    buf.write_string("MISSING ")
+  } else if node.is_error {
+    buf.write_string("ERROR ")
+  }
+  let name = node_type_name(node, table)
+  buf.write_string(name)
+  let show_text = !pretty_has_printed_children(node, input, table)
+  if show_text {
+    let text = pretty_node_text(node, input)
+    if !text.is_empty() {
+      buf.write_string(" \"")
+      write_escaped(buf, text)
+      buf.write_char('"')
+    }
+  }
+  buf.write_string(
+    " [\{node.start_point.row}:\{node.start_point.column}–\{node.end_point.row}:\{node.end_point.column}]",
+  )
+  buf.write_char('\n')
+  for i in 0..<node.children.length() {
+    let child = node.children[i]
+    let cf = if i < node.field_names.length() {
+      node.field_names[i]
+    } else {
+      None
+    }
+    write_pretty_descendant(buf, child, input, table, indent + 1, cf, name)
+  }
+}
+
+///|
+fn write_pretty_descendant(
+  buf : StringBuilder,
+  node : @runtime.CstNode,
+  input : String,
+  table : @tablegen.ParseTable,
+  indent : Int,
+  field : String?,
+  parent_name : String,
+) -> Unit {
+  if pretty_should_skip(node, input, table) {
+    return
+  }
+  let cur = pretty_collapse_unary(node, input, table)
+  if pretty_should_skip(cur, input, table) {
+    return
+  }
+  let name = node_type_name(cur, table)
+  if !cur.is_error && !cur.is_missing && name == parent_name {
+    for i in 0..<cur.children.length() {
+      let child = cur.children[i]
+      let cf = if i < cur.field_names.length() {
+        cur.field_names[i]
+      } else {
+        None
+      }
+      write_pretty_descendant(buf, child, input, table, indent, cf, parent_name)
+    }
+    return
+  }
+  if cur.is_named ||
+    cur.is_error ||
+    cur.is_missing ||
+    pretty_is_operator_token(cur, input, table) {
+    write_pretty_node(buf, cur, input, table, indent, field)
+  } else {
+    for i in 0..<cur.children.length() {
+      let child = cur.children[i]
+      let cf = if i < cur.field_names.length() {
+        cur.field_names[i]
+      } else {
+        None
+      }
+      write_pretty_descendant(buf, child, input, table, indent, cf, parent_name)
+    }
+  }
+}
+
+///|
 // 错误扫描辅助（tree_error_summary 用）
 
 ///|
@@ -113,6 +475,9 @@ fn parser_scanner_kind_from_dsl(dsl : String) -> ParserScannerKind {
     (
       dsl.contains(
         "rule suite: simple_statement | newline indent statement+ dedent",
+      ) ||
+      dsl.contains(
+        "rule suite: simple_statement | newline indent (newline | statement)+ dedent",
       ) ||
       dsl.contains(
         "rule suite: simple_statement | newline indent newline* statement* simple_statement? dedent",
@@ -579,6 +944,42 @@ pub fn tree_to_json(tree_id : Int) -> String {
 }
 
 ///|
+/// 将语法树序列化为缩进树文本，包含匿名节点、token、span 与叶子原文。
+/// tree_id 无效时返回空串 ""。
+pub fn tree_to_text(tree_id : Int) -> String {
+  match tree_registry.get(tree_id) {
+    None => ""
+    Some(entry) =>
+      match parser_registry_for_tree(tree_id) {
+        None => ""
+        Some(table) => {
+          let buf = StringBuilder::new()
+          write_tree_text(buf, entry.root, entry.input, table, 0, None)
+          buf.to_string()
+        }
+      }
+  }
+}
+
+///|
+/// 将语法树序列化为简化调试树：隐藏 extras、匿名 token 与零宽
+/// synthetic 节点，保留 ERROR/MISSING，并折叠常见单子包装节点。
+pub fn tree_to_pretty_text(tree_id : Int) -> String {
+  match tree_registry.get(tree_id) {
+    None => ""
+    Some(entry) =>
+      match parser_registry_for_tree(tree_id) {
+        None => ""
+        Some(table) => {
+          let buf = StringBuilder::new()
+          write_pretty_node(buf, entry.root, entry.input, table, 0, None)
+          buf.to_string()
+        }
+      }
+  }
+}
+
+///|
 /// 释放语法树句柄。
 pub fn tree_free(tree_id : Int) -> Unit {
   let _ = tree_registry.remove(tree_id)
@@ -1028,6 +1429,7 @@ pub fn parse_config_set(
     } else {
       cur.max_version_count_overflow
     },
+    trace_recovery: cur.trace_recovery,
   }
 }
 
