@@ -170,6 +170,84 @@ test "tree_to_json/invalid_tree_id_returns_empty" {
 }
 
 ///|
+// ── tree_to_text ─────────────────────────────────────────────────
+
+///|
+test "tree_to_text/contains_full_debug_tree" {
+  let dsl = "start s\nextras [/[ \\t\\n\\r]+/]\nrule s: \"a\" ident \";\"\nrule ident: /[a-z]+/"
+  let pid = parser_create_from_dsl(dsl)
+  assert_true(pid >= 1)
+  let tid = parse_full(pid, "a name;")
+  assert_true(tid >= 1)
+  let text = tree_to_text(tid)
+  assert_true(text.contains("▾s [0:0–0:7]"))
+  assert_true(text.contains("▾ident [0:2–0:6]"))
+  assert_true(text.contains("·lit:; [0:6–0:7] \";\""))
+  tree_free(tid)
+  parser_free(pid)
+}
+
+///|
+test "tree_to_text/invalid_tree_id_returns_empty" {
+  assert_eq(tree_to_text(99999), "")
+}
+
+///|
+// ── tree_to_pretty_text ──────────────────────────────────────────
+
+///|
+test "tree_to_pretty_text/hides_tokens_and_keeps_named_structure" {
+  let dsl = "start s\nextras [/[ \\t\\n\\r]+/]\nrule s: \"a\" ident \";\"\nrule ident: /[a-z]+/"
+  let pid = parser_create_from_dsl(dsl)
+  assert_true(pid >= 1)
+  let tid = parse_full(pid, "a name;")
+  assert_true(tid >= 1)
+  let text = tree_to_pretty_text(tid)
+  assert_true(text.contains("s [0:0–0:7]"))
+  assert_true(text.contains("ident \"name\" [0:2–0:6]"))
+  assert_true(!text.contains("lit:;"))
+  assert_true(!text.contains("re:[ \\t\\n\\r]+"))
+  tree_free(tid)
+  parser_free(pid)
+}
+
+///|
+test "tree_to_pretty_text/keeps_operator_tokens" {
+  let dsl = "start expr\nextras [/[ \\t\\n\\r]+/]\nrule expr: ident \"+\" ident \";\"\nrule ident: /[a-z]+/"
+  let pid = parser_create_from_dsl(dsl)
+  assert_true(pid >= 1)
+  let tid = parse_full(pid, "a + b;")
+  assert_true(tid >= 1)
+  let text = tree_to_pretty_text(tid)
+  assert_true(text.contains("ident \"a\""))
+  assert_true(text.contains("\"+\""))
+  assert_true(text.contains("ident \"b\""))
+  assert_true(!text.contains("lit:;"))
+  tree_free(tid)
+  parser_free(pid)
+}
+
+///|
+test "tree_to_pretty_text/keeps_missing_nodes" {
+  let dsl = "start s\nrule s: \"a\" \";\" \"b\""
+  let pid = parser_create_from_dsl(dsl)
+  assert_true(pid >= 1)
+  let tid = parse_full(pid, "ab")
+  assert_true(tid >= 1)
+  let text = tree_to_pretty_text(tid)
+  assert_true(text.contains("MISSING lit:;"))
+  assert_true(!text.contains("lit:a"))
+  assert_true(!text.contains("lit:b"))
+  tree_free(tid)
+  parser_free(pid)
+}
+
+///|
+test "tree_to_pretty_text/invalid_tree_id_returns_empty" {
+  assert_eq(tree_to_pretty_text(99999), "")
+}
+
+///|
 // ── tree_root_sexp ───────────────────────────────────────────────
 
 ///|
