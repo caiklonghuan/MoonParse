@@ -85,6 +85,14 @@ class ParseTree {
     return this._wasm.tree_root_sexp(this.handle) ?? "";
   }
 
+  text() {
+    return this._wasm.tree_to_text?.(this.handle) ?? "";
+  }
+
+  prettyText() {
+    return this._wasm.tree_to_pretty_text?.(this.handle) ?? "";
+  }
+
   errorSummary() {
     return this._wasm.tree_error_summary(this.handle) ?? "invalid";
   }
@@ -139,9 +147,10 @@ class MoonParser {
   }
 
   parseIncremental(source, oldTree, edit) {
+    const oldHandle = oldTree.handle;
     const tid = this._wasm.parse_incremental(
       this.handle,
-      oldTree.handle,
+      oldHandle,
       source,
       edit.start_byte,
       edit.old_end_byte,
@@ -157,6 +166,7 @@ class MoonParser {
       const detail = this._wasm.parse_error_last?.() || "check parser_id, old_tree_id, and edit fields";
       throw new Error(`[MoonParse] parseIncremental() failed — ${detail}`);
     }
+    this._wasm.tree_free(oldHandle);
     oldTree.handle = -1;
     return new ParseTree(tid, this._wasm);
   }
@@ -243,6 +253,11 @@ class MoonQuery {
     return JSON.parse(json);
   }
 
+  resolveBindings(tree) {
+    const json = this._wasm.query_resolve_bindings?.(this.handle, tree.handle) ?? "{}";
+    return JSON.parse(json);
+  }
+
   free() {
     if (this.handle >= 0) {
       this._wasm.query_free(this.handle);
@@ -259,6 +274,11 @@ export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
   // - "wasm:js-string": provided natively by V8 via { builtins: ['js-string'] } compile option.
   const importObj = {
     "_": new Proxy({}, { get(_, name) { return name; } }),
+    "console": {
+      log(value) {
+        globalThis.console?.log?.(value);
+      },
+    },
   };
 
   const { exports: wasm } = await WebAssembly.instantiate(mod, importObj);
@@ -343,6 +363,10 @@ export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
     validateDslErrors(dsl) {
       const json = wasm.grammar_validate_dsl?.(dsl) ?? "[]";
       return JSON.parse(json);
+    },
+
+    builtinGrammarsJson() {
+      return wasm.builtin_grammars_json() ?? "{}";
     },
 
     version() {
