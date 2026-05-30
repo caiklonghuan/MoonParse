@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "precompile": "node scripts/precompile-grammars.mjs",
+    "test:corpus": "node src/test/run-corpus.mjs",
+    "test:c-tree": "node src/test/run-corpus.mjs c",
+    "test:python-tree": "node src/test/run-corpus.mjs python",
     "dev": "vite",
     "build": "node scripts/precompile-grammars.mjs && vite build",
     "preview": "vite preview"
