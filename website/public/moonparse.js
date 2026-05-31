@@ -208,6 +208,16 @@ class MoonQuery {
     return JSON.parse(json);
   }
 
+  resolveLocals(tree) {
+    const json = this._wasm.query_resolve_locals?.(this.handle, tree.handle) ?? "{}";
+    return JSON.parse(json);
+  }
+
+  resolveBindings(tree) {
+    const json = this._wasm.query_resolve_bindings?.(this.handle, tree.handle) ?? "{}";
+    return JSON.parse(json);
+  }
+
   free() {
     if (this.handle >= 0) {
       this._wasm.query_free(this.handle);
