@@ -3,9 +3,14 @@ package "caiklonghuan/MoonParse"
 
 import {
   "caiklonghuan/MoonParse/grammar",
+  "caiklonghuan/MoonParse/runtime",
+  "caiklonghuan/MoonParse/tablegen",
+  "moonbitlang/core/debug",
 }
 
 // Values
+pub fn compile_dsl(String) -> Result[CompileOutput, MoonParseError]
+
 pub fn compile_grammar(@grammar.Grammar) -> String
 
 pub fn generate(String) -> String
@@ -13,6 +18,8 @@ pub fn generate(String) -> String
 pub fn parse(String, String) -> String
 
 pub fn parse_c(String) -> String
+
+pub fn parse_dsl(String, String) -> Result[ParseOutput, MoonParseError]
 
 pub fn parse_json(String) -> String
 
@@ -27,6 +34,30 @@ pub fn parse_with_grammar(@grammar.Grammar, String) -> String
 // Errors
 
 // Types and methods
+pub(all) struct CompileOutput {
+  table : @tablegen.ParseTable
+  table_json : String
+  conflicts : Array[@tablegen.ConflictReport]
+  validation_warnings : Array[@grammar.ValidationError]
+}
+
+pub(all) struct MoonParseError {
+  kind : MoonParseErrorKind
+  message : String
+} derive(@debug.Debug)
+
+pub(all) enum MoonParseErrorKind {
+  GrammarParse
+  GrammarValidation
+  TableGeneration
+  AmbiguousConflict
+  RuntimeParse
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ParseOutput {
+  root : @runtime.CstNode
+  source : String
+}
 
 // Type aliases
 
