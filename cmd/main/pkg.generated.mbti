@@ -54,6 +54,8 @@ pub fn read_stdin() -> String
 
 pub fn remove_dir_all(String) -> Result[Unit, String]
 
+pub fn report_conflict_details(@tablegen.ParseTable, Array[@tablegen.ConflictReport]) -> Unit
+
 pub fn report_conflicts(Array[@tablegen.ConflictReport]) -> Unit
 
 pub fn report_grammar_parse_error(@grammar.ParseError, String?, String?) -> Unit
@@ -83,11 +85,13 @@ pub struct BuildArgs {
   input : String
   outdir : String?
   wasm : Bool
+  conflict_detail : Bool
 } derive(@debug.Debug)
 pub impl Show for BuildArgs
 
 pub struct CheckArgs {
   grammar_file : String
+  conflict_detail : Bool
 } derive(@debug.Debug)
 pub impl Show for CheckArgs
 
@@ -145,6 +149,7 @@ pub enum OutputFormat {
   Sexp
   Json
   Dot
+  Tree
 } derive(Eq, @debug.Debug)
 pub impl Show for OutputFormat
 
@@ -153,6 +158,8 @@ pub struct ParseArgs {
   table_file : String?
   input_file : String?
   format : OutputFormat
+  output : String?
+  outdir : String?
   tokens : Bool
   error_summary : Bool
 } derive(@debug.Debug)
