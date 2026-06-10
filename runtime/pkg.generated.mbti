@@ -151,6 +151,7 @@ pub(all) struct ParseConfig {
   error_cost_per_recovery : Int
   max_version_count : Int
   max_version_count_overflow : Int
+  trace_recovery : Bool
 }
 pub fn ParseConfig::default() -> Self
 
