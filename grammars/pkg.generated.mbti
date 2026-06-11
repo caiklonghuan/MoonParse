@@ -23,6 +23,10 @@ pub let backtick_string_pattern : String
 
 pub let binary_int_pattern : String
 
+pub fn binding_query_for_lang(String) -> String?
+
+pub let c_bindings_query : String
+
 pub let c_block_comment_pattern : String
 
 pub let c_grammar : String
@@ -51,6 +55,8 @@ pub fn expression_sexp(String) -> String
 
 pub let float_pattern : String
 
+pub let grammar_dsl_bindings_query : String
+
 pub fn hash_comment_extras() -> String
 
 pub let hash_line_comment_pattern : String
@@ -77,6 +83,8 @@ pub let json_highlight_query : String
 
 pub fn json_sexp(String) -> String
 
+pub let moonbit_bindings_query : String
+
 pub let moonbit_grammar : String
 
 pub let moonbit_highlight_query : String
@@ -101,6 +109,8 @@ pub fn parse_moonbit(String) -> Result[@runtime.CstNode, @runtime.ParseError]
 
 pub fn parse_python(String) -> Result[@runtime.CstNode, @runtime.ParseError]
 
+pub let python_bindings_query : String
+
 pub let python_grammar : String
 
 pub fn python_indent_scanner(@tablegen.ParseTable) -> &@runtime.StatefulScanner
@@ -124,6 +134,7 @@ pub struct PythonIndentScanner {
   newline_id : Int
   indent_stack : Array[Int]
   mut pending_dedents : Int
+  mut emitted_eof_newline : Bool
 }
 pub fn PythonIndentScanner::new(@tablegen.ParseTable) -> Self
 
