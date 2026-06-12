@@ -12,7 +12,13 @@ pub fn apply_highlights(@runtime.CstNode, String, @tablegen.ParseTable, Compiled
 
 pub fn apply_highlights_with_locals(@runtime.CstNode, String, @tablegen.ParseTable, CompiledQuery, CompiledQuery) -> Array[HighlightRange]
 
+pub fn build_binding_graph(@runtime.CstNode, String, @tablegen.ParseTable, CompiledQuery) -> BindingGraph
+
+pub fn capture_role(String) -> BindingCaptureRole
+
 pub fn compile(String) -> Result[CompiledQuery, QueryError]
+
+pub fn empty_binding_graph(String) -> BindingGraph
 
 pub fn exec(CompiledQuery, @runtime.CstNode, String, @tablegen.ParseTable) -> Array[CaptureResult]
 
@@ -22,11 +28,82 @@ pub fn node_text(@runtime.CstNode, String) -> String
 
 pub fn node_type_name(@runtime.CstNode, @tablegen.ParseTable) -> String
 
+pub fn ns_from_kind(SymbolKind) -> NameSpace
+
+pub fn ns_from_scope_kind(ScopeKind) -> NameSpace
+
 pub fn resolve_locals(@runtime.CstNode, String, @tablegen.ParseTable, CompiledQuery) -> LocalResolution
+
+pub fn symbol_kind_from_str(String) -> SymbolKind?
 
 // Errors
 
 // Types and methods
+pub(all) enum BindingCaptureRole {
+  Scope(ScopeKind?)
+  Definition(SymbolKind?)
+  Reference(SymbolKind?)
+  Unknown
+} derive(Eq, @debug.Debug)
+pub impl Show for BindingCaptureRole
+
+pub(all) struct BindingDefinition {
+  id : Int
+  name : String
+  kind : SymbolKind
+  ns : NameSpace
+  scope_id : Int
+  start_byte : Int
+  end_byte : Int
+} derive(@debug.Debug)
+
+pub(all) enum BindingDiagKind {
+  Unresolved
+  Duplicate
+  Ambiguous
+} derive(Eq, @debug.Debug)
+
+pub(all) struct BindingDiagnostic {
+  kind : BindingDiagKind
+  message : String
+  reference_id : Int
+  definition_id : Int
+  start_byte : Int
+  end_byte : Int
+} derive(@debug.Debug)
+
+pub(all) struct BindingEdge {
+  reference_id : Int
+  definition_id : Int
+} derive(@debug.Debug)
+
+pub(all) struct BindingGraph {
+  uri : String
+  scopes : Array[BindingScope]
+  definitions : Array[BindingDefinition]
+  references : Array[BindingReference]
+  edges : Array[BindingEdge]
+  diagnostics : Array[BindingDiagnostic]
+} derive(@debug.Debug)
+
+pub(all) struct BindingReference {
+  id : Int
+  name : String
+  kind : SymbolKind
+  ns : NameSpace
+  scope_id : Int
+  start_byte : Int
+  end_byte : Int
+} derive(@debug.Debug)
+
+pub(all) struct BindingScope {
+  id : Int
+  parent : Int
+  start_byte : Int
+  end_byte : Int
+  kind : ScopeKind
+} derive(@debug.Debug)
+
 pub(all) struct CaptureResult {
   match_id : Int
   capture_name : String
@@ -50,6 +127,13 @@ pub(all) struct LocalResolution {
   local_refs : Map[Int, Bool]
 } derive(@debug.Debug)
 pub fn LocalResolution::is_local_ref(Self, Int) -> Bool
+
+pub(all) enum NameSpace {
+  Value
+  Type
+  Rule
+} derive(Eq, @debug.Debug)
+pub impl Show for NameSpace
 
 pub(all) struct PatternChild {
   field : String?
@@ -87,6 +171,26 @@ pub(all) enum QueryPattern {
   Wildcard
   Alternation(Array[QueryPattern])
 } derive(@debug.Debug)
+
+pub(all) enum ScopeKind {
+  Module
+  Function
+  Block
+  Class
+  Loop
+  Rule
+} derive(Eq, @debug.Debug)
+pub impl Show for ScopeKind
+
+pub(all) enum SymbolKind {
+  Variable
+  Function
+  Type
+  Parameter
+  Rule
+  Token
+} derive(Eq, @debug.Debug)
+pub impl Show for SymbolKind
 
 // Type aliases
 
