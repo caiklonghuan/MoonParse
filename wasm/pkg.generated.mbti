@@ -109,6 +109,8 @@ pub fn query_exec(Int, Int) -> String
 
 pub fn query_free(Int) -> Unit
 
+pub fn query_resolve_bindings(Int, Int) -> String
+
 pub fn query_resolve_locals(Int, Int) -> String
 
 pub fn tree_byte_offset_to_char_col(String, Int, Int) -> Int
@@ -120,6 +122,10 @@ pub fn tree_free(Int) -> Unit
 pub fn tree_root_sexp(Int) -> String
 
 pub fn tree_to_json(Int) -> String
+
+pub fn tree_to_pretty_text(Int) -> String
+
+pub fn tree_to_text(Int) -> String
 
 pub fn wasm_create_parser(String) -> Int
 
