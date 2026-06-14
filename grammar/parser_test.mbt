@@ -99,6 +99,9 @@ fn pattern_variant(p : Pattern) -> String {
     Pattern::RepeatRange(_, _, _) => "RepeatRange"
     Pattern::Prec(_, _, _) => "Prec"
     Pattern::Alias(_, _) => "Alias"
+    Pattern::AliasWithVisibility(_, _, _) => "AliasWithVisibility"
+    Pattern::LexicalPrec(_, _) => "LexicalPrec"
+    Pattern::Reserved(_, _) => "Reserved"
     Pattern::RuleApp(_, _) => "RuleApp"
   }
 }
@@ -112,6 +115,28 @@ fn assert_parse_ok(name : String, dsl : String) -> Grammar raise {
         "解析失败 [\{name}]: \{err.message} at \{err.location.line}:\{err.location.column}",
       )
   }
+}
+
+///|
+test "p1a parses immediate lexical precedence reserved and alias visibility" {
+  let grammar = assert_parse_ok(
+    "p1a",
+    (
+      #|start document
+      #|reserved global ["if", "else"]
+      #|token.immediate rule interpolation: "${"
+      #|token rule identifier: reserved("global", lex.prec(-2, /[a-z]+/))
+      #|rule document: alias.anonymous("word", identifier) | interpolation
+    ),
+  )
+  let immediate = grammar.rules["interpolation"]
+  assert_true(immediate.is_token)
+  assert_true(immediate.is_immediate)
+  let identifier = grammar.rules["identifier"]
+  assert_eq(identifier.lexical_precedence, -2)
+  assert_eq(identifier.declaration_order, 1)
+  assert_eq(grammar.reserved_sets["global"], ["if", "else"])
+  assert_eq(pattern_variant(identifier.pattern), "Reserved")
 }
 
 ///|

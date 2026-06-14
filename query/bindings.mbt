@@ -10,19 +10,19 @@
 ///|
 /// 作用域种类
 pub(all) enum ScopeKind {
-  Module       // 文件顶层
-  Function     // 函数体
-  Block        // 花括号块 { ... }
-  Class        // 类体
-  Loop         // for / while 循环体
-  Rule         // Grammar DSL rule 体
+  Module // 文件顶层
+  Function // 函数体
+  Block // 花括号块 { ... }
+  Class // 类体
+  Loop // for / while 循环体
+  Rule // Grammar DSL rule 体
 } derive(Debug, Eq)
 
 ///|
 /// 一个作用域区域
 pub(all) struct BindingScope {
   id : Int
-  parent : Int          // 父作用域 id，-1 表示根（module）
+  parent : Int // 父作用域 id，-1 表示根（module）
   start_byte : Int
   end_byte : Int
   kind : ScopeKind
@@ -35,16 +35,16 @@ pub(all) enum SymbolKind {
   Function
   Type
   Parameter
-  Rule         // Grammar DSL rule
-  Token        // Grammar DSL token
+  Rule // Grammar DSL rule
+  Token // Grammar DSL token
 } derive(Debug, Eq)
 
 ///|
 /// 命名空间（同一作用域内不同命名空间允许重名）
 pub(all) enum NameSpace {
-  Value        // 变量 / 函数
-  Type         // 类型 / 类 / 接口
-  Rule         // Grammar DSL rule name
+  Value // 变量 / 函数
+  Type // 类型 / 类 / 接口
+  Rule // Grammar DSL rule name
 } derive(Debug, Eq)
 
 ///|
@@ -53,8 +53,8 @@ pub(all) struct BindingDefinition {
   id : Int
   name : String
   kind : SymbolKind
-  ns : NameSpace           // 'namespace' 是 MoonBit 保留字，故用 ns
-  scope_id : Int           // 定义所在的作用域
+  ns : NameSpace // 'namespace' 是 MoonBit 保留字，故用 ns
+  scope_id : Int // 定义所在的作用域
   start_byte : Int
   end_byte : Int
 } derive(Debug)
@@ -66,7 +66,7 @@ pub(all) struct BindingReference {
   name : String
   kind : SymbolKind
   ns : NameSpace
-  scope_id : Int           // 引用所在的作用域
+  scope_id : Int // 引用所在的作用域
   start_byte : Int
   end_byte : Int
 } derive(Debug)
@@ -81,9 +81,9 @@ pub(all) struct BindingEdge {
 ///|
 /// 绑定诊断种类
 pub(all) enum BindingDiagKind {
-  Unresolved    // 引用找不到对应定义
-  Duplicate     // 同一作用域内重复定义
-  Ambiguous     // 引用可解析到多个定义
+  Unresolved // 引用找不到对应定义
+  Duplicate // 同一作用域内重复定义
+  Ambiguous // 引用可解析到多个定义
 } derive(Debug, Eq)
 
 ///|
@@ -91,8 +91,8 @@ pub(all) enum BindingDiagKind {
 pub(all) struct BindingDiagnostic {
   kind : BindingDiagKind
   message : String
-  reference_id : Int     // -1 表示不关联引用
-  definition_id : Int    // -1 同理
+  reference_id : Int // -1 表示不关联引用
+  definition_id : Int // -1 同理
   start_byte : Int
   end_byte : Int
 } derive(Debug)
@@ -137,23 +137,20 @@ pub fn empty_binding_graph(uri : String) -> BindingGraph {
 ///|
 /// 捕获角色的分类结果
 pub(all) enum BindingCaptureRole {
-  Scope(ScopeKind?)         // Scope(Some(kind)) 或 Scope(None) 表示通用 scope
-  Definition(SymbolKind?)   // Definition(Some(kind)) 或 Definition(None)
-  Reference(SymbolKind?)    // Reference(Some(kind)) 或 Reference(None)
-  Unknown                   // 不参与绑定的 capture（如 @highlight, @fold 等）
+  Scope(ScopeKind?) // Scope(Some(kind)) 或 Scope(None) 表示通用 scope
+  Definition(SymbolKind?) // Definition(Some(kind)) 或 Definition(None)
+  Reference(SymbolKind?) // Reference(Some(kind)) 或 Reference(None)
+  Unknown // 不参与绑定的 capture（如 @highlight, @fold 等）
 } derive(Debug, Eq)
 
 ///|
 pub impl Show for BindingCaptureRole with output(self, logger) {
   match self {
-    Scope(Some(k)) =>
-      logger.write_string("Scope(Some(\{k}))")
+    Scope(Some(k)) => logger.write_string("Scope(Some(\{k}))")
     Scope(None) => logger.write_string("Scope(None)")
-    Definition(Some(k)) =>
-      logger.write_string("Definition(Some(\{k}))")
+    Definition(Some(k)) => logger.write_string("Definition(Some(\{k}))")
     Definition(None) => logger.write_string("Definition(None)")
-    Reference(Some(k)) =>
-      logger.write_string("Reference(Some(\{k}))")
+    Reference(Some(k)) => logger.write_string("Reference(Some(\{k}))")
     Reference(None) => logger.write_string("Reference(None)")
     Unknown => logger.write_string("Unknown")
   }
@@ -296,6 +293,7 @@ pub fn ns_from_scope_kind(kind : ScopeKind) -> NameSpace {
 
 // ── P2: 工厂函数 ─────────────────────────────────────────────
 
+///|
 fn _make_scope(
   parent : Int,
   start_byte : Int,
@@ -305,6 +303,7 @@ fn _make_scope(
   { id: -1, parent, start_byte, end_byte, kind }
 }
 
+///|
 fn _make_definition(
   name : String,
   kind : SymbolKind,
@@ -316,6 +315,7 @@ fn _make_definition(
   { id: -1, name, kind, ns, scope_id, start_byte, end_byte }
 }
 
+///|
 fn _make_reference(
   name : String,
   kind : SymbolKind,
@@ -327,10 +327,12 @@ fn _make_reference(
   { id: -1, name, kind, ns, scope_id, start_byte, end_byte }
 }
 
+///|
 fn _make_edge(reference_id : Int, definition_id : Int) -> BindingEdge {
   { reference_id, definition_id }
 }
 
+///|
 fn _make_diagnostic(
   kind : BindingDiagKind,
   message : String,
@@ -378,15 +380,13 @@ pub fn build_binding_graph(
           Some(k) => k
           None => guess_scope_kind(c.node, table)
         }
-        scopes_raw.push(
-          {
-            id: -1,
-            parent: -1,
-            start_byte: c.node.start_byte,
-            end_byte: c.node.end_byte,
-            kind,
-          },
-        )
+        scopes_raw.push({
+          id: -1,
+          parent: -1,
+          start_byte: c.node.start_byte,
+          end_byte: c.node.end_byte,
+          kind,
+        })
       }
       Definition(sym_kind_opt) => {
         let text = node_text(c.node, input)
@@ -395,17 +395,15 @@ pub fn build_binding_graph(
             Some(k) => k
             None => guess_symbol_kind(c.node, table)
           }
-          defs_raw.push(
-            {
-              id: -1,
-              name: text,
-              kind,
-              ns: ns_from_kind(kind),
-              scope_id: -1,
-              start_byte: c.node.start_byte,
-              end_byte: c.node.end_byte,
-            },
-          )
+          defs_raw.push({
+            id: -1,
+            name: text,
+            kind,
+            ns: ns_from_kind(kind),
+            scope_id: -1,
+            start_byte: c.node.start_byte,
+            end_byte: c.node.end_byte,
+          })
         }
       }
       Reference(sym_kind_opt) => {
@@ -415,17 +413,15 @@ pub fn build_binding_graph(
             Some(k) => k
             None => Variable // 引用默认按 variable 处理
           }
-          refs_raw.push(
-            {
-              id: -1,
-              name: text,
-              kind,
-              ns: ns_from_kind(kind),
-              scope_id: -1,
-              start_byte: c.node.start_byte,
-              end_byte: c.node.end_byte,
-            },
-          )
+          refs_raw.push({
+            id: -1,
+            name: text,
+            kind,
+            ns: ns_from_kind(kind),
+            scope_id: -1,
+            start_byte: c.node.start_byte,
+            end_byte: c.node.end_byte,
+          })
         }
       }
       Unknown => ()
@@ -479,12 +475,20 @@ pub fn build_binding_graph(
     let final_scope_id = match d.kind {
       Function | Type | Rule => {
         let p = scope_parent_by_id(scopes, scope_id)
-        if p >= 0 { p } else { 0 }
+        if p >= 0 {
+          p
+        } else {
+          0
+        }
       }
       _ => scope_id
     }
     // id = 数组下标（不再重新编号）
-    let def_with_scope = { ..d, scope_id: final_scope_id, id: definitions.length() }
+    let def_with_scope = {
+      ..d,
+      scope_id: final_scope_id,
+      id: definitions.length(),
+    }
     definitions.push(def_with_scope)
     if def_with_scope.scope_id >= 0 {
       let idx = scope_index(scopes, def_with_scope.scope_id)
@@ -505,7 +509,11 @@ pub fn build_binding_graph(
       continue
     }
 
-    let containing = find_containing_scope_ids(scopes, node.start_byte, node.end_byte)
+    let containing = find_containing_scope_ids(
+      scopes,
+      node.start_byte,
+      node.end_byte,
+    )
     let scope_id = if containing.is_empty() {
       0 // 无 scope → root
     } else {
@@ -542,16 +550,14 @@ pub fn build_binding_graph(
       let ref_with_scope = { ..node, scope_id, id: references.length() }
       references.push(ref_with_scope)
       let ref_idx = ref_with_scope.id
-      diagnostics.push(
-        {
-          kind: Unresolved,
-          message: "unresolved reference '" + node.name + "'",
-          reference_id: ref_idx,
-          definition_id: -1,
-          start_byte: node.start_byte,
-          end_byte: node.end_byte,
-        },
-      )
+      diagnostics.push({
+        kind: Unresolved,
+        message: "unresolved reference '" + node.name + "'",
+        reference_id: ref_idx,
+        definition_id: -1,
+        start_byte: node.start_byte,
+        end_byte: node.end_byte,
+      })
     }
   }
 
@@ -566,16 +572,14 @@ pub fn build_binding_graph(
       while k < n {
         let dk = definitions[def_indices[k]]
         if dj.name == dk.name && dj.ns == dk.ns {
-          diagnostics.push(
-            {
-              kind: Duplicate,
-              message: "duplicate definition '" + dk.name + "' in same scope",
-              reference_id: -1,
-              definition_id: def_indices[k],
-              start_byte: dk.start_byte,
-              end_byte: dk.end_byte,
-            },
-          )
+          diagnostics.push({
+            kind: Duplicate,
+            message: "duplicate definition '" + dk.name + "' in same scope",
+            reference_id: -1,
+            definition_id: def_indices[k],
+            start_byte: dk.start_byte,
+            end_byte: dk.end_byte,
+          })
         }
         k = k + 1
       }
@@ -584,23 +588,14 @@ pub fn build_binding_graph(
   }
 
   // ── 步骤 6: 返回（id 即数组下标，edge 直接匹配） ────────────────
-  {
-    uri: "",
-    scopes,
-    definitions,
-    references,
-    edges,
-    diagnostics,
-  }
+  { uri: "", scopes, definitions, references, edges, diagnostics }
 }
 
 // ── P3: 内部辅助 ─────────────────────────────────────────────────
 
 ///|
 /// 按 start_byte 升序排列 scope
-fn sort_scopes_by_start(
-  scopes : Array[BindingScope],
-) -> Array[BindingScope] {
+fn sort_scopes_by_start(scopes : Array[BindingScope]) -> Array[BindingScope] {
   let result = scopes
   let n = result.length()
   for i in 1..<n {
@@ -692,6 +687,7 @@ fn find_containing_scope_ids(
   result
 }
 
+///|
 fn scope_end_by_id(scopes : Array[BindingScope], id : Int) -> Int {
   for s in scopes {
     if s.id == id {
@@ -701,6 +697,7 @@ fn scope_end_by_id(scopes : Array[BindingScope], id : Int) -> Int {
   999999
 }
 
+///|
 fn scope_start_by_id(scopes : Array[BindingScope], id : Int) -> Int {
   for s in scopes {
     if s.id == id {
@@ -710,6 +707,7 @@ fn scope_start_by_id(scopes : Array[BindingScope], id : Int) -> Int {
   -1
 }
 
+///|
 fn scope_index(scopes : Array[BindingScope], id : Int) -> Int {
   for i in 0..<scopes.length() {
     if scopes[i].id == id {
@@ -719,6 +717,7 @@ fn scope_index(scopes : Array[BindingScope], id : Int) -> Int {
   -1
 }
 
+///|
 fn scope_parent_by_id(scopes : Array[BindingScope], id : Int) -> Int {
   for s in scopes {
     if s.id == id {
@@ -750,6 +749,7 @@ fn guess_symbol_kind(
 ///|
 /// 判断一个 reference 节点是否被 definition capture 同时捕获，
 /// 且没有其他可绑定的同名定义（纯自引用，可直接跳过）。
+
 ///|
 /// 判断 reference 是否被 definition capture 同时捕获。
 /// 条件：name、ns、start_byte、end_byte 完全相同，

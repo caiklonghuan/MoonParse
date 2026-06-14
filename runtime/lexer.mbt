@@ -50,6 +50,13 @@ pub fn external_scanner_to_stateful(
 }
 
 ///|
+pub(all) struct LexerStats {
+  scanned_characters : Int
+  dfa_transitions : Int
+  cache_hits : Int
+} derive(Debug, Eq)
+
+///|
 /// 词法引擎
 pub struct LexerEngine {
   dfa : @tablegen.LexerDfa
@@ -57,11 +64,16 @@ pub struct LexerEngine {
   mut cached_pos : Int
   mut cached_valid_hash : Int
   mut cached_valid_arr : Array[Int] // 精确匹配用，防止哈希碰撞
+  mut cached_extras_consumed : Bool
   mut cached_result : (Token?, Int)
   /// 外部词法器回调（可选）
   external_scanner : ExternalScanner?
   /// 有状态外部词法器（可选，与 external_scanner 互斥，优先使用）
   stateful_scanner : &StatefulScanner?
+  mut stats_enabled : Bool
+  mut scanned_characters : Int
+  mut dfa_transitions : Int
+  mut cache_hits : Int
 }
 
 ///|
@@ -71,9 +83,14 @@ pub fn LexerEngine::new(dfa : @tablegen.LexerDfa) -> LexerEngine {
     cached_pos: -1,
     cached_valid_hash: 0,
     cached_valid_arr: [],
+    cached_extras_consumed: false,
     cached_result: (None, 0),
     external_scanner: None,
     stateful_scanner: None,
+    stats_enabled: false,
+    scanned_characters: 0,
+    dfa_transitions: 0,
+    cache_hits: 0,
   }
 }
 
@@ -88,9 +105,14 @@ pub fn LexerEngine::new_with_external(
     cached_pos: -1,
     cached_valid_hash: 0,
     cached_valid_arr: [],
+    cached_extras_consumed: false,
     cached_result: (None, 0),
     external_scanner: Some(scanner),
     stateful_scanner: None,
+    stats_enabled: false,
+    scanned_characters: 0,
+    dfa_transitions: 0,
+    cache_hits: 0,
   }
 }
 
@@ -105,9 +127,35 @@ pub fn LexerEngine::new_with_stateful(
     cached_pos: -1,
     cached_valid_hash: 0,
     cached_valid_arr: [],
+    cached_extras_consumed: false,
     cached_result: (None, 0),
     external_scanner: None,
     stateful_scanner: Some(scanner),
+    stats_enabled: false,
+    scanned_characters: 0,
+    dfa_transitions: 0,
+    cache_hits: 0,
+  }
+}
+
+///|
+pub fn LexerEngine::enable_stats(self : LexerEngine, enabled : Bool) -> Unit {
+  self.stats_enabled = enabled
+}
+
+///|
+pub fn LexerEngine::reset_stats(self : LexerEngine) -> Unit {
+  self.scanned_characters = 0
+  self.dfa_transitions = 0
+  self.cache_hits = 0
+}
+
+///|
+pub fn LexerEngine::stats(self : LexerEngine) -> LexerStats {
+  {
+    scanned_characters: self.scanned_characters,
+    dfa_transitions: self.dfa_transitions,
+    cache_hits: self.cache_hits,
   }
 }
 
@@ -125,6 +173,7 @@ pub fn LexerEngine::next_token(
   pos : Int,
   table : @tablegen.ParseTable,
   state : Int,
+  extras_consumed? : Bool = false,
 ) -> (Token?, Int) {
   // 计算本状态下合法的终结符集合
   // valid_tokens[state] + extras
@@ -140,7 +189,7 @@ pub fn LexerEngine::next_token(
     valid.add(t)
   }
 
-  self.scan_with_valid(input, pos, valid, table)
+  self.scan_with_valid(input, pos, valid, table, extras_consumed)
 }
 
 ///|
@@ -156,6 +205,7 @@ fn LexerEngine::scan_with_valid(
   pos : Int,
   valid : Set[Int],
   table : @tablegen.ParseTable,
+  extras_consumed : Bool,
 ) -> (Token?, Int) {
   // 分离 DFA valid 和外部 token valid
   let ext_tids : Array[Int] = []
@@ -169,7 +219,7 @@ fn LexerEngine::scan_with_valid(
   let (dfa_tok, dfa_pos) = if pos >= input.length() {
     (None, pos)
   } else {
-    self.run_dfa(input, pos, valid, table)
+    self.run_dfa(input, pos, valid, table, extras_consumed)
   }
 
   // 外部词法器尝试（仅当有回调且有合法的外部 token）
@@ -229,6 +279,7 @@ fn LexerEngine::run_dfa(
   pos : Int,
   valid : Set[Int],
   table : @tablegen.ParseTable,
+  extras_consumed : Bool,
 ) -> (Token?, Int) {
   // 单槽缓存：同一起始位置且 valid 集相同时直接复用（GLR 多版本并行加速）
   // 计算滞动哈希的同时收集 valid 元素到数组，用于库调后的精确匹配
@@ -238,7 +289,9 @@ fn LexerEngine::run_dfa(
     valid_hash = valid_hash * 31 + t
     valid_arr.push(t)
   }
-  if pos == self.cached_pos && valid_hash == self.cached_valid_hash {
+  if pos == self.cached_pos &&
+    valid_hash == self.cached_valid_hash &&
+    extras_consumed == self.cached_extras_consumed {
     // 哈希命中后做精确集合比较，防止滚动哈希碰撞
     if valid_arr.length() == self.cached_valid_arr.length() {
       let mut all_match = true
@@ -249,6 +302,9 @@ fn LexerEngine::run_dfa(
         }
       }
       if all_match {
+        if self.stats_enabled {
+          self.cache_hits = self.cache_hits + 1
+        }
         return self.cached_result
       }
     }
@@ -263,14 +319,63 @@ fn LexerEngine::run_dfa(
   let mut cur_state : Int = dfa.start
   let mut cur_pos : Int = pos
 
-  // 检查起始状态是否已是接受态（零宽 token，如 ε）
-  match dfa.states[cur_state].accept {
-    Some(tid) =>
-      if valid.contains(tid) {
-        best_tid = tid
-        best_pos = cur_pos
-      }
-    None => ()
+  let consider = fn(tid : Int, end_pos : Int) {
+    if !valid.contains(tid) {
+      return
+    }
+    let meta = table.terminal_metadata
+      .get(tid)
+      .unwrap_or(@tablegen.TerminalMetadata::default())
+    if extras_consumed && meta.is_immediate {
+      return
+    }
+    // A keyword literal participates only when the active reserved set allows
+    // it. Otherwise the word token remains the candidate for the same text.
+    match table.word_token {
+      Some(word_tid) =>
+        if tid != word_tid {
+          let text = input[pos:end_pos].to_string()
+          match table.keyword_map.get(text) {
+            Some(keyword_tid) =>
+              if keyword_tid == tid &&
+                !reserved_word_allows(table, word_tid, text) {
+                return
+              }
+            None => ()
+          }
+        }
+      None => ()
+    }
+    let old = table.terminal_metadata
+      .get(best_tid)
+      .unwrap_or(@tablegen.TerminalMetadata::default())
+    let new_specific = meta.specificity == @grammar.TokenSpecificity::String
+    let old_specific = old.specificity == @grammar.TokenSpecificity::String
+    if best_tid < 0 ||
+      meta.lexical_precedence > old.lexical_precedence ||
+      (
+        meta.lexical_precedence == old.lexical_precedence &&
+        (
+          end_pos > best_pos ||
+          (
+            end_pos == best_pos &&
+            (
+              (new_specific && !old_specific) ||
+              (
+                new_specific == old_specific &&
+                meta.declaration_order < old.declaration_order
+              )
+            )
+          )
+        )
+      ) {
+      best_tid = tid
+      best_pos = end_pos
+    }
+  }
+
+  for tid in dfa.states[cur_state].accepts {
+    consider(tid, cur_pos)
   }
 
   while cur_pos < n {
@@ -278,16 +383,15 @@ fn LexerEngine::run_dfa(
     match dfa.states[cur_state].transitions.get(ch) {
       None => break // 无转移，停止
       Some(next) => {
+        if self.stats_enabled {
+          self.scanned_characters = self.scanned_characters + 1
+          self.dfa_transitions = self.dfa_transitions + 1
+        }
         cur_state = next
         cur_pos = cur_pos + 1
         // 检查新状态是否是接受态
-        match dfa.states[cur_state].accept {
-          Some(tid) =>
-            if valid.contains(tid) {
-              best_tid = tid
-              best_pos = cur_pos
-            }
-          None => ()
+        for tid in dfa.states[cur_state].accepts {
+          consider(tid, cur_pos)
         }
       }
     }
@@ -307,6 +411,7 @@ fn LexerEngine::run_dfa(
     self.cached_pos = pos
     self.cached_valid_hash = valid_hash
     self.cached_valid_arr = valid_arr
+    self.cached_extras_consumed = extras_consumed
     self.cached_result = (Some(err_tok), pos + 1)
     return self.cached_result
   }
@@ -332,7 +437,8 @@ fn LexerEngine::run_dfa(
       if best_tid == wt {
         match table.keyword_map.get(matched_text) {
           Some(kw_tid) =>
-            if valid.contains(kw_tid) {
+            if valid.contains(kw_tid) &&
+              reserved_word_allows(table, best_tid, matched_text) {
               final_tid = kw_tid
               is_keyword = true
             }
@@ -369,8 +475,28 @@ fn LexerEngine::run_dfa(
   self.cached_pos = pos
   self.cached_valid_hash = valid_hash
   self.cached_valid_arr = valid_arr
+  self.cached_extras_consumed = extras_consumed
   self.cached_result = (Some(tok), best_pos)
   self.cached_result
+}
+
+///|
+fn reserved_word_allows(
+  table : @tablegen.ParseTable,
+  token_id : Int,
+  text : String,
+) -> Bool {
+  if table.reserved_words.is_empty() {
+    return true
+  }
+  let set_name = match table.terminal_metadata.get(token_id) {
+    Some(meta) => meta.reserved_set.unwrap_or("global")
+    None => "global"
+  }
+  match table.reserved_words.get(set_name) {
+    Some(words) => words.contains(text)
+    None => false
+  }
 }
 
 ///|

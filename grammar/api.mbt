@@ -10,6 +10,7 @@ pub fn Grammar::new() -> Grammar {
     word: None,
     conflicts: [],
     supertypes: [],
+    reserved_sets: Map::new(),
   }
 }
 
@@ -24,7 +25,22 @@ pub fn Grammar::add_rule(self : Grammar, rule : Rule) -> Grammar {
   if self.rules.contains(rule.name) {
     self.duplicate_rule_names.push(rule.name)
   }
-  self.rules.set(rule.name, rule)
+  let assigned = if rule.declaration_order < 0 {
+    { ..rule, declaration_order: self.rules.length() }
+  } else {
+    rule
+  }
+  self.rules.set(assigned.name, assigned)
+  self
+}
+
+///|
+pub fn Grammar::add_reserved_set(
+  self : Grammar,
+  name : String,
+  words : Array[String],
+) -> Grammar {
+  self.reserved_sets[name] = words
   self
 }
 
@@ -79,6 +95,9 @@ pub fn Rule::new(name : String, pattern : Pattern) -> Rule {
     pattern,
     is_named,
     is_token: false,
+    is_immediate: false,
+    lexical_precedence: 0,
+    declaration_order: -1,
     params: [],
     attributes: [],
     location: None,
@@ -93,10 +112,23 @@ pub fn Rule::token(name : String, pattern : Pattern) -> Rule {
     pattern,
     is_named,
     is_token: true,
+    is_immediate: false,
+    lexical_precedence: 0,
+    declaration_order: -1,
     params: [],
     attributes: [],
     location: None,
   }
+}
+
+///|
+pub fn Rule::immediate_token(name : String, pattern : Pattern) -> Rule {
+  { ..Rule::token(name, pattern), is_immediate: true }
+}
+
+///|
+pub fn Rule::with_lexical_precedence(self : Rule, level : Int) -> Rule {
+  { ..self, lexical_precedence: level }
 }
 
 ///|
@@ -111,6 +143,9 @@ pub fn Rule::template(
     pattern,
     is_named,
     is_token: false,
+    is_immediate: false,
+    lexical_precedence: 0,
+    declaration_order: -1,
     params,
     attributes: [],
     location: None,
@@ -204,6 +239,26 @@ pub fn prec(level : Int, kind : PrecKind, p : Pattern) -> Pattern {
 ///|
 pub fn alias_(name : String, p : Pattern) -> Pattern {
   Pattern::Alias(name, p)
+}
+
+///|
+pub fn alias_named(name : String, p : Pattern) -> Pattern {
+  Pattern::AliasWithVisibility(name, true, p)
+}
+
+///|
+pub fn alias_anonymous(name : String, p : Pattern) -> Pattern {
+  Pattern::AliasWithVisibility(name, false, p)
+}
+
+///|
+pub fn lexical_prec(level : Int, p : Pattern) -> Pattern {
+  Pattern::LexicalPrec(level, p)
+}
+
+///|
+pub fn reserved(set_name : String, p : Pattern) -> Pattern {
+  Pattern::Reserved(set_name, p)
 }
 
 ///|

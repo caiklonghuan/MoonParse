@@ -60,6 +60,8 @@ pub(all) struct AugmentedGrammar {
   nonterminals : Map[String, Int]
   productions : Array[Production]
   terminal_patterns : Map[Int, TerminalDef]
+  terminal_metadata : Map[Int, TerminalMetadata]
+  reserved_words : Map[String, Array[String]]
   extras : Array[Int]
   prec_table : Map[Int, (Int, @grammar.PrecKind)]
   nt_metas : Array[SymbolMeta]
@@ -91,6 +93,7 @@ pub(all) struct DfaState {
   id : Int
   transitions : Map[Char, Int]
   accept : Int?
+  accepts : Array[Int]
 } derive(@debug.Debug)
 
 pub(all) struct LRItem {
@@ -117,6 +120,8 @@ pub(all) struct ParseTable {
   lexer_dfa : LexerDfa
   symbol_metadata : Array[SymbolMeta]
   terminal_patterns : Map[Int, TerminalDef]
+  terminal_metadata : Map[Int, TerminalMetadata]
+  reserved_words : Map[String, Array[String]]
   terminal_names : Map[Int, String]
   extras : Array[Int]
   external_token_ids : Array[Int]
@@ -133,6 +138,7 @@ pub(all) struct Production {
   rule_name : String
   lookahead : LookaheadConstraint?
   mut alias_name : String?
+  mut alias_is_named : Bool?
 } derive(@debug.Debug)
 
 pub(all) enum Symbol {
@@ -156,6 +162,15 @@ pub(all) enum TerminalDef {
   External(String)
 } derive(Eq, @debug.Debug)
 pub impl Show for TerminalDef
+
+pub(all) struct TerminalMetadata {
+  lexical_precedence : Int
+  specificity : @grammar.TokenSpecificity
+  declaration_order : Int
+  is_immediate : Bool
+  reserved_set : String?
+} derive(Eq, @debug.Debug)
+pub fn TerminalMetadata::default() -> Self
 
 // Type aliases
 pub type DfaStateId = Int

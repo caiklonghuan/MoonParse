@@ -303,6 +303,8 @@ pub fn resolve_conflicts(
     lexer_dfa: table.lexer_dfa,
     symbol_metadata: table.symbol_metadata,
     terminal_patterns: table.terminal_patterns,
+    terminal_metadata: table.terminal_metadata,
+    reserved_words: table.reserved_words,
     terminal_names: table.terminal_names,
     extras: table.extras,
     external_token_ids: table.external_token_ids,

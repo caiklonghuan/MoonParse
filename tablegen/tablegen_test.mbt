@@ -228,6 +228,7 @@ test "generate_parse_table: empty grammar returns Err" {
     word: None,
     conflicts: [],
     supertypes: [],
+    reserved_sets: {},
   }
   match generate_parse_table(empty) {
     Err(msg) => assert_true(msg.length() > 0)
@@ -245,6 +246,9 @@ test "generate_parse_table: missing start rule returns Err" {
         pattern: @grammar.Pattern::Literal("a"),
         is_named: true,
         is_token: false,
+        is_immediate: false,
+        lexical_precedence: 0,
+        declaration_order: 0,
         params: [],
         attributes: [],
         location: None,
@@ -258,6 +262,7 @@ test "generate_parse_table: missing start rule returns Err" {
     word: None,
     conflicts: [],
     supertypes: [],
+    reserved_sets: {},
   }
   match generate_parse_table(g) {
     Err(msg) => assert_true(msg.length() > 0)
@@ -274,6 +279,9 @@ test "generate_parse_table: no start declared returns Err" {
         pattern: @grammar.Pattern::Literal("a"),
         is_named: true,
         is_token: false,
+        is_immediate: false,
+        lexical_precedence: 0,
+        declaration_order: 0,
         params: [],
         attributes: [],
         location: None,
@@ -287,6 +295,7 @@ test "generate_parse_table: no start declared returns Err" {
     word: None,
     conflicts: [],
     supertypes: [],
+    reserved_sets: {},
   }
   match generate_parse_table(g) {
     Err(msg) => assert_true(msg.length() > 0)

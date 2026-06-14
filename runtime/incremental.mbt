@@ -116,6 +116,7 @@ fn search_reusable(
   lr_state : Int,
   edit_start : Int,
   old_end_byte : Int,
+  extras_consumed_before : Bool,
 ) -> CstNode? {
   // 剪枝：节点整体在 new_pos 之后
   if node.start_byte > new_pos {
@@ -123,7 +124,14 @@ fn search_reusable(
   }
   // 尝试本节点（start_byte == new_pos 时才有可能通过 is_reusable）
   if node.start_byte == new_pos &&
-    is_reusable(node, new_pos, lr_state, edit_start, old_end_byte) {
+    is_reusable(
+      node,
+      new_pos,
+      lr_state,
+      edit_start,
+      old_end_byte,
+      extras_consumed_before~,
+    ) {
     return Some(node)
   }
   // 递归子节点
@@ -131,7 +139,10 @@ fn search_reusable(
     if child.start_byte > new_pos {
       break
     }
-    match search_reusable(child, new_pos, lr_state, edit_start, old_end_byte) {
+    match
+      search_reusable(
+        child, new_pos, lr_state, edit_start, old_end_byte, extras_consumed_before,
+      ) {
       Some(n) => return Some(n)
       None => ()
     }
@@ -150,8 +161,16 @@ pub fn find_reusable_node(
   lr_state : Int,
   edit_start : Int,
   old_end_byte : Int,
+  extras_consumed_before? : Bool = false,
 ) -> CstNode? {
-  search_reusable(old_tree.root, new_pos, lr_state, edit_start, old_end_byte)
+  search_reusable(
+    old_tree.root,
+    new_pos,
+    lr_state,
+    edit_start,
+    old_end_byte,
+    extras_consumed_before,
+  )
 }
 
 ///|
@@ -320,6 +339,7 @@ pub fn is_reusable(
   lr_state : Int,
   edit_start : Int,
   old_end_byte : Int,
+  extras_consumed_before? : Bool = false,
 ) -> Bool {
   // 错误节点和缺失节点不可复用
   if node.is_missing || node.is_error {
@@ -335,6 +355,9 @@ pub fn is_reusable(
   }
   // LR 状态一致
   if node.parse_state != lr_state {
+    return false
+  }
+  if node.extras_consumed_before != extras_consumed_before {
     return false
   }
   // 不在编辑区间内

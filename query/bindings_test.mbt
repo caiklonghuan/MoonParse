@@ -20,50 +20,29 @@ test "capture_role/new_scope_unknown_suffix" {
 ///|
 test "capture_role/new_definition" {
   assert_eq(capture_role("definition"), Definition(None))
-  assert_eq(
-    capture_role("definition.variable"),
-    Definition(Some(Variable)),
-  )
-  assert_eq(
-    capture_role("definition.function"),
-    Definition(Some(Function)),
-  )
+  assert_eq(capture_role("definition.variable"), Definition(Some(Variable)))
+  assert_eq(capture_role("definition.function"), Definition(Some(Function)))
   assert_eq(capture_role("definition.type"), Definition(Some(Type)))
-  assert_eq(
-    capture_role("definition.parameter"),
-    Definition(Some(Parameter)),
-  )
+  assert_eq(capture_role("definition.parameter"), Definition(Some(Parameter)))
 }
 
 ///|
 test "capture_role/new_reference" {
   assert_eq(capture_role("reference"), Reference(None))
-  assert_eq(
-    capture_role("reference.variable"),
-    Reference(Some(Variable)),
-  )
-  assert_eq(
-    capture_role("reference.function"),
-    Reference(Some(Function)),
-  )
+  assert_eq(capture_role("reference.variable"), Reference(Some(Variable)))
+  assert_eq(capture_role("reference.function"), Reference(Some(Function)))
   assert_eq(capture_role("reference.type"), Reference(Some(Type)))
 }
 
 ///|
 test "capture_role/old_local_compat" {
   assert_eq(capture_role("local.scope"), Scope(None))
-  assert_eq(
-    capture_role("local.definition"),
-    Definition(Some(Variable)),
-  )
+  assert_eq(capture_role("local.definition"), Definition(Some(Variable)))
   assert_eq(
     capture_role("local.definition.function"),
     Definition(Some(Function)),
   )
-  assert_eq(
-    capture_role("local.reference"),
-    Reference(Some(Variable)),
-  )
+  assert_eq(capture_role("local.reference"), Reference(Some(Variable)))
 }
 
 ///|

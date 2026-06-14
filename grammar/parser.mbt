@@ -17,6 +17,7 @@ pub(all) enum ParseResult[T] {
 priv struct ParserState {
   tokens : Array[TokenWithLocation]
   mut pos : Int
+  mut next_declaration_order : Int
 }
 
 ///|
@@ -36,7 +37,7 @@ pub fn parse_grammar(dsl : String) -> ParseResult[Grammar] {
 /// 返回部分构建的 Grammar 以及收集到的所有解析错误。
 pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
   let tokens = tokenize(dsl)
-  let state = { tokens, pos: 0 }
+  let state = { tokens, pos: 0, next_declaration_order: 0 }
   let grammar : Grammar = {
     start: None,
     rules: Map::new(),
@@ -47,6 +48,7 @@ pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
     word: None,
     conflicts: [],
     supertypes: [],
+    reserved_sets: Map::new(),
   }
   let errors : Array[ParseError] = []
 
@@ -54,7 +56,7 @@ pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
     match state.tokens[state.pos].token {
       Keyword("rule") => {
         state.pos = state.pos + 1
-        match parse_rule(state, false, []) {
+        match parse_rule(state, false, false, []) {
           Success(rule) => {
             if grammar.rules.contains(rule.name) {
               grammar.duplicate_rule_names.push(rule.name)
@@ -70,10 +72,17 @@ pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
       // token rule name: pattern — 声明词法规则（仅含终结符）
       Identifier("token") => {
         state.pos = state.pos + 1
+        let mut immediate = false
+        if state.pos + 1 < state.tokens.length() &&
+          state.tokens[state.pos].token is Symbol(".") &&
+          state.tokens[state.pos + 1].token is Identifier("immediate") {
+          immediate = true
+          state.pos = state.pos + 2
+        }
         if state.pos < state.tokens.length() &&
           state.tokens[state.pos].token is Keyword("rule") {
           state.pos = state.pos + 1
-          match parse_rule(state, true, []) {
+          match parse_rule(state, true, immediate, []) {
             Success(rule) => {
               if grammar.rules.contains(rule.name) {
                 grammar.duplicate_rule_names.push(rule.name)
@@ -96,6 +105,17 @@ pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
             location: loc,
           })
           skip_to_next_toplevel(state)
+        }
+      }
+      // reserved name ["word", ...]
+      Identifier("reserved") => {
+        state.pos = state.pos + 1
+        match parse_reserved_decl(state) {
+          Success((name, words)) => grammar.reserved_sets[name] = words
+          Error(err) => {
+            errors.push(err)
+            skip_to_next_toplevel(state)
+          }
         }
       }
       // word name — 指定关键字提升规则（类 Tree-sitter word 属性）
@@ -130,7 +150,7 @@ pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
           match state.tokens[state.pos].token {
             Keyword("rule") => {
               state.pos = state.pos + 1
-              match parse_rule(state, false, attrs) {
+              match parse_rule(state, false, false, attrs) {
                 Success(rule) => {
                   if grammar.rules.contains(rule.name) {
                     grammar.duplicate_rule_names.push(rule.name)
@@ -145,10 +165,17 @@ pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
             }
             Identifier("token") => {
               state.pos = state.pos + 1
+              let mut immediate = false
+              if state.pos + 1 < state.tokens.length() &&
+                state.tokens[state.pos].token is Symbol(".") &&
+                state.tokens[state.pos + 1].token is Identifier("immediate") {
+                immediate = true
+                state.pos = state.pos + 2
+              }
               if state.pos < state.tokens.length() &&
                 state.tokens[state.pos].token is Keyword("rule") {
                 state.pos = state.pos + 1
-                match parse_rule(state, true, attrs) {
+                match parse_rule(state, true, immediate, attrs) {
                   Success(rule) => {
                     if grammar.rules.contains(rule.name) {
                       grammar.duplicate_rule_names.push(rule.name)
@@ -329,7 +356,8 @@ fn skip_to_next_toplevel(state : ParserState) -> Unit {
       Identifier("token")
       | Identifier("word")
       | Identifier("conflicts")
-      | Identifier("supertypes") => {
+      | Identifier("supertypes")
+      | Identifier("reserved") => {
         let prev_is_pattern_ctx = if state.pos > 0 {
           match state.tokens[state.pos - 1].token {
             Symbol(":")
@@ -359,6 +387,58 @@ fn skip_to_next_toplevel(state : ParserState) -> Unit {
       _ => state.pos = state.pos + 1
     }
   }
+}
+
+///|
+fn parse_reserved_decl(
+  state : ParserState,
+) -> ParseResult[(String, Array[String])] {
+  if state.pos >= state.tokens.length() {
+    return Error({
+      message: "Expected reserved set name",
+      location: state.tokens[state.tokens.length() - 1].location,
+    })
+  }
+  let (name, loc) = match state.tokens[state.pos] {
+    { token: Identifier(name), location } => (name, location)
+    token =>
+      return Error({
+        message: "Expected reserved set name",
+        location: token.location,
+      })
+  }
+  state.pos = state.pos + 1
+  if state.pos >= state.tokens.length() ||
+    !(state.tokens[state.pos].token is Symbol("[")) {
+    return Error({
+      message: "Expected '[' after reserved set name",
+      location: loc,
+    })
+  }
+  state.pos = state.pos + 1
+  let words : Array[String] = []
+  while state.pos < state.tokens.length() {
+    match state.tokens[state.pos].token {
+      StringLiteral(word) => {
+        words.push(word)
+        state.pos = state.pos + 1
+        if state.pos < state.tokens.length() &&
+          state.tokens[state.pos].token is Symbol(",") {
+          state.pos = state.pos + 1
+        }
+      }
+      Symbol("]") => {
+        state.pos = state.pos + 1
+        return Success((name, words))
+      }
+      _ =>
+        return Error({
+          message: "Expected string literal or ']' in reserved set",
+          location: state.tokens[state.pos].location,
+        })
+    }
+  }
+  Error({ message: "Unclosed reserved set", location: loc })
 }
 
 // 规则层
@@ -430,8 +510,11 @@ fn parse_prec_decl(state : ParserState, level : Int) -> ParseResult[PrecDecl] {
 fn parse_rule(
   state : ParserState,
   is_token : Bool,
+  is_immediate : Bool,
   attributes : Array[RuleAttribute],
 ) -> ParseResult[Rule] {
+  let declaration_order = state.next_declaration_order
+  state.next_declaration_order = state.next_declaration_order + 1
   if state.pos >= state.tokens.length() {
     return Error({
       message: "Unexpected end of input, expected rule name",
@@ -485,6 +568,9 @@ fn parse_rule(
                 pattern,
                 is_named,
                 is_token,
+                is_immediate,
+                lexical_precedence: pattern_lexical_precedence(pattern),
+                declaration_order,
                 params,
                 attributes,
                 location: Some(name_loc),
@@ -511,6 +597,18 @@ fn parse_rule(
 
 ///|
 /// 解析选择表达式：`A | B | C`
+fn pattern_lexical_precedence(pattern : Pattern) -> Int {
+  match pattern {
+    LexicalPrec(level, _) => level
+    Reserved(_, inner) => pattern_lexical_precedence(inner)
+    Alias(_, inner) => pattern_lexical_precedence(inner)
+    AliasWithVisibility(_, _, inner) => pattern_lexical_precedence(inner)
+    Field(_, inner) => pattern_lexical_precedence(inner)
+    _ => 0
+  }
+}
+
+///|
 fn parse_pattern(state : ParserState) -> ParseResult[Pattern] {
   match parse_sequence(state) {
     Error(err) => Error(err)
@@ -733,6 +831,47 @@ fn parse_repeat_range(
 }
 
 ///|
+fn parse_signed_level(state : ParserState) -> ParseResult[Int] {
+  let mut sign = 1
+  if state.pos < state.tokens.length() &&
+    state.tokens[state.pos].token is Symbol("-") {
+    sign = -1
+    state.pos = state.pos + 1
+  }
+  if state.pos >= state.tokens.length() {
+    return Error({
+      message: "Expected precedence level number",
+      location: state.tokens[state.tokens.length() - 1].location,
+    })
+  }
+  match state.tokens[state.pos].token {
+    Identifier(n) => {
+      let (inline_sign, digits) = if n.has_prefix("-") {
+        (-1, n[1:].to_string())
+      } else {
+        (1, n)
+      }
+      match parse_int_str(digits) {
+        Some(v) => {
+          state.pos = state.pos + 1
+          Success(sign * inline_sign * v)
+        }
+        None =>
+          Error({
+            message: "Expected integer as precedence level",
+            location: state.tokens[state.pos].location,
+          })
+      }
+    }
+    _ =>
+      Error({
+        message: "Expected precedence level number",
+        location: state.tokens[state.pos].location,
+      })
+  }
+}
+
+///|
 /// 解析原子表达式：标识符、字面量、正则、分组、前缀操作符
 fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
   if state.pos >= state.tokens.length() {
@@ -742,6 +881,8 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
     })
   }
   match state.tokens[state.pos].token {
+    Identifier("lex") => parse_lexical_prec_pattern(state)
+    Identifier("reserved") => parse_reserved_pattern(state)
     // 标识符：下一个 token 为 `:` 则是命名字段，`[` 则是模板实例化，否则是规则引用
     // 注意：Field 只绑定紧邻的 primary（不包含后续序列元素）。
     // 即 `name: A B C` 解析为 `Seq([Field(name, A), B, C])`。
@@ -983,6 +1124,23 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
     // alias("name", pattern)
     Keyword("alias") => {
       state.pos = state.pos + 1
+      let mut alias_named = true
+      let mut explicit_visibility = false
+      if state.pos + 1 < state.tokens.length() &&
+        state.tokens[state.pos].token is Symbol(".") {
+        explicit_visibility = true
+        state.pos = state.pos + 1
+        match state.tokens[state.pos].token {
+          Identifier("named") => alias_named = true
+          Identifier("anonymous") => alias_named = false
+          _ =>
+            return Error({
+              message: "Expected 'named' or 'anonymous' after alias.",
+              location: state.tokens[state.pos].location,
+            })
+        }
+        state.pos = state.pos + 1
+      }
       if state.pos >= state.tokens.length() {
         return Error({
           message: "Expected '(' after 'alias'",
@@ -1038,7 +1196,11 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
               match state.tokens[state.pos].token {
                 Symbol(")") => {
                   state.pos = state.pos + 1
-                  Success(Alias(alias_name, inner))
+                  if explicit_visibility {
+                    Success(AliasWithVisibility(alias_name, alias_named, inner))
+                  } else {
+                    Success(Alias(alias_name, inner))
+                  }
                 }
                 _ =>
                   Error({
@@ -1062,6 +1224,82 @@ fn parse_primary(state : ParserState) -> ParseResult[Pattern] {
         location: state.tokens[state.pos].location,
       })
   }
+}
+
+///|
+fn parse_lexical_prec_pattern(state : ParserState) -> ParseResult[Pattern] {
+  let loc = state.tokens[state.pos].location
+  state.pos = state.pos + 1
+  if state.pos + 1 >= state.tokens.length() ||
+    !(state.tokens[state.pos].token is Symbol(".")) ||
+    !(state.tokens[state.pos + 1].token is Keyword("prec")) {
+    return Error({ message: "Expected 'lex.prec('", location: loc })
+  }
+  state.pos = state.pos + 2
+  if state.pos >= state.tokens.length() ||
+    !(state.tokens[state.pos].token is Symbol("(")) {
+    return Error({ message: "Expected '(' after lex.prec", location: loc })
+  }
+  state.pos = state.pos + 1
+  let level = match parse_signed_level(state) {
+    Success(value) => value
+    Error(err) => return Error(err)
+  }
+  if state.pos >= state.tokens.length() ||
+    !(state.tokens[state.pos].token is Symbol(",")) {
+    return Error({
+      message: "Expected ',' after lexical precedence",
+      location: loc,
+    })
+  }
+  state.pos = state.pos + 1
+  let inner = match parse_pattern(state) {
+    Success(value) => value
+    Error(err) => return Error(err)
+  }
+  if state.pos >= state.tokens.length() ||
+    !(state.tokens[state.pos].token is Symbol(")")) {
+    return Error({ message: "Expected ')' to close lex.prec()", location: loc })
+  }
+  state.pos = state.pos + 1
+  Success(LexicalPrec(level, inner))
+}
+
+///|
+fn parse_reserved_pattern(state : ParserState) -> ParseResult[Pattern] {
+  let loc = state.tokens[state.pos].location
+  state.pos = state.pos + 1
+  if state.pos >= state.tokens.length() ||
+    !(state.tokens[state.pos].token is Symbol("(")) {
+    return Error({ message: "Expected '(' after reserved", location: loc })
+  }
+  state.pos = state.pos + 1
+  if state.pos >= state.tokens.length() {
+    return Error({ message: "Expected reserved set name", location: loc })
+  }
+  let set_name = match state.tokens[state.pos].token {
+    StringLiteral(value) | Identifier(value) => value
+    _ => return Error({ message: "Expected reserved set name", location: loc })
+  }
+  state.pos = state.pos + 1
+  if state.pos >= state.tokens.length() ||
+    !(state.tokens[state.pos].token is Symbol(",")) {
+    return Error({
+      message: "Expected ',' after reserved set name",
+      location: loc,
+    })
+  }
+  state.pos = state.pos + 1
+  let inner = match parse_pattern(state) {
+    Success(value) => value
+    Error(err) => return Error(err)
+  }
+  if state.pos >= state.tokens.length() ||
+    !(state.tokens[state.pos].token is Symbol(")")) {
+    return Error({ message: "Expected ')' to close reserved()", location: loc })
+  }
+  state.pos = state.pos + 1
+  Success(Reserved(set_name, inner))
 }
 
 ///|

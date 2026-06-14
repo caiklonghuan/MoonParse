@@ -8,6 +8,10 @@ import {
 // Values
 pub fn alias_(String, Pattern) -> Pattern
 
+pub fn alias_anonymous(String, Pattern) -> Pattern
+
+pub fn alias_named(String, Pattern) -> Pattern
+
 pub fn and_(Pattern) -> Pattern
 
 pub fn app(String, Array[Pattern]) -> Pattern
@@ -21,6 +25,8 @@ pub fn grammar_from_json(String) -> ParseResult[Grammar]
 pub fn grammar_to_json(Grammar) -> String
 
 pub fn grammar_to_string(Grammar) -> String
+
+pub fn lexical_prec(Int, Pattern) -> Pattern
 
 pub fn lit(String) -> Pattern
 
@@ -48,6 +54,8 @@ pub fn repeat_exact(Pattern, Int) -> Pattern
 
 pub fn repeat_range(Pattern, Int, Int) -> Pattern
 
+pub fn reserved(String, Pattern) -> Pattern
+
 pub fn seq(Array[Pattern]) -> Pattern
 
 pub fn tagged(String, Pattern) -> Pattern
@@ -67,11 +75,13 @@ pub(all) struct Grammar {
   mut word : String?
   conflicts : Array[Array[String]]
   supertypes : Array[String]
+  reserved_sets : Map[String, Array[String]]
 }
 pub fn Grammar::add_conflict(Self, Array[String]) -> Self
 pub fn Grammar::add_external(Self, String) -> Self
 pub fn Grammar::add_extra(Self, Pattern) -> Self
 pub fn Grammar::add_precedence(Self, PrecKind, Array[String]) -> Self
+pub fn Grammar::add_reserved_set(Self, String, Array[String]) -> Self
 pub fn Grammar::add_rule(Self, Rule) -> Self
 pub fn Grammar::add_supertype(Self, String) -> Self
 pub fn Grammar::new() -> Self
@@ -105,6 +115,9 @@ pub(all) enum Pattern {
   RepeatRange(Pattern, Int, Int)
   Prec(Int, PrecKind, Pattern)
   Alias(String, Pattern)
+  AliasWithVisibility(String, Bool, Pattern)
+  LexicalPrec(Int, Pattern)
+  Reserved(String, Pattern)
   RuleApp(String, Array[Pattern])
 }
 pub fn Pattern::to_string(Self) -> String
@@ -128,14 +141,19 @@ pub(all) struct Rule {
   pattern : Pattern
   is_named : Bool
   is_token : Bool
+  is_immediate : Bool
+  lexical_precedence : Int
+  declaration_order : Int
   params : Array[String]
   attributes : Array[RuleAttribute]
   location : SourceLocation?
 }
+pub fn Rule::immediate_token(String, Pattern) -> Self
 pub fn Rule::new(String, Pattern) -> Self
 pub fn Rule::template(String, Array[String], Pattern) -> Self
 pub fn Rule::token(String, Pattern) -> Self
 pub fn Rule::with_attribute(Self, RuleAttribute) -> Self
+pub fn Rule::with_lexical_precedence(Self, Int) -> Self
 
 pub(all) enum RuleAttribute {
   Inline
@@ -150,6 +168,13 @@ pub(all) struct SourceLocation {
 }
 
 type Token
+
+pub(all) enum TokenSpecificity {
+  String
+  Regex
+  Composite
+  External
+} derive(Eq, @debug.Debug)
 
 pub(all) struct TokenWithLocation {
   token : Token
@@ -184,6 +209,13 @@ pub(all) enum ValidationErrorKind {
   DeprecatedRuleUsed(String)
   LookaheadNonTailAssertion
   LookaheadMixedAssertions
+  ImmediateNonToken
+  LexicalPrecedenceNonToken
+  UndefinedReservedSet(String)
+  EmptyReservedSet(String)
+  DuplicateReservedWord(String, String)
+  InvalidDeclarationOrder(Int)
+  DuplicateDeclarationOrder(Int)
 }
 
 // Type aliases

@@ -332,6 +332,8 @@ pub fn build_lalr_table(
     lexer_dfa: stub_dfa,
     symbol_metadata,
     terminal_patterns: grammar.terminal_patterns,
+    terminal_metadata: grammar.terminal_metadata,
+    reserved_words: grammar.reserved_words,
     terminal_names: Map::new(), // 由 generate_parse_table() 在 augment 后填充
     extras: [], // 由 generate_parse_table() 从 aug.extras 填充
     external_token_ids: [], // 由 generate_parse_table() 从 aug.external_ids 填充

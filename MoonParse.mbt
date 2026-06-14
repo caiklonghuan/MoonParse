@@ -197,52 +197,44 @@ pub fn compile_dsl(
   let g = match @grammar.parse_grammar(grammar_dsl) {
     Success(g) => g
     Error(err) =>
-      return Err(
-        {
-          kind: GrammarParse,
-          message: "parse failed at " +
-            err.location.line.to_string() +
-            ":" +
-            err.location.column.to_string() +
-            ": " +
-            err.message,
-        },
-      )
+      return Err({
+        kind: GrammarParse,
+        message: "parse failed at " +
+        err.location.line.to_string() +
+        ":" +
+        err.location.column.to_string() +
+        ": " +
+        err.message,
+      })
   }
   let val_errors = @grammar.validate_grammar(g)
   let blocking_errors = blocking_validation_errors(g)
   if !blocking_errors.is_empty() {
-    return Err(
-      {
-        kind: GrammarValidation,
-        message: "validation failed:\n" + validation_error_message(blocking_errors),
-      },
-    )
+    return Err({
+      kind: GrammarValidation,
+      message: "validation failed:\n" +
+      validation_error_message(blocking_errors),
+    })
   }
   let (table, conflicts) = match @tablegen.generate_parse_table(g) {
     Ok(r) => r
-    Err(msg) =>
-      return Err({ kind: TableGeneration, message: msg })
+    Err(msg) => return Err({ kind: TableGeneration, message: msg })
   }
   for c in conflicts {
     match c.severity {
       @tablegen.ConflictSeverity::Ambiguous(_) =>
-        return Err(
-          {
-            kind: AmbiguousConflict,
-            message: "ambiguous conflict: state " +
-              c.state.to_string() +
-              " on terminal " +
-              c.terminal.to_string(),
-          },
-        )
+        return Err({
+          kind: AmbiguousConflict,
+          message: "ambiguous conflict: state " +
+          c.state.to_string() +
+          " on terminal " +
+          c.terminal.to_string(),
+        })
       _ => ()
     }
   }
   let json = @tablegen.table_to_json(table)
-  Ok(
-    { table, table_json: json, conflicts, validation_warnings: val_errors },
-  )
+  Ok({ table, table_json: json, conflicts, validation_warnings: val_errors })
 }
 
 ///|

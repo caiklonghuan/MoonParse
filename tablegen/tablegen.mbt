@@ -41,6 +41,8 @@ pub fn generate_parse_table(
     lexer_dfa: real_dfa,
     symbol_metadata: resolved_table.symbol_metadata,
     terminal_patterns: resolved_table.terminal_patterns,
+    terminal_metadata: resolved_table.terminal_metadata,
+    reserved_words: resolved_table.reserved_words,
     terminal_names,
     extras: aug.extras,
     external_token_ids: aug.external_ids,

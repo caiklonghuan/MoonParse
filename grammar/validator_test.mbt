@@ -79,6 +79,18 @@ fn kind_of(error : ValidationError) -> String {
     ValidationErrorKind::LookaheadNonTailAssertion =>
       "LookaheadNonTailAssertion"
     ValidationErrorKind::LookaheadMixedAssertions => "LookaheadMixedAssertions"
+    ValidationErrorKind::ImmediateNonToken => "ImmediateNonToken"
+    ValidationErrorKind::LexicalPrecedenceNonToken =>
+      "LexicalPrecedenceNonToken"
+    ValidationErrorKind::UndefinedReservedSet(name) =>
+      "UndefinedReservedSet:\{name}"
+    ValidationErrorKind::EmptyReservedSet(name) => "EmptyReservedSet:\{name}"
+    ValidationErrorKind::DuplicateReservedWord(name, word) =>
+      "DuplicateReservedWord:\{name}:\{word}"
+    ValidationErrorKind::InvalidDeclarationOrder(order) =>
+      "InvalidDeclarationOrder:\{order}"
+    ValidationErrorKind::DuplicateDeclarationOrder(order) =>
+      "DuplicateDeclarationOrder:\{order}"
   }
 }
 
@@ -759,4 +771,36 @@ test "grammar_validation_suite" {
   validator_regex_test()
   validator_message_test()
   validator_lookahead_test()
+}
+
+///|
+test "p1a validation rejects invalid immediate lexical and reserved metadata" {
+  let grammar = parse_ok(
+    "p1a validation",
+    (
+      #|start root
+      #|reserved empty []
+      #|reserved duplicate ["if", "if"]
+      #|token rule identifier: reserved("missing", /[a-z]+/)
+      #|rule root: identifier
+    ),
+  )
+  let errors = kinds(validate_grammar(grammar))
+  assert_true(arr_string_contains(errors, "EmptyReservedSet:empty"))
+  assert_true(arr_string_contains(errors, "DuplicateReservedWord:duplicate:if"))
+  assert_true(arr_string_contains(errors, "UndefinedReservedSet:missing"))
+
+  let non_token = parse_ok(
+    "immediate non-token", "start root\nrule root: \"x\"",
+  )
+  non_token.rules["root"] = {
+    ..non_token.rules["root"],
+    is_immediate: true,
+    pattern: LexicalPrec(1, non_token.rules["root"].pattern),
+  }
+  let non_token_errors = kinds(validate_grammar(non_token))
+  assert_true(arr_string_contains(non_token_errors, "ImmediateNonToken"))
+  assert_true(
+    arr_string_contains(non_token_errors, "LexicalPrecedenceNonToken"),
+  )
 }

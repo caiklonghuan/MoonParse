@@ -179,3 +179,48 @@ test "grammar_from_json_roundtrip_precedences" {
   assert_eq(g2.precedences.length(), g.precedences.length())
   assert_eq(g2.start, g.start)
 }
+
+///|
+test "p1a grammar JSON roundtrip and legacy defaults" {
+  let dsl =
+    #|start root
+    #|reserved global ["if"]
+    #|token.immediate rule keyword: lex.prec(3, reserved("global", "if"))
+    #|rule root: alias.anonymous("kw", keyword)
+  let grammar = parse_ok_s(dsl)
+  let restored = match grammar_from_json(grammar_to_json(grammar)) {
+    Success(value) => value
+    Error(error) => abort(error.message)
+  }
+  assert_true(restored.rules["keyword"].is_immediate)
+  assert_eq(restored.rules["keyword"].lexical_precedence, 3)
+  assert_eq(restored.reserved_sets["global"], ["if"])
+  let legacy = grammar_to_json(grammar)
+    .replace(old=", \"is_immediate\": true", new="")
+    .replace(old=", \"lexical_precedence\": 3", new="")
+    .replace(old=", \"declaration_order\": 0", new="")
+  let legacy_restored = match grammar_from_json(legacy) {
+    Success(value) => value
+    Error(error) => abort(error.message)
+  }
+  assert_false(legacy_restored.rules["keyword"].is_immediate)
+  assert_eq(legacy_restored.rules["keyword"].lexical_precedence, 0)
+}
+
+///|
+test "p1a grammar JSON rejects invalid declaration order" {
+  let grammar = parse_ok_s("start root\nrule root: \"x\"")
+  let json = grammar_to_json(grammar)
+  let negative = json.replace(
+    old="\"declaration_order\": 0",
+    new="\"declaration_order\": -1",
+  )
+  assert_true(grammar_from_json(negative) is Error(_))
+
+  let two = parse_ok_s("start root\nrule root: child\nrule child: \"x\"")
+  let duplicate = grammar_to_json(two).replace(
+    old="\"declaration_order\": 1",
+    new="\"declaration_order\": 0",
+  )
+  assert_true(grammar_from_json(duplicate) is Error(_))
+}

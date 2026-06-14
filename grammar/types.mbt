@@ -44,6 +44,15 @@ pub(all) enum RuleAttribute {
 } derive(Debug, Eq)
 
 ///|
+/// 词法 token 的来源类型，用于同优先级、同长度匹配时稳定消歧。
+pub(all) enum TokenSpecificity {
+  String
+  Regex
+  Composite
+  External
+} derive(Debug, Eq)
+
+///|
 pub impl Show for RuleAttribute with output(self, logger) {
   match self {
     Inline => logger.write_string("Inline")
@@ -87,6 +96,12 @@ pub(all) enum Pattern {
   Prec(Int, PrecKind, Pattern)
   /// 节点类型别名 alias("name", p)：将产生式的显示名称覆盖为 alias_name
   Alias(String, Pattern)
+  /// 显式指定 alias 是否为 named node；旧 Alias 等价于 named=true。
+  AliasWithVisibility(String, Bool, Pattern)
+  /// token rule 内的显式词法优先级。
+  LexicalPrec(Int, Pattern)
+  /// 为该 token 选择局部 reserved word set。
+  Reserved(String, Pattern)
   /// 模板规则实例化：name[arg1, arg2]，用具体 Pattern 替换模板参数
   RuleApp(String, Array[Pattern])
 }
@@ -102,6 +117,12 @@ pub(all) struct Rule {
   is_named : Bool
   /// 是否为词法规则（由 `token rule` 声明）；词法规则仅含终结符模式
   is_token : Bool
+  /// true 时，匹配该 token 前不得消费 extras。
+  is_immediate : Bool
+  /// 显式词法优先级；默认 0。
+  lexical_precedence : Int
+  /// 稳定源码声明顺序；越小越优先。
+  declaration_order : Int
   /// 模板参数列表；非空时此规则为参数化模板，用 name[arg] 实例化
   params : Array[String]
   /// 规则属性（@inline / @hide）
@@ -136,6 +157,8 @@ pub(all) struct Grammar {
   /// 对应 DSL 中的 `supertypes [expr, stmt, ...]` 声明
   /// 列表中的规则名在 CST 查询中被视为抽象类别，而不是具体节点类型
   supertypes : Array[String]
+  /// reserved word set 名称到关键字列表。
+  reserved_sets : Map[String, Array[String]]
 }
 
 ///|
@@ -213,6 +236,14 @@ pub fn pattern_to_string(pattern : Pattern) -> String {
       prefix + "(" + level.to_string() + ", " + pattern_to_string(p) + ")"
     }
     Alias(name, p) => "alias(\"" + name + "\", " + pattern_to_string(p) + ")"
+    AliasWithVisibility(name, named, p) => {
+      let prefix = if named { "alias.named" } else { "alias.anonymous" }
+      prefix + "(\"" + name + "\", " + pattern_to_string(p) + ")"
+    }
+    LexicalPrec(level, p) =>
+      "lex.prec(" + level.to_string() + ", " + pattern_to_string(p) + ")"
+    Reserved(set_name, p) =>
+      "reserved(\"" + set_name + "\", " + pattern_to_string(p) + ")"
     RuleApp(name, args) =>
       name + "[" + args.map(pattern_to_string).join(", ") + "]"
     Choice(patterns) => {

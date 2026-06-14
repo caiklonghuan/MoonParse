@@ -37,12 +37,17 @@ fn LrParser::run(
 ) -> Result[CstNode, ParseError] {
   let mut pos : Int = 0
   let mut cur_point : Point = { row: 0, column: 0 }
+  let mut extras_consumed_since_significant = false
   while true {
     let state = self.top_state()
 
     // 词法：每轮用当前 LR 状态扫描（context-aware）
     let (maybe_tok, after_tok_pos) = self.lexer.next_token(
-      input, pos, table, state,
+      input,
+      pos,
+      table,
+      state,
+      extras_consumed=extras_consumed_since_significant,
     )
 
     match maybe_tok {
@@ -112,6 +117,7 @@ fn LrParser::run(
           cur_point = ep
           self.node_stack.push(extra_node)
           pos = after_tok_pos
+          extras_consumed_since_significant = true
         } else {
           // 普通 token：查 action 表
           match table.action.get((state, tok.terminal_id)) {
@@ -149,9 +155,11 @@ fn LrParser::run(
                     tok.lookahead_bytes,
                     tok.is_keyword,
                     false,
+                    extras_consumed_before=extras_consumed_since_significant,
                   )
                   cur_point = ep
                   pos = after_tok_pos
+                  extras_consumed_since_significant = false
                   self.state_stack.push(next_state)
                   self.node_stack.push(node)
                 }
@@ -264,7 +272,7 @@ fn LrParser::do_reduce(
       }
       let inner = CstNode::inner(
         nt,
-        meta.is_named,
+        prod.alias_is_named.unwrap_or(meta.is_named),
         raw,
         fnames,
         prod.id,

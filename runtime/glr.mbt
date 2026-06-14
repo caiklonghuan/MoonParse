@@ -66,6 +66,7 @@ struct GssLink {
 struct GssNode {
   /// 当前 LR 状态（ParseTable.action 的 key 之一）
   state : Int
+  mut extras_consumed_since_significant : Bool
   /// 入边列表（空 = 底部哨兵结点，永不弹出）
   links : Array[GssLink]
 } derive(Debug)
@@ -101,7 +102,11 @@ priv struct GlrEngine {
 ///
 /// 创建唯一底部哨兵结点（state=0, links=[]），并将其设为唯一活跃栈顶。
 fn GlrEngine::new(lexer : LexerEngine, config : ParseConfig) -> GlrEngine {
-  let sentinel : GssNode = { state: 0, links: [] }
+  let sentinel : GssNode = {
+    state: 0,
+    extras_consumed_since_significant: false,
+    links: [],
+  }
   {
     gss_nodes: [sentinel],
     active_tops: [0],
@@ -240,8 +245,11 @@ fn GlrEngine::run(
     }
 
     // 词法（使用并集 valid 集合；支持 external scanner 与 EOF 零宽 token）
+    let all_versions_consumed_extras = self.active_tops.all(fn(top) {
+      self.gss_nodes[top].extras_consumed_since_significant
+    })
     let (maybe_tok, new_pos) = self.lexer.scan_with_valid(
-      input, pos, valid, table,
+      input, pos, valid, table, all_versions_consumed_extras,
     )
     match maybe_tok {
       None => {
@@ -334,6 +342,9 @@ fn GlrEngine::run(
           )
           cur_point = ep
           pending_extras.push(extra_node)
+          for top in self.active_tops {
+            self.gss_nodes[top].extras_consumed_since_significant = true
+          }
           pos = new_pos
           continue
         }
@@ -506,10 +517,13 @@ fn GlrEngine::find_or_merge(
   state : Int,
   new_link : GssLink,
   candidate_tops : Array[GssRef],
+  extras_consumed_since_significant : Bool,
 ) -> (GssRef, Bool) {
   // 在 candidate_tops 中线性扫描同 state 的结点
   for r in candidate_tops {
-    if self.gss_nodes[r].state == state {
+    if self.gss_nodes[r].state == state &&
+      self.gss_nodes[r].extras_consumed_since_significant ==
+      extras_consumed_since_significant {
       // 检查是否已存在完全相同的链接（相同前驱 + 相同节点）
       // 仅 predecessor 相同但产生式不同（局部歧义）时，应追加入边而非丢弃。
       let mut dup = false
@@ -536,7 +550,11 @@ fn GlrEngine::find_or_merge(
   }
   // 找不到：新建结点，加入 candidate_tops
   let new_ref = self.gss_nodes.length()
-  self.gss_nodes.push({ state, links: [new_link] })
+  self.gss_nodes.push({
+    state,
+    extras_consumed_since_significant,
+    links: [new_link],
+  })
   candidate_tops.push(new_ref)
   (new_ref, true)
 }
@@ -590,6 +608,13 @@ fn GlrEngine::run_shift(
   // 对每个活跃栈顶，收集所有 Shift 动作
   for top_ref in self.active_tops {
     let state = self.gss_nodes[top_ref].state
+    let token_metadata = table.terminal_metadata
+      .get(tok.terminal_id)
+      .unwrap_or(@tablegen.TerminalMetadata::default())
+    if token_metadata.is_immediate &&
+      self.gss_nodes[top_ref].extras_consumed_since_significant {
+      continue
+    }
     match table.action.get((state, tok.terminal_id)) {
       None => ()
       Some(acts) =>
@@ -618,6 +643,7 @@ fn GlrEngine::run_shift(
                       state,
                       self.edit_start,
                       old_end_b,
+                      extras_consumed_before=self.gss_nodes[top_ref].extras_consumed_since_significant,
                     ) {
                     Some(old_node) => {
                       let can_reuse_leaf = old_node.children.is_empty() &&
@@ -653,6 +679,7 @@ fn GlrEngine::run_shift(
                           tok.lookahead_bytes,
                           tok.is_keyword,
                           false,
+                          extras_consumed_before=self.gss_nodes[top_ref].extras_consumed_since_significant,
                         )
                       }
                     }
@@ -668,6 +695,7 @@ fn GlrEngine::run_shift(
                         tok.lookahead_bytes,
                         tok.is_keyword,
                         false,
+                        extras_consumed_before=self.gss_nodes[top_ref].extras_consumed_since_significant,
                       )
                   }
                 }
@@ -683,6 +711,7 @@ fn GlrEngine::run_shift(
                     tok.lookahead_bytes,
                     tok.is_keyword,
                     false,
+                    extras_consumed_before=self.gss_nodes[top_ref].extras_consumed_since_significant,
                   )
               }
               let link : GssLink = {
@@ -693,7 +722,7 @@ fn GlrEngine::run_shift(
                 leading_extras: pending_extras.copy(),
               }
               let (new_ref, is_new) = self.find_or_merge(
-                next_state, link, next_tops,
+                next_state, link, next_tops, false,
               )
               // 有状态词法器：为新建的 GSS 结点克隆 scanner 状态
               if is_new {
@@ -819,7 +848,14 @@ fn GlrEngine::try_reuse_subtrees(
       pos - self.byte_delta
     }
     match
-      find_reusable_node(ot, search_pos, state, self.edit_start, old_end_b) {
+      find_reusable_node(
+        ot,
+        search_pos,
+        state,
+        self.edit_start,
+        old_end_b,
+        extras_consumed_before=self.gss_nodes[top_ref].extras_consumed_since_significant,
+      ) {
       Some(n) => {
         // 仅复用 inner 节点（children 非空）；leaf 节点交由 run_shift 处理
         if n.children.is_empty() {
@@ -881,7 +917,7 @@ fn GlrEngine::try_reuse_subtrees(
       node: Some(shifted),
       leading_extras: pending_extras.copy(),
     }
-    let (new_ref, is_new) = self.find_or_merge(goto_st, link, new_tops)
+    let (new_ref, is_new) = self.find_or_merge(goto_st, link, new_tops, false)
     // 有状态词法器：为新建的 GSS 结点克隆 scanner 状态
     if is_new {
       match self.scanner_states.get(top_ref) {
@@ -975,7 +1011,11 @@ fn GlrEngine::insert_missing(
                         leading_extras: [],
                       }
                       let new_ref = self.gss_nodes.length()
-                      self.gss_nodes.push({ state: next_state, links: [link] })
+                      self.gss_nodes.push({
+                        state: next_state,
+                        extras_consumed_since_significant: self.gss_nodes[reduced_top_ref].extras_consumed_since_significant,
+                        links: [link],
+                      })
                       match self.scanner_states.get(reduced_top_ref) {
                         Some(ss) =>
                           self.scanner_states[new_ref] = ss.clone_scanner()
@@ -1148,7 +1188,11 @@ fn GlrEngine::insert_missing_and_relex(
                         leading_extras: [],
                       }
                       let new_ref = self.gss_nodes.length()
-                      self.gss_nodes.push({ state: next_state, links: [link] })
+                      self.gss_nodes.push({
+                        state: next_state,
+                        extras_consumed_since_significant: self.gss_nodes[reduced_top_ref].extras_consumed_since_significant,
+                        links: [link],
+                      })
                       match self.scanner_states.get(reduced_top_ref) {
                         Some(ss) =>
                           self.scanner_states[new_ref] = ss.clone_scanner()
@@ -1173,7 +1217,7 @@ fn GlrEngine::insert_missing_and_relex(
                         new_valid.add(t)
                       }
                       let (maybe_retok, new_pos2) = self.lexer.scan_with_valid(
-                        input, pos, new_valid, table,
+                        input, pos, new_valid, table, false,
                       )
                       match maybe_retok {
                         None => ()
@@ -1566,7 +1610,7 @@ fn GlrEngine::run_reduce_worklist(
           let inner_dp = child_dp + prod_dp
           let inner = CstNode::inner(
             nt,
-            meta.is_named,
+            prod.alias_is_named.unwrap_or(meta.is_named),
             children,
             fnames,
             prod.id,
@@ -1584,6 +1628,7 @@ fn GlrEngine::run_reduce_worklist(
             goto_st,
             new_link,
             self.active_tops,
+            self.gss_nodes[top].extras_consumed_since_significant,
           )
           // 有状态词法器：reduce-goto 后新结点继承 base_ref 的 scanner 状态
           if link_added {
@@ -1680,7 +1725,11 @@ fn GlrEngine::compact(self : GlrEngine, roots : Array[GssRef]) -> Unit {
           leading_extras: lnk.leading_extras,
         })
       }
-      new_nodes.push({ state: old_node.state, links: new_links })
+      new_nodes.push({
+        state: old_node.state,
+        extras_consumed_since_significant: old_node.extras_consumed_since_significant,
+        links: new_links,
+      })
     }
     oi = oi + 1
   }

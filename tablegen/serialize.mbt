@@ -131,6 +131,11 @@ fn production_to_json(prod : Production) -> String {
     Some(name) => fields.push(("alias_name", jstr(name)))
     None => ()
   }
+  match prod.alias_is_named {
+    Some(named) =>
+      fields.push(("alias_is_named", if named { "true" } else { "false" }))
+    None => ()
+  }
   match prod.lookahead {
     Some(NotFollowedBy(tids)) =>
       fields.push(
@@ -178,6 +183,31 @@ fn terminal_def_to_json(td : TerminalDef) -> String {
 }
 
 ///|
+fn terminal_metadata_to_json(
+  tid : TerminalId,
+  meta : TerminalMetadata,
+) -> String {
+  let specificity = match meta.specificity {
+    @grammar.TokenSpecificity::String => "string"
+    @grammar.TokenSpecificity::Regex => "regex"
+    @grammar.TokenSpecificity::Composite => "composite"
+    @grammar.TokenSpecificity::External => "external"
+  }
+  let fields : Array[(String, String)] = [
+    ("id", tid.to_string()),
+    ("lexical_precedence", meta.lexical_precedence.to_string()),
+    ("specificity", jstr(specificity)),
+    ("declaration_order", meta.declaration_order.to_string()),
+    ("is_immediate", if meta.is_immediate { "true" } else { "false" }),
+  ]
+  match meta.reserved_set {
+    Some(name) => fields.push(("reserved_set", jstr(name)))
+    None => ()
+  }
+  jobj(fields)
+}
+
+///|
 /// DfaState → JSON
 fn dfa_state_to_json(state : DfaState) -> String {
   // transitions: [[char_code, target_state], ...]
@@ -193,6 +223,7 @@ fn dfa_state_to_json(state : DfaState) -> String {
     Some(tid) => fields.push(("acc", "\{tid}"))
     None => ()
   }
+  fields.push(("accs", jarray(state.accepts.map(fn(tid) { tid.to_string() }))))
   jobj(fields)
 }
 
@@ -306,6 +337,21 @@ pub fn table_to_json(table : ParseTable) -> String {
   tp_pairs.sort_by(fn(a, b) { a.0.compare(b.0) })
   let tp_json = jarray(tp_pairs.map(fn(p) { p.1 }))
 
+  let tm_pairs : Array[(Int, String)] = []
+  for id, meta in table.terminal_metadata {
+    tm_pairs.push((id, terminal_metadata_to_json(id, meta)))
+  }
+  tm_pairs.sort_by(fn(a, b) { a.0.compare(b.0) })
+  let tm_json = jarray(tm_pairs.map(fn(p) { p.1 }))
+  let rw_pairs : Array[(String, String)] = []
+  for name, words in table.reserved_words {
+    rw_pairs.push(
+      (name, jobj([("name", jstr(name)), ("words", jarray(words.map(jstr)))])),
+    )
+  }
+  rw_pairs.sort_by(fn(a, b) { a.0.compare(b.0) })
+  let rw_json = rw_pairs.map(fn(pair) { pair.1 })
+
   // terminal_names 数组（按 id 排序）
   let tn_pairs : Array[(Int, String)] = []
   for id, name in table.terminal_names {
@@ -337,12 +383,15 @@ pub fn table_to_json(table : ParseTable) -> String {
   )
 
   let fields : Array[(String, String)] = [
+    ("schema_version", "4"),
     ("states", "\{table.states}"),
     ("productions", prods_json),
     ("action", action_json),
     ("goto", goto_json),
     ("symbol_metadata", meta_json),
     ("terminal_patterns", tp_json),
+    ("terminal_metadata", tm_json),
+    ("reserved_words", jarray(rw_json)),
     ("terminal_names", tn_json),
     ("extras", extras_json),
     ("external_token_ids", ext_json),
@@ -692,10 +741,14 @@ fn write_production(w : BinWriter, prod : Production) -> Unit {
       w.write_str(name)
     }
   }
+  match prod.alias_is_named {
+    None => w.write_u8(0)
+    Some(named) => w.write_u8(if named { 2 } else { 1 })
+  }
 }
 
 ///|
-fn read_production(r : BinReader) -> Production raise BinError {
+fn read_production(r : BinReader, version : Int) -> Production raise BinError {
   let id = r.read_u16_le()
   let head = r.read_u16_le()
   let body_len = r.read_u16_le()
@@ -744,7 +797,136 @@ fn read_production(r : BinReader) -> Production raise BinError {
   // alias_name
   let has_alias = r.read_u8()
   let alias_name = if has_alias == 1 { Some(r.read_str()) } else { None }
-  { id, head, body, prec, assoc, rule_name, lookahead, alias_name }
+  let alias_is_named = if version >= 4 {
+    match r.read_u8() {
+      0 => None
+      1 => Some(false)
+      2 => Some(true)
+      tag => raise InvalidData("alias namedness tag=\{tag}")
+    }
+  } else {
+    alias_name.map(fn(_) { true })
+  }
+  {
+    id,
+    head,
+    body,
+    prec,
+    assoc,
+    rule_name,
+    lookahead,
+    alias_name,
+    alias_is_named,
+  }
+}
+
+///|
+fn write_terminal_metadata(
+  w : BinWriter,
+  metadata : Map[TerminalId, TerminalMetadata],
+) -> Unit {
+  let entries : Array[(TerminalId, TerminalMetadata)] = []
+  for tid, meta in metadata {
+    entries.push((tid, meta))
+  }
+  entries.sort_by(fn(a, b) { a.0.compare(b.0) })
+  w.write_u32_le(entries.length())
+  for entry in entries {
+    let (tid, meta) = entry
+    w.write_u16_le(tid)
+    w.write_u32_le(meta.lexical_precedence)
+    let specificity = match meta.specificity {
+      @grammar.TokenSpecificity::String => 0
+      @grammar.TokenSpecificity::Regex => 1
+      @grammar.TokenSpecificity::Composite => 2
+      @grammar.TokenSpecificity::External => 3
+    }
+    w.write_u8(specificity)
+    w.write_u32_le(meta.declaration_order)
+    w.write_u8(if meta.is_immediate { 1 } else { 0 })
+    match meta.reserved_set {
+      None => w.write_u8(0)
+      Some(name) => {
+        w.write_u8(1)
+        w.write_str(name)
+      }
+    }
+  }
+}
+
+///|
+fn read_terminal_metadata(
+  r : BinReader,
+) -> Map[TerminalId, TerminalMetadata] raise BinError {
+  let count = r.read_u32_le()
+  let result : Map[TerminalId, TerminalMetadata] = Map::new()
+  for _ in 0..<count {
+    let tid = r.read_u16_le()
+    let lexical_precedence = r.read_u32_le()
+    let specificity = match r.read_u8() {
+      0 => @grammar.TokenSpecificity::String
+      1 => @grammar.TokenSpecificity::Regex
+      2 => @grammar.TokenSpecificity::Composite
+      3 => @grammar.TokenSpecificity::External
+      tag => raise InvalidData("terminal specificity tag=\{tag}")
+    }
+    let declaration_order = r.read_u32_le()
+    if declaration_order < 0 {
+      raise InvalidData("negative terminal declaration order")
+    }
+    let is_immediate = r.read_u8() != 0
+    let reserved_set = if r.read_u8() == 0 { None } else { Some(r.read_str()) }
+    if result.contains(tid) {
+      raise InvalidData("duplicate terminal metadata id=\{tid}")
+    }
+    result[tid] = {
+      lexical_precedence,
+      specificity,
+      declaration_order,
+      is_immediate,
+      reserved_set,
+    }
+  }
+  result
+}
+
+///|
+fn write_reserved_words(
+  w : BinWriter,
+  sets : Map[String, Array[String]],
+) -> Unit {
+  let names : Array[String] = []
+  for name, _ in sets {
+    names.push(name)
+  }
+  names.sort()
+  w.write_u16_le(names.length())
+  for name in names {
+    w.write_str(name)
+    let words = sets[name]
+    w.write_u16_le(words.length())
+    for word in words {
+      w.write_str(word)
+    }
+  }
+}
+
+///|
+fn read_reserved_words(
+  r : BinReader,
+) -> Map[String, Array[String]] raise BinError {
+  let result : Map[String, Array[String]] = Map::new()
+  let count = r.read_u16_le()
+  for _ in 0..<count {
+    let name = r.read_str()
+    let words : Array[String] = []
+    let word_count = r.read_u16_le()
+    for _ in 0..<word_count {
+      words.push(r.read_str())
+    }
+    result[name] = words
+  }
+  result
 }
 
 // ── SymbolMeta ───────────────────────────────────────────────────────────────
@@ -786,10 +968,14 @@ fn write_dfa_state(w : BinWriter, state : DfaState) -> Unit {
       w.write_u16_le(t)
     }
   }
+  w.write_u16_le(state.accepts.length())
+  for tid in state.accepts {
+    w.write_u16_le(tid)
+  }
 }
 
 ///|
-fn read_dfa_state(r : BinReader) -> DfaState raise BinError {
+fn read_dfa_state(r : BinReader, version : Int) -> DfaState raise BinError {
   let id = r.read_u16_le()
   let trans_count = r.read_u16_le()
   let transitions : Map[Char, DfaStateId] = Map::new()
@@ -800,7 +986,20 @@ fn read_dfa_state(r : BinReader) -> DfaState raise BinError {
   }
   let has_accept = r.read_u8()
   let accept = if has_accept == 1 { Some(r.read_u16_le()) } else { None }
-  { id, transitions, accept }
+  let accepts = if version >= 4 {
+    let count = r.read_u16_le()
+    let values : Array[TerminalId] = []
+    for _ in 0..<count {
+      values.push(r.read_u16_le())
+    }
+    values
+  } else {
+    match accept {
+      Some(tid) => [tid]
+      None => []
+    }
+  }
+  { id, transitions, accept, accepts }
 }
 
 // ── LexerDfa ─────────────────────────────────────────────────────────────────
@@ -830,11 +1029,11 @@ fn write_lexer_dfa(w : BinWriter, dfa : LexerDfa) -> Unit {
 }
 
 ///|
-fn read_lexer_dfa(r : BinReader) -> LexerDfa raise BinError {
+fn read_lexer_dfa(r : BinReader, version : Int) -> LexerDfa raise BinError {
   let states_count = r.read_u32_le()
   let states : Array[DfaState] = []
   for _ in 0..<states_count {
-    states.push(read_dfa_state(r))
+    states.push(read_dfa_state(r, version))
   }
   let start = r.read_u16_le()
   let vt_count = r.read_u32_le()
@@ -852,6 +1051,29 @@ fn read_lexer_dfa(r : BinReader) -> LexerDfa raise BinError {
 }
 
 // ── terminal_patterns ────────────────────────────────────────────────────────
+
+///|
+fn legacy_terminal_metadata(
+  patterns : Map[TerminalId, TerminalDef],
+) -> Map[TerminalId, TerminalMetadata] {
+  let result : Map[TerminalId, TerminalMetadata] = Map::new()
+  for tid, def in patterns {
+    let specificity = match def {
+      Literal(_) => @grammar.TokenSpecificity::String
+      Regex(_) => @grammar.TokenSpecificity::Regex
+      External(_) => @grammar.TokenSpecificity::External
+      AnyChar => @grammar.TokenSpecificity::Composite
+    }
+    result[tid] = {
+      lexical_precedence: 0,
+      specificity,
+      declaration_order: tid,
+      is_immediate: false,
+      reserved_set: None,
+    }
+  }
+  result
+}
 
 ///|
 fn write_terminal_patterns(
@@ -898,7 +1120,7 @@ pub fn serialize_table(table : ParseTable) -> Bytes {
   w.write_u8(0x4D)
   w.write_u8(0x50)
   w.write_u8(0x54)
-  w.write_u8(0x03) // 版本 3：action/goto 表改用偏移量压缩（displacement encoding）
+  w.write_u8(0x04) // 版本 4：terminal metadata 与 alias namedness
 
   // [1] states
   w.write_u32_le(table.states)
@@ -986,6 +1208,10 @@ pub fn serialize_table(table : ParseTable) -> Bytes {
     w.write_u16_le(tid)
   }
 
+  // [13] terminal metadata（版本 4）
+  write_terminal_metadata(w, table.terminal_metadata)
+  write_reserved_words(w, table.reserved_words)
+
   w.to_bytes()
 }
 
@@ -1004,9 +1230,9 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
     if m0 != 0x4D ||
       m1 != 0x50 ||
       m2 != 0x54 ||
-      (m3 != 0x01 && m3 != 0x02 && m3 != 0x03) {
+      (m3 != 0x01 && m3 != 0x02 && m3 != 0x03 && m3 != 0x04) {
       raise InvalidData(
-        "bad magic: \{m0} \{m1} \{m2} \{m3}, expected 77 80 84 1/2/3",
+        "bad magic: \{m0} \{m1} \{m2} \{m3}, expected 77 80 84 1/2/3/4",
       )
     }
     let version = m3
@@ -1058,11 +1284,11 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
     let prod_count = r.read_u32_le()
     let productions : Array[Production] = []
     for _ in 0..<prod_count {
-      productions.push(read_production(r))
+      productions.push(read_production(r, version))
     }
 
     // [5] lexer dfa
-    let lexer_dfa = read_lexer_dfa(r)
+    let lexer_dfa = read_lexer_dfa(r, version)
 
     // [6] symbol_metadata
     let meta_count = r.read_u16_le()
@@ -1127,6 +1353,17 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       }
     }
 
+    let terminal_metadata = if version >= 4 {
+      read_terminal_metadata(r)
+    } else {
+      legacy_terminal_metadata(terminal_patterns)
+    }
+    let reserved_words = if version >= 4 {
+      read_reserved_words(r)
+    } else {
+      Map::new()
+    }
+
     Ok({
       states,
       action,
@@ -1135,6 +1372,8 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       lexer_dfa,
       symbol_metadata,
       terminal_patterns,
+      terminal_metadata,
+      reserved_words,
       terminal_names,
       extras,
       external_token_ids,
@@ -1270,6 +1509,10 @@ fn json_to_production(j : Json) -> Production raise JsonTableError {
     Some(String(s)) => Some(s)
     _ => None
   }
+  let alias_is_named = match o.get("alias_is_named") {
+    Some(value) => Some(jbool(value))
+    None => alias_name.map(fn(_) { true })
+  }
   let lookahead : LookaheadConstraint? = match o.get("lookahead") {
     Some(la_j) => {
       let la_o = jobj_v(la_j)
@@ -1282,7 +1525,17 @@ fn json_to_production(j : Json) -> Production raise JsonTableError {
     }
     None => None
   }
-  { id, head, body, rule_name, prec, assoc, lookahead, alias_name }
+  {
+    id,
+    head,
+    body,
+    rule_name,
+    prec,
+    assoc,
+    lookahead,
+    alias_name,
+    alias_is_named,
+  }
 }
 
 ///|
@@ -1295,6 +1548,39 @@ fn json_to_terminal_def(j : Json) -> TerminalDef raise JsonTableError {
     "external" => External(jstr_v(jfield(o, "value")))
     t => raise JBadField("unknown terminal_def type: \{t}")
   }
+}
+
+///|
+fn json_to_terminal_metadata(
+  j : Json,
+) -> (TerminalId, TerminalMetadata) raise JsonTableError {
+  let o = jobj_v(j)
+  let tid = jint(jfield(o, "id"))
+  let specificity = match jstr_v(jfield(o, "specificity")) {
+    "string" => @grammar.TokenSpecificity::String
+    "regex" => @grammar.TokenSpecificity::Regex
+    "composite" => @grammar.TokenSpecificity::Composite
+    "external" => @grammar.TokenSpecificity::External
+    value => raise JBadField("unknown token specificity: \{value}")
+  }
+  let reserved_set = match o.get("reserved_set") {
+    Some(value) => Some(jstr_v(value))
+    None => None
+  }
+  let declaration_order = jint(jfield(o, "declaration_order"))
+  if declaration_order < 0 {
+    raise JBadField("negative terminal declaration_order")
+  }
+  (
+    tid,
+    {
+      lexical_precedence: jint(jfield(o, "lexical_precedence")),
+      specificity,
+      declaration_order,
+      is_immediate: jbool(jfield(o, "is_immediate")),
+      reserved_set,
+    },
+  )
 }
 
 ///|
@@ -1313,7 +1599,15 @@ fn json_to_dfa_state(j : Json) -> DfaState raise JsonTableError {
     Some(n) => Some(jint(n))
     None => None
   }
-  { id, transitions, accept }
+  let accepts = match o.get("accs") {
+    Some(value) => jarr(value).map(jint)
+    None =>
+      match accept {
+        Some(tid) => [tid]
+        None => []
+      }
+  }
+  { id, transitions, accept, accepts }
 }
 
 ///|
@@ -1340,6 +1634,14 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
   }
   try {
     let root = jobj_v(j)
+
+    let schema_version = match root.get("schema_version") {
+      Some(value) => jint(value)
+      None => 3
+    }
+    if schema_version != 3 && schema_version != 4 {
+      raise JBadField("unsupported schema_version: \{schema_version}")
+    }
 
     let states = jint(jfield(root, "states"))
 
@@ -1387,6 +1689,28 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
       let id = jint(jfield(o, "id"))
       let def = json_to_terminal_def(jfield(o, "pattern"))
       terminal_patterns.set(id, def)
+    }
+    let terminal_metadata = if schema_version >= 4 {
+      let result : Map[TerminalId, TerminalMetadata] = Map::new()
+      for entry in jarr(jfield(root, "terminal_metadata")) {
+        let (tid, metadata) = json_to_terminal_metadata(entry)
+        if result.contains(tid) {
+          raise JBadField("duplicate terminal metadata id=\{tid}")
+        }
+        result[tid] = metadata
+      }
+      result
+    } else {
+      legacy_terminal_metadata(terminal_patterns)
+    }
+    let reserved_words : Map[String, Array[String]] = Map::new()
+    if schema_version >= 4 {
+      for entry in jarr(jfield(root, "reserved_words")) {
+        let object = jobj_v(entry)
+        reserved_words[jstr_v(jfield(object, "name"))] = jarr(
+          jfield(object, "words"),
+        ).map(jstr_v)
+      }
     }
 
     // terminal_names
@@ -1451,6 +1775,8 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
       lexer_dfa,
       symbol_metadata,
       terminal_patterns,
+      terminal_metadata,
+      reserved_words,
       terminal_names,
       extras,
       external_token_ids,

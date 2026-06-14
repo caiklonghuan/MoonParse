@@ -43,6 +43,13 @@ pub(all) enum ValidationErrorKind {
   /// Seq 尾部同时含有 &p（FollowedBy）和 !p（NotFollowedBy）两类断言
   /// （normalize 阶段只保留 FollowedBy；NotFollowedBy 被静默丢弃）
   LookaheadMixedAssertions
+  ImmediateNonToken
+  LexicalPrecedenceNonToken
+  UndefinedReservedSet(String)
+  EmptyReservedSet(String)
+  DuplicateReservedWord(String, String)
+  InvalidDeclarationOrder(Int)
+  DuplicateDeclarationOrder(Int)
 }
 
 ///|
@@ -98,6 +105,19 @@ pub fn ValidationError::to_string(self : ValidationError) -> String {
       "rule '\{self.rule}': '!' or '&' assertion is not in tail position; it will be silently ignored at parse time"
     LookaheadMixedAssertions =>
       "rule '\{self.rule}': both '&' (positive) and '!' (negative) lookahead assertions appear at the sequence tail; only the '&' constraint takes effect"
+    ImmediateNonToken =>
+      "rule '\{self.rule}': immediate is only valid on token rules"
+    LexicalPrecedenceNonToken =>
+      "rule '\{self.rule}': lex.prec is only valid inside token rules"
+    UndefinedReservedSet(name) =>
+      "rule '\{self.rule}': references undefined reserved set '\{name}'"
+    EmptyReservedSet(name) => "reserved set '\{name}' must not be empty"
+    DuplicateReservedWord(name, word) =>
+      "reserved set '\{name}' contains duplicate word '\{word}'"
+    InvalidDeclarationOrder(order) =>
+      "rule '\{self.rule}': invalid declaration order \{order}"
+    DuplicateDeclarationOrder(order) =>
+      "rule '\{self.rule}': duplicate declaration order \{order}"
   }
   match self.hint {
     None => base
@@ -363,7 +383,142 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
     check_lookahead_assertions(rule_name, rule.pattern, errors, rule.location)
   }
 
+  // 15. P1a token metadata 与 reserved sets。
+  let declaration_orders : Set[Int] = Set::new()
+  for set_name, words in grammar.reserved_sets {
+    if words.is_empty() {
+      errors.push({
+        rule: "<reserved>",
+        kind: EmptyReservedSet(set_name),
+        location: None,
+        hint: None,
+      })
+    }
+    let seen : Set[String] = Set::new()
+    for word in words {
+      if word.is_empty() || seen.contains(word) {
+        errors.push({
+          rule: "<reserved>",
+          kind: DuplicateReservedWord(set_name, word),
+          location: None,
+          hint: None,
+        })
+      }
+      seen.add(word)
+    }
+  }
+  for rule_name, rule in grammar.rules {
+    if rule.is_immediate && !rule.is_token {
+      errors.push({
+        rule: rule_name,
+        kind: ImmediateNonToken,
+        location: rule.location,
+        hint: None,
+      })
+    }
+    if contains_lexical_prec(rule.pattern) && !rule.is_token {
+      errors.push({
+        rule: rule_name,
+        kind: LexicalPrecedenceNonToken,
+        location: rule.location,
+        hint: None,
+      })
+    }
+    for set_name in collect_reserved_refs(rule.pattern) {
+      if !grammar.reserved_sets.contains(set_name) {
+        errors.push({
+          rule: rule_name,
+          kind: UndefinedReservedSet(set_name),
+          location: rule.location,
+          hint: None,
+        })
+      }
+    }
+    if rule.declaration_order < 0 {
+      errors.push({
+        rule: rule_name,
+        kind: InvalidDeclarationOrder(rule.declaration_order),
+        location: rule.location,
+        hint: None,
+      })
+    } else if declaration_orders.contains(rule.declaration_order) {
+      errors.push({
+        rule: rule_name,
+        kind: DuplicateDeclarationOrder(rule.declaration_order),
+        location: rule.location,
+        hint: None,
+      })
+    } else {
+      declaration_orders.add(rule.declaration_order)
+    }
+  }
+
   errors
+}
+
+///|
+fn contains_lexical_prec(pattern : Pattern) -> Bool {
+  match pattern {
+    LexicalPrec(_, _) => true
+    Choice(items) | Seq(items) => items.any(contains_lexical_prec)
+    Repeat(p)
+    | Plus(p)
+    | Optional(p)
+    | Tagged(_, p)
+    | Not(p)
+    | And(p)
+    | Field(_, p)
+    | RepeatRange(p, _, _)
+    | Prec(_, _, p)
+    | Alias(_, p)
+    | AliasWithVisibility(_, _, p)
+    | Reserved(_, p) => contains_lexical_prec(p)
+    RuleApp(_, args) => args.any(contains_lexical_prec)
+    RuleRef(_) | Literal(_) | Regex(_) | AnyChar => false
+  }
+}
+
+///|
+fn collect_reserved_refs(pattern : Pattern) -> Array[String] {
+  let result : Array[String] = []
+  collect_reserved_refs_into(pattern, result)
+  result
+}
+
+///|
+fn collect_reserved_refs_into(
+  pattern : Pattern,
+  result : Array[String],
+) -> Unit {
+  match pattern {
+    Reserved(name, inner) => {
+      if !result.contains(name) {
+        result.push(name)
+      }
+      collect_reserved_refs_into(inner, result)
+    }
+    Choice(items) | Seq(items) =>
+      for item in items {
+        collect_reserved_refs_into(item, result)
+      }
+    Repeat(inner)
+    | Plus(inner)
+    | Optional(inner)
+    | Tagged(_, inner)
+    | Not(inner)
+    | And(inner)
+    | Field(_, inner)
+    | RepeatRange(inner, _, _)
+    | Prec(_, _, inner)
+    | Alias(_, inner)
+    | AliasWithVisibility(_, _, inner)
+    | LexicalPrec(_, inner) => collect_reserved_refs_into(inner, result)
+    RuleApp(_, args) =>
+      for arg in args {
+        collect_reserved_refs_into(arg, result)
+      }
+    RuleRef(_) | Literal(_) | Regex(_) | AnyChar => ()
+  }
 }
 
 // 辅助：收集 Pattern 中直接引用的规则名
@@ -396,7 +551,10 @@ fn collect_rule_refs_into(pattern : Pattern, out : Set[String]) -> Unit {
     | Field(_, p)
     | RepeatRange(p, _, _)
     | Prec(_, _, p)
-    | Alias(_, p) => collect_rule_refs_into(p, out)
+    | Alias(_, p)
+    | AliasWithVisibility(_, _, p)
+    | LexicalPrec(_, p)
+    | Reserved(_, p) => collect_rule_refs_into(p, out)
     Literal(_) | Regex(_) | AnyChar => ()
   }
 }
@@ -444,7 +602,10 @@ fn first_rule_refs_into(pattern : Pattern, out : Set[String]) -> Unit {
     | Field(_, p)
     | RepeatRange(p, _, _)
     | Prec(_, _, p)
-    | Alias(_, p) => first_rule_refs_into(p, out)
+    | Alias(_, p)
+    | AliasWithVisibility(_, _, p)
+    | LexicalPrec(_, p)
+    | Reserved(_, p) => first_rule_refs_into(p, out)
     // 非前缀操作符：前瞻不消耗 token，但展开后才是真正的首位
     Not(p) | And(p) => first_rule_refs_into(p, out)
     Literal(_) | Regex(_) | AnyChar => ()
@@ -617,8 +778,13 @@ fn contains_prec_pattern(p : Pattern) -> Bool {
     Choice(ps) | Seq(ps) => ps.any(fn(q) { contains_prec_pattern(q) })
     Repeat(q) | Plus(q) | Optional(q) | Not(q) | And(q) =>
       contains_prec_pattern(q)
-    Tagged(_, q) | Field(_, q) | RepeatRange(q, _, _) | Alias(_, q) =>
-      contains_prec_pattern(q)
+    Tagged(_, q)
+    | Field(_, q)
+    | RepeatRange(q, _, _)
+    | Alias(_, q)
+    | AliasWithVisibility(_, _, q)
+    | LexicalPrec(_, q)
+    | Reserved(_, q) => contains_prec_pattern(q)
     RuleApp(_, args) => args.any(fn(q) { contains_prec_pattern(q) })
     RuleRef(_) | Literal(_) | Regex(_) | AnyChar => false
   }
@@ -698,7 +864,10 @@ fn check_ruleapp_refs(
     | Field(_, q)
     | RepeatRange(q, _, _)
     | Prec(_, _, q)
-    | Alias(_, q) =>
+    | Alias(_, q)
+    | AliasWithVisibility(_, _, q)
+    | LexicalPrec(_, q)
+    | Reserved(_, q) =>
       check_ruleapp_refs(rule_name, q, grammar, template_rules, errors, loc)
     Literal(_) | Regex(_) | AnyChar => ()
   }
@@ -764,7 +933,11 @@ fn check_token_rule_purity(
     | Field(_, q)
     | RepeatRange(q, _, _)
     | Prec(_, _, q)
-    | Alias(_, q) => check_token_rule_purity(rule_name, q, grammar, errors, loc)
+    | Alias(_, q)
+    | AliasWithVisibility(_, _, q)
+    | LexicalPrec(_, q)
+    | Reserved(_, q) =>
+      check_token_rule_purity(rule_name, q, grammar, errors, loc)
     Literal(_) | Regex(_) | AnyChar => ()
   }
 }
@@ -811,7 +984,10 @@ fn check_deprecated_refs(
     | Field(_, q)
     | RepeatRange(q, _, _)
     | Prec(_, _, q)
-    | Alias(_, q) =>
+    | Alias(_, q)
+    | AliasWithVisibility(_, _, q)
+    | LexicalPrec(_, q)
+    | Reserved(_, q) =>
       check_deprecated_refs(rule_name, q, deprecated_names, errors, loc)
     Literal(_) | Regex(_) | AnyChar => ()
   }
@@ -893,7 +1069,10 @@ fn check_lookahead_assertions(
     | Field(_, q)
     | RepeatRange(q, _, _)
     | Prec(_, _, q)
-    | Alias(_, q) => check_lookahead_assertions(rule_name, q, errors, loc)
+    | Alias(_, q)
+    | AliasWithVisibility(_, _, q)
+    | LexicalPrec(_, q)
+    | Reserved(_, q) => check_lookahead_assertions(rule_name, q, errors, loc)
     RuleApp(_, args) =>
       for a in args {
         check_lookahead_assertions(rule_name, a, errors, loc)
@@ -945,7 +1124,10 @@ fn collect_regex_patterns(pattern : Pattern, out : Array[String]) -> Unit {
     | Field(_, p)
     | RepeatRange(p, _, _)
     | Prec(_, _, p)
-    | Alias(_, p) => collect_regex_patterns(p, out)
+    | Alias(_, p)
+    | AliasWithVisibility(_, _, p)
+    | LexicalPrec(_, p)
+    | Reserved(_, p) => collect_regex_patterns(p, out)
     RuleApp(_, args) =>
       for a in args {
         collect_regex_patterns(a, out)

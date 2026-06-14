@@ -10,6 +10,7 @@ priv struct NormCtx {
   terminals : Map[String, TerminalId]
   /// TerminalId → 词法定义
   term_patterns : Map[TerminalId, TerminalDef]
+  term_metadata : Map[TerminalId, TerminalMetadata]
   /// 规则名 → NonTerminalId
   nonterminals : Map[String, NonTerminalId]
   /// 与 nonterminals 同步增长，下标即 NonTerminalId
@@ -32,6 +33,7 @@ fn NormCtx::new() -> NormCtx {
     helper_next: 0,
     terminals: Map::new(),
     term_patterns: Map::new(),
+    term_metadata: Map::new(),
     nonterminals: Map::new(),
     nt_metas: [],
     productions: [],
@@ -53,6 +55,19 @@ fn alloc_terminal(ctx : NormCtx, key : String, def : TerminalDef) -> TerminalId 
       ctx.term_next = ctx.term_next + 1
       ctx.terminals.set(key, id)
       ctx.term_patterns.set(id, def)
+      let specificity = match def {
+        TerminalDef::Literal(_) => @grammar.TokenSpecificity::String
+        TerminalDef::Regex(_) => @grammar.TokenSpecificity::Regex
+        TerminalDef::External(_) => @grammar.TokenSpecificity::External
+        TerminalDef::AnyChar => @grammar.TokenSpecificity::Composite
+      }
+      ctx.term_metadata[id] = {
+        lexical_precedence: 0,
+        specificity,
+        declaration_order: id,
+        is_immediate: false,
+        reserved_set: None,
+      }
       id
     }
   }
@@ -114,6 +129,7 @@ fn add_production(
     rule_name,
     lookahead: None,
     alias_name: None,
+    alias_is_named: None,
   })
 }
 
@@ -139,6 +155,7 @@ fn add_production_with_lookahead(
     rule_name,
     lookahead: Some(lookahead),
     alias_name: None,
+    alias_is_named: None,
   })
 }
 
@@ -166,7 +183,45 @@ fn pattern_suffix(p : @grammar.Pattern) -> String {
     Optional(_) => "opt"
     RepeatRange(_, n, m) => "r\{n}to\{m}"
     Alias(_, _) => "alias"
+    AliasWithVisibility(_, _, _) => "alias"
     _ => "aux"
+  }
+}
+
+///|
+fn pattern_reserved_set(p : @grammar.Pattern) -> String? {
+  match p {
+    Reserved(name, _) => Some(name)
+    LexicalPrec(_, inner) => pattern_reserved_set(inner)
+    _ => None
+  }
+}
+
+///|
+fn pattern_lexical_precedence(p : @grammar.Pattern, fallback : Int) -> Int {
+  match p {
+    LexicalPrec(level, _) => level
+    Reserved(_, inner) => pattern_lexical_precedence(inner, fallback)
+    _ => fallback
+  }
+}
+
+///|
+fn pattern_token_specificity(
+  p : @grammar.Pattern,
+) -> @grammar.TokenSpecificity? {
+  match p {
+    Literal(_) => Some(@grammar.TokenSpecificity::String)
+    Regex(_) => Some(@grammar.TokenSpecificity::Regex)
+    AnyChar => Some(@grammar.TokenSpecificity::Composite)
+    LexicalPrec(_, inner)
+    | Reserved(_, inner)
+    | Alias(_, inner)
+    | AliasWithVisibility(_, _, inner)
+    | Field(_, inner)
+    | Tagged(_, inner) => pattern_token_specificity(inner)
+    RuleRef(_) => None
+    _ => Some(@grammar.TokenSpecificity::Composite)
   }
 }
 
@@ -212,6 +267,10 @@ fn substitute_pattern(
       RepeatRange(substitute_pattern(params, args, q), n, m)
     Prec(n, k, q) => Prec(n, k, substitute_pattern(params, args, q))
     Alias(a, q) => Alias(a, substitute_pattern(params, args, q))
+    AliasWithVisibility(a, named, q) =>
+      AliasWithVisibility(a, named, substitute_pattern(params, args, q))
+    LexicalPrec(n, q) => LexicalPrec(n, substitute_pattern(params, args, q))
+    Reserved(name, q) => Reserved(name, substitute_pattern(params, args, q))
     Literal(_) | Regex(_) | AnyChar => p
   }
 }
@@ -274,6 +333,8 @@ fn to_symbol(
       to_symbol(ctx, inner, rule_name, Some(fname), prec, assoc)
     Prec(level, kind, inner) =>
       to_symbol(ctx, inner, rule_name, field_name, Some(level), Some(kind))
+    LexicalPrec(_, inner) | Reserved(_, inner) =>
+      to_symbol(ctx, inner, rule_name, field_name, prec, assoc)
     Not(inner) =>
       // Phase 1：忽略负向前瞻，直接透传
       to_symbol(ctx, inner, rule_name, field_name, prec, assoc)
@@ -289,6 +350,21 @@ fn to_symbol(
       while i < ctx.productions.length() {
         if ctx.productions[i].head == fresh_id {
           ctx.productions[i].alias_name = Some(alias_name)
+          ctx.productions[i].alias_is_named = Some(true)
+        }
+        i = i + 1
+      }
+      { symbol: Symbol::NonTerminal(fresh_id), field_name }
+    }
+    AliasWithVisibility(alias_name, named, inner) => {
+      let fresh_id = fresh_helper(ctx, rule_name, "alias")
+      let start_prod_id = ctx.prod_next
+      expand_into(ctx, fresh_id, inner, rule_name, prec, assoc)
+      let mut i = start_prod_id
+      while i < ctx.productions.length() {
+        if ctx.productions[i].head == fresh_id {
+          ctx.productions[i].alias_name = Some(alias_name)
+          ctx.productions[i].alias_is_named = Some(named)
         }
         i = i + 1
       }
@@ -488,6 +564,20 @@ fn expand_into(
         expand_into(ctx, head, q, rule_name, prec, assoc)
       }
     }
+    AliasWithVisibility(alias_name, named, inner) => {
+      let start_prod_id = ctx.prod_next
+      expand_into(ctx, head, inner, rule_name, prec, assoc)
+      let mut i = start_prod_id
+      while i < ctx.productions.length() {
+        if ctx.productions[i].head == head {
+          ctx.productions[i].alias_name = Some(alias_name)
+          ctx.productions[i].alias_is_named = Some(named)
+        }
+        i = i + 1
+      }
+    }
+    LexicalPrec(_, inner) | Reserved(_, inner) =>
+      expand_into(ctx, head, inner, rule_name, prec, assoc)
     And(q) => {
       // 正向前瞻（零宽断言）：head → ε [&q]
       let tids = collect_constraint_tids(ctx, q)
@@ -678,6 +768,52 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     expand_into(ctx, nt_id, rule.pattern, name, None, None)
   }
 
+  // 将 token rule 元数据投影到其直接产生的终结符。
+  for name, rule in grammar.rules {
+    if !rule.is_token {
+      continue
+    }
+    let nt_id = match ctx.nonterminals.get(name) {
+      Some(value) => value
+      None => continue
+    }
+    let reserved_set = match pattern_reserved_set(rule.pattern) {
+      Some(value) => Some(value)
+      None =>
+        if grammar.reserved_sets.contains("global") {
+          Some("global")
+        } else {
+          None
+        }
+    }
+    for prod in ctx.productions {
+      if prod.head == nt_id {
+        for body in prod.body {
+          match body.symbol {
+            Terminal(tid) => {
+              let old = ctx.term_metadata
+                .get(tid)
+                .unwrap_or(TerminalMetadata::default())
+              ctx.term_metadata[tid] = {
+                lexical_precedence: pattern_lexical_precedence(
+                  rule.pattern,
+                  rule.lexical_precedence,
+                ),
+                declaration_order: rule.declaration_order,
+                specificity: pattern_token_specificity(rule.pattern).unwrap_or(
+                  old.specificity,
+                ),
+                is_immediate: rule.is_immediate,
+                reserved_set,
+              }
+            }
+            _ => ()
+          }
+        }
+      }
+    }
+  }
+
   // 从 grammar.precedences 构建 prec_table，并补标产生式的 prec/assoc
   let prec_table : Map[TerminalId, (Int, @grammar.PrecKind)] = Map::new()
   let nt_prec_map : Map[NonTerminalId, (Int, @grammar.PrecKind)] = Map::new()
@@ -725,6 +861,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
               rule_name: prod.rule_name,
               lookahead: prod.lookahead,
               alias_name: prod.alias_name,
+              alias_is_named: prod.alias_is_named,
             }
           None => ()
         }
@@ -822,6 +959,8 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
     nonterminals: ctx.nonterminals,
     productions: ctx.productions,
     terminal_patterns: ctx.term_patterns,
+    terminal_metadata: ctx.term_metadata,
+    reserved_words: grammar.reserved_sets,
     extras,
     prec_table,
     nt_metas: final_metas,

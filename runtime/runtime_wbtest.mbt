@@ -52,6 +52,236 @@ fn must_parse_linear(
 }
 
 ///|
+test "p1a lexical precedence can beat a longer match" {
+  let table = must_make_table(
+    (
+      #|start root
+      #|token rule high: lex.prec(2, "a")
+      #|token rule low: /ab/
+      #|rule root: high | low
+    ),
+  )
+  // Tree-sitter lexical precedence is considered before match length.
+  assert_true(parse_linear(table, "ab") is Err(_))
+  assert_true(parse_linear(table, "a") is Ok(_))
+}
+
+///|
+test "p1a immediate token is disabled after extras" {
+  let table = must_make_table(
+    (
+      #|start root
+      #|extras [/[ \t\n]+/, /#[^\n]*/]
+      #|token.immediate rule marker: "${"
+      #|rule root: marker
+    ),
+  )
+  assert_true(parse_linear(table, "${") is Ok(_))
+  assert_true(parse_linear(table, " ${") is Err(_))
+  assert_true(parse_linear(table, "$ {") is Err(_))
+  assert_true(parse_linear(table, "\n${") is Err(_))
+  assert_true(parse_linear(table, " \t\n${") is Err(_))
+  assert_true(parse_linear(table, "# comment\n${") is Err(_))
+  assert_true(glr_parse(table, " ${") is Err(_))
+  let old_root = glr_parse(table, "${").unwrap()
+  let insert_space : InputEdit = {
+    start_byte: 0,
+    old_end_byte: 0,
+    new_end_byte: 1,
+    start_point: { row: 0, column: 0 },
+    old_end_point: { row: 0, column: 0 },
+    new_end_point: { row: 0, column: 1 },
+  }
+  assert_true(
+    parse_incremental(
+      table,
+      " ${",
+      Some({ root: old_root, old_input: "${" }),
+      Some(insert_space),
+    )
+    is Err(_),
+  )
+}
+
+///|
+test "p1a incremental reuse does not bypass immediate boundary" {
+  let table = must_make_table(
+    (
+      #|start root
+      #|extras [/[ \t\n]+/]
+      #|token.immediate rule marker: "${"
+      #|rule root: "a" marker
+    ),
+  )
+  let old_root = match parse_linear(table, "a${") {
+    Ok(root) => root
+    Err(error) => fail("base immediate parse failed: \{error.message}")
+  }
+  let edit : InputEdit = {
+    start_byte: 1,
+    old_end_byte: 1,
+    new_end_byte: 2,
+    start_point: { row: 0, column: 1 },
+    old_end_point: { row: 0, column: 1 },
+    new_end_point: { row: 0, column: 2 },
+  }
+  assert_true(
+    parse_incremental(
+      table,
+      "a ${",
+      Some({ root: old_root, old_input: "a${" }),
+      Some(edit),
+    )
+    is Err(_),
+  )
+}
+
+///|
+test "p1a string specificity wins an equal regex match" {
+  let table = must_make_table(
+    (
+      #|start root
+      #|token rule regex_word: /if/
+      #|token rule literal_word: "if"
+      #|rule root: literal_word
+    ),
+  )
+  assert_true(parse_linear(table, "if") is Ok(_))
+}
+
+///|
+test "p1a equal precedence keeps longest-match behavior" {
+  let table = must_make_table(
+    (
+      #|start root
+      #|token rule short: /a/
+      #|token rule long: /ab/
+      #|rule root: short | long
+    ),
+  )
+  assert_true(parse_linear(table, "ab") is Ok(_))
+}
+
+///|
+test "p1a declaration order breaks an otherwise exact tie" {
+  let table = must_make_table(
+    (
+      #|start root
+      #|token rule first: /i[f]/
+      #|token rule second: /if/
+      #|rule root: first | second
+    ),
+  )
+  let root = must_parse_linear("declaration order", table, "if")
+  let mut first_tid = -1
+  for terminal, metadata in table.terminal_metadata {
+    if metadata.declaration_order == 0 {
+      first_tid = terminal
+    }
+  }
+  assert_true(first_tid >= 0)
+  assert_true(tree_has_symbol(root, first_tid))
+}
+
+///|
+fn tree_has_keyword(node : CstNode) -> Bool {
+  if node.is_keyword {
+    return true
+  }
+  for child in node.children {
+    if tree_has_keyword(child) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn tree_has_symbol(node : CstNode, symbol : Int) -> Bool {
+  if node.children.is_empty() && node.symbol == symbol {
+    return true
+  }
+  for child in node.children {
+    if tree_has_symbol(child, symbol) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+fn tree_has_anonymous_alias(
+  node : CstNode,
+  table : @tablegen.ParseTable,
+) -> Bool {
+  if node.production_id >= 0 && node.production_id < table.productions.length() {
+    let production = table.productions[node.production_id]
+    if production.alias_name == Some("name") && !node.is_named {
+      return true
+    }
+  }
+  for child in node.children {
+    if tree_has_anonymous_alias(child, table) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+test "p1a reserved global set controls keyword promotion" {
+  let table = must_make_table(
+    (
+      #|start root
+      #|reserved global ["if"]
+      #|word identifier
+      #|token rule identifier: reserved("global", /[a-z]+/)
+      #|rule root: "if" | identifier
+    ),
+  )
+  let keyword = must_parse_linear("reserved keyword", table, "if")
+  let identifier = must_parse_linear("ordinary identifier", table, "else")
+  assert_true(tree_has_symbol(keyword, table.keyword_map["if"]))
+  assert_true(tree_has_symbol(identifier, table.word_token.unwrap()))
+  // Direct keyword literals retain the legacy non-promoted marker.
+  assert_false(tree_has_keyword(keyword))
+  assert_false(tree_has_keyword(identifier))
+}
+
+///|
+test "p1a reserved local set overrides global set" {
+  let table = must_make_table(
+    (
+      #|start root
+      #|reserved global ["if"]
+      #|reserved properties ["get"]
+      #|word identifier
+      #|token rule identifier: reserved("properties", /[a-z]+/)
+      #|rule root: "if" | "get" | identifier
+    ),
+  )
+  let global_only = must_parse_linear("local override", table, "if")
+  let locally_reserved = must_parse_linear("local keyword", table, "get")
+  assert_true(tree_has_symbol(global_only, table.word_token.unwrap()))
+  assert_true(tree_has_symbol(locally_reserved, table.keyword_map["get"]))
+}
+
+///|
+test "p1a anonymous alias changes CST namedness" {
+  let table = must_make_table(
+    (
+      #|start root
+      #|token rule identifier: /[a-z]+/
+      #|rule root: alias.anonymous("name", identifier)
+    ),
+  )
+  let linear = must_parse_linear("anonymous alias", table, "value")
+  let glr = must_parse_glr("anonymous alias glr", table, "value")
+  assert_true(tree_has_anonymous_alias(linear, table))
+  assert_true(tree_has_anonymous_alias(glr, table))
+}
+
+///|
 fn must_parse_glr(
   label : String,
   table : @tablegen.ParseTable,

@@ -373,17 +373,17 @@ test "table_from_json: invalid JSON returns Err" {
 // ── 版本 3 压缩格式测试 ────────────────────────────────────────────────────────
 
 ///|
-/// 版本 3 二进制头：magic 第 4 字节应为 0x03
-test "serialize_table v3: magic byte is 0x03" {
+/// 版本 4 二进制头：magic 第 4 字节应为 0x04
+test "serialize_table v4: magic byte is 0x04" {
   let (table, _) = gen_ok("start s\nrule s: \"a\"")
   let b = serialize_table(table)
-  // bytes 0..3 = 0x4D 0x50 0x54 0x03
-  assert_eq(b[3].to_int(), 0x03)
+  // bytes 0..3 = 0x4D 0x50 0x54 0x04
+  assert_eq(b[3].to_int(), 0x04)
 }
 
 ///|
 /// 往返：states 数量不变（基础正确性）
-test "serialize_table v3 roundtrip: states" {
+test "serialize_table v4 roundtrip: states" {
   let cases = [
     "start s\nrule s: \"a\"", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", "start s\nrule s: \"a\" | \"b\" | \"c\"",
     "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
@@ -400,7 +400,7 @@ test "serialize_table v3 roundtrip: states" {
 
 ///|
 /// 往返：action 表条目数量与每个 (state, terminal) 的动作数完全一致
-test "serialize_table v3 roundtrip: action table entries" {
+test "serialize_table v4 roundtrip: action table entries" {
   let cases = [
     "start s\nrule s: \"a\"", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"", "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
   ]
@@ -425,7 +425,7 @@ test "serialize_table v3 roundtrip: action table entries" {
 
 ///|
 /// 往返：goto 表条目数量与每个 (state, nt) 的目标状态完全一致
-test "serialize_table v3 roundtrip: goto table entries" {
+test "serialize_table v4 roundtrip: goto table entries" {
   let cases = [
     "start s\nrule s: \"a\"", "start e\nrule e: e \"+\" t | t\nrule t: \"n\"",
   ]
@@ -446,7 +446,7 @@ test "serialize_table v3 roundtrip: goto table entries" {
 
 ///|
 /// 往返：productions 完整还原（id / head / body 长度一致）
-test "serialize_table v3 roundtrip: productions" {
+test "serialize_table v4 roundtrip: productions" {
   let (table, _) = gen_ok("start e\nrule e: e \"+\" t | t\nrule t: \"n\"")
   let b = serialize_table(table)
   match deserialize_table(b) {
@@ -467,7 +467,7 @@ test "serialize_table v3 roundtrip: productions" {
 
 ///|
 /// 往返：GLR 冲突（悬挂 else）多动作条目经压缩后正确还原
-test "serialize_table v3 roundtrip: GLR conflict multi-action entries" {
+test "serialize_table v4 roundtrip: GLR conflict multi-action entries" {
   // 悬挂 else 文法存在 S/R 冲突，action 表中有多动作条目
   let dsl = "start s\nrule s: \"i\" s \"e\" s | \"i\" s | \"x\""
   let (table, _) = gen_ok(dsl)
@@ -496,7 +496,7 @@ test "serialize_table v3 roundtrip: GLR conflict multi-action entries" {
 
 ///|
 /// 往返：nonassoc 空动作列表条目（acts = []）正确还原
-test "serialize_table v3 roundtrip: nonassoc empty action entries" {
+test "serialize_table v4 roundtrip: nonassoc empty action entries" {
   let dsl = "start e\nprecedence nonassoc ==\nrule e: e \"==\" e | /[a-z]+/"
   let (table, _) = gen_ok(dsl)
   // 统计原始空动作条目数
@@ -613,7 +613,7 @@ test "serialize/deserialize preserves production prec and assoc" {
 
 ///|
 /// 序列化确定性：同一表多次压缩得到完全相同的字节
-test "serialize_table v3 deterministic" {
+test "serialize_table v4 deterministic" {
   let (table, _) = gen_ok("start e\nrule e: e \"+\" t | t\nrule t: \"n\"")
   let b1 = serialize_table(table)
   let b2 = serialize_table(table)
@@ -626,8 +626,82 @@ test "serialize_table v3 deterministic" {
 ///|
 /// 压缩后二进制不超过预期上限（测试压缩效果）
 /// 对最简文法，压缩后字节数应远小于 4096 字节
-test "serialize_table v3: compressed size reasonable" {
+test "serialize_table v4: compressed size reasonable" {
   let (table, _) = gen_ok("start s\nrule s: \"a\"")
   let b = serialize_table(table)
   assert_true(b.length() < 4096)
+}
+
+///|
+test "serialize_table v4 preserves terminal metadata reserved sets and alias visibility" {
+  let dsl =
+    #|start root
+    #|reserved global ["if", "else"]
+    #|token.immediate rule identifier: lex.prec(-2, reserved("global", /[a-z]+/))
+    #|rule root: alias.anonymous("name", identifier)
+  let (table, _) = gen_ok(dsl)
+  let restored = match deserialize_table(serialize_table(table)) {
+    Ok(value) => value
+    Err(message) => abort(message)
+  }
+  assert_eq(restored.reserved_words["global"], ["if", "else"])
+  let identifier_tid = restored.word_token.unwrap_or(-1)
+  // This grammar has no word declaration; locate the metadata-bearing token.
+  let mut found = false
+  for _, metadata in restored.terminal_metadata {
+    if metadata.lexical_precedence == -2 {
+      found = true
+      assert_true(metadata.is_immediate)
+      assert_eq(metadata.declaration_order, 0)
+      assert_eq(metadata.reserved_set, Some("global"))
+      assert_true(metadata.specificity == @grammar.TokenSpecificity::Regex)
+    }
+  }
+  assert_true(found)
+  assert_eq(identifier_tid, -1)
+  let mut anonymous_alias = false
+  for production in restored.productions {
+    if production.alias_name == Some("name") {
+      anonymous_alias = true
+      assert_eq(production.alias_is_named, Some(false))
+    }
+  }
+  assert_true(anonymous_alias)
+  let json_restored = match table_from_json(table_to_json(table)) {
+    Ok(value) => value
+    Err(message) => abort(message)
+  }
+  assert_eq(json_restored.reserved_words["global"], ["if", "else"])
+}
+
+///|
+test "table_from_json rejects damaged v4 terminal metadata and versions" {
+  let (table, _) = gen_ok(
+    "start root\ntoken rule word: /[a-z]+/\nrule root: word",
+  )
+  let json = table_to_json(table)
+  assert_true(
+    table_from_json(
+      json.replace(
+        old="\"specificity\":\"regex\"",
+        new="\"specificity\":\"unknown\"",
+      ),
+    )
+    is Err(_),
+  )
+  assert_true(
+    table_from_json(
+      json.replace(
+        old="\"declaration_order\":0",
+        new="\"declaration_order\":-1",
+      ),
+    )
+    is Err(_),
+  )
+  assert_true(
+    table_from_json(
+      json.replace(old="\"schema_version\":4", new="\"schema_version\":9"),
+    )
+    is Err(_),
+  )
 }

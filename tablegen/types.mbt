@@ -72,6 +72,8 @@ pub(all) struct Production {
   lookahead : LookaheadConstraint?
   /// 别名（来自 Pattern::Alias；None = 无别名，使用规则名）
   mut alias_name : String?
+  /// alias 节点是否为 named；None 表示无 alias。
+  mut alias_is_named : Bool?
 } derive(Debug)
 
 ///|
@@ -95,6 +97,26 @@ pub impl Show for TerminalDef with output(self, logger) {
 }
 
 ///|
+pub(all) struct TerminalMetadata {
+  lexical_precedence : Int
+  specificity : @grammar.TokenSpecificity
+  declaration_order : Int
+  is_immediate : Bool
+  reserved_set : String?
+} derive(Debug, Eq)
+
+///|
+pub fn TerminalMetadata::default() -> TerminalMetadata {
+  {
+    lexical_precedence: 0,
+    specificity: @grammar.TokenSpecificity::Composite,
+    declaration_order: 0,
+    is_immediate: false,
+    reserved_set: None,
+  }
+}
+
+///|
 /// Grammar 规范化后的增广文法（S' → Start $）
 pub(all) struct AugmentedGrammar {
   /// 增广起始符 S' 的编号
@@ -107,6 +129,8 @@ pub(all) struct AugmentedGrammar {
   productions : Array[Production]
   /// TerminalId → 词法定义（Literal / Regex / AnyChar）
   terminal_patterns : Map[TerminalId, TerminalDef]
+  terminal_metadata : Map[TerminalId, TerminalMetadata]
+  reserved_words : Map[String, Array[String]]
   /// Extras token（空白、注释等），可出现在任意 LR 状态
   extras : Array[TerminalId]
   /// 终结符优先级表，从顶层 precedence 声明提取（TerminalId → (level, kind)）
@@ -182,6 +206,8 @@ pub(all) struct DfaState {
   /// 若为接受态，记录优先级最高的 terminal
   /// 优先级：Literal > Regex > 声明顺序靠前
   accept : TerminalId?
+  /// 该状态可接受的全部 terminal；v3 表加载时由 accept 补齐。
+  accepts : Array[TerminalId]
 } derive(Debug)
 
 ///|
@@ -213,6 +239,8 @@ pub(all) struct ParseTable {
   symbol_metadata : Array[SymbolMeta]
   /// 终结符词法定义（TerminalId → 词法规则），供 serialize 输出和 lexer 构建
   terminal_patterns : Map[TerminalId, TerminalDef]
+  terminal_metadata : Map[TerminalId, TerminalMetadata]
+  reserved_words : Map[String, Array[String]]
   /// 终结符名称反查表（TerminalId → 显示名称），runtime 错误信息用
   /// 例：expected `+` or `)` 需要靠此表把 TerminalId 还原为可读字符串
   terminal_names : Map[TerminalId, String]

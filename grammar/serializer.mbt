@@ -55,9 +55,27 @@ pub fn grammar_to_string(grammar : Grammar) -> String {
     parts.push("supertypes [" + grammar.supertypes.join(", ") + "]")
   }
 
+  let reserved_names : Array[String] = []
+  for name, _ in grammar.reserved_sets {
+    reserved_names.push(name)
+  }
+  reserved_names.sort()
+  for name in reserved_names {
+    let words = grammar.reserved_sets[name]
+      .map(fn(word) { json_string(word) })
+      .join(", ")
+    parts.push("reserved " + name + " [" + words + "]")
+  }
+
   // rule 声明
-  for name, rule in grammar.rules {
-    ignore(name)
+  let ordered_rules : Array[Rule] = []
+  for _, rule in grammar.rules {
+    ordered_rules.push(rule)
+  }
+  ordered_rules.sort_by(fn(a, b) {
+    a.declaration_order.compare(b.declaration_order)
+  })
+  for rule in ordered_rules {
     // 属性前缀
     let attr_prefix = rule.attributes
       .map(fn(a) {
@@ -69,7 +87,13 @@ pub fn grammar_to_string(grammar : Grammar) -> String {
       })
       .join("")
     // token 前缀
-    let token_prefix = if rule.is_token { "token " } else { "" }
+    let token_prefix = if rule.is_immediate {
+      "token.immediate "
+    } else if rule.is_token {
+      "token "
+    } else {
+      ""
+    }
     // 模板参数
     let params_str = if rule.params.is_empty() {
       ""
@@ -140,6 +164,15 @@ pub fn grammar_to_json(grammar : Grammar) -> String {
   let supertypes_parts = grammar.supertypes.map(json_string)
   parts.push("\"supertypes\": [" + supertypes_parts.join(", ") + "]")
 
+  let reserved_parts : Array[String] = []
+  for name, words in grammar.reserved_sets {
+    reserved_parts.push(
+      json_string(name) + ": [" + words.map(json_string).join(", ") + "]",
+    )
+  }
+  reserved_parts.sort()
+  parts.push("\"reserved_sets\": {" + reserved_parts.join(", ") + "}")
+
   "{\n  " + parts.join(",\n  ") + "\n}"
 }
 
@@ -163,6 +196,9 @@ fn rule_to_json(rule : Rule) -> String {
     "\"name\": " + json_string(rule.name),
     "\"is_named\": " + is_named_str,
     "\"is_token\": " + is_token_str,
+    "\"is_immediate\": " + rule.is_immediate.to_string(),
+    "\"lexical_precedence\": " + rule.lexical_precedence.to_string(),
+    "\"declaration_order\": " + rule.declaration_order.to_string(),
     "\"params\": " + params_str,
     "\"attributes\": " + attrs_str,
     "\"pattern\": " + pattern_to_json(rule.pattern),
@@ -254,6 +290,26 @@ fn pattern_to_json(p : Pattern) -> String {
     Alias(name, inner) =>
       "{\"type\": \"Alias\", \"name\": " +
       json_string(name) +
+      ", \"pattern\": " +
+      pattern_to_json(inner) +
+      "}"
+    AliasWithVisibility(name, named, inner) =>
+      "{\"type\": \"AliasWithVisibility\", \"name\": " +
+      json_string(name) +
+      ", \"named\": " +
+      named.to_string() +
+      ", \"pattern\": " +
+      pattern_to_json(inner) +
+      "}"
+    LexicalPrec(level, inner) =>
+      "{\"type\": \"LexicalPrec\", \"level\": " +
+      level.to_string() +
+      ", \"pattern\": " +
+      pattern_to_json(inner) +
+      "}"
+    Reserved(set_name, inner) =>
+      "{\"type\": \"Reserved\", \"set\": " +
+      json_string(set_name) +
       ", \"pattern\": " +
       pattern_to_json(inner) +
       "}"
@@ -404,6 +460,19 @@ fn gj_pattern(j : Json) -> Pattern raise GrammarJsonError {
     }
     "Alias" =>
       Alias(gj_str(gj_field(o, "name")), gj_pattern(gj_field(o, "pattern")))
+    "AliasWithVisibility" =>
+      AliasWithVisibility(
+        gj_str(gj_field(o, "name")),
+        gj_bool(gj_field(o, "named")),
+        gj_pattern(gj_field(o, "pattern")),
+      )
+    "LexicalPrec" =>
+      LexicalPrec(
+        gj_int(gj_field(o, "level")),
+        gj_pattern(gj_field(o, "pattern")),
+      )
+    "Reserved" =>
+      Reserved(gj_str(gj_field(o, "set")), gj_pattern(gj_field(o, "pattern")))
     "RuleApp" => {
       let args = gj_arr(gj_field(o, "args")).map(gj_pattern)
       RuleApp(gj_str(gj_field(o, "name")), args)
@@ -418,6 +487,24 @@ fn gj_rule(j : Json) -> Rule raise GrammarJsonError {
   let name = gj_str(gj_field(o, "name"))
   let is_named = gj_bool(gj_field(o, "is_named"))
   let is_token = gj_bool(gj_field(o, "is_token"))
+  let is_immediate = match o.get("is_immediate") {
+    Some(value) => gj_bool(value)
+    None => false
+  }
+  let lexical_precedence = match o.get("lexical_precedence") {
+    Some(value) => gj_int(value)
+    None => 0
+  }
+  let declaration_order = match o.get("declaration_order") {
+    Some(value) => {
+      let order = gj_int(value)
+      if order < 0 {
+        raise GJBadField("declaration_order must be non-negative")
+      }
+      order
+    }
+    None => -1
+  }
   let params = gj_arr(gj_field(o, "params")).map(gj_str)
   let attributes = gj_arr(gj_field(o, "attributes")).map(fn(
     a,
@@ -430,7 +517,18 @@ fn gj_rule(j : Json) -> Rule raise GrammarJsonError {
     }
   })
   let pattern = gj_pattern(gj_field(o, "pattern"))
-  { name, is_named, is_token, params, attributes, pattern, location: None }
+  {
+    name,
+    is_named,
+    is_token,
+    is_immediate,
+    lexical_precedence,
+    declaration_order,
+    params,
+    attributes,
+    pattern,
+    location: None,
+  }
 }
 
 ///|
@@ -472,6 +570,33 @@ pub fn grammar_from_json(json_str : String) -> ParseResult[Grammar] {
       let rule = gj_rule(rule_j)
       rules.set(rule.name, rule)
     }
+    let legacy_names : Array[String] = []
+    let used_orders : Set[Int] = Set::new()
+    let mut next_order = 0
+    for name, rule in rules {
+      if rule.declaration_order < 0 {
+        legacy_names.push(name)
+      } else {
+        if used_orders.contains(rule.declaration_order) {
+          raise GJBadField(
+            "duplicate declaration_order: \{rule.declaration_order}",
+          )
+        }
+        used_orders.add(rule.declaration_order)
+        if rule.declaration_order >= next_order {
+          next_order = rule.declaration_order + 1
+        }
+      }
+    }
+    legacy_names.sort()
+    for name in legacy_names {
+      while used_orders.contains(next_order) {
+        next_order = next_order + 1
+      }
+      rules[name] = { ..rules[name], declaration_order: next_order }
+      used_orders.add(next_order)
+      next_order = next_order + 1
+    }
 
     // precedences
     let precedences = gj_arr(gj_field(o, "precedences")).map(gj_prec_decl)
@@ -498,6 +623,17 @@ pub fn grammar_from_json(json_str : String) -> ParseResult[Grammar] {
     // supertypes
     let supertypes = gj_arr(gj_field(o, "supertypes")).map(gj_str)
 
+    let reserved_sets : Map[String, Array[String]] = Map::new()
+    match o.get("reserved_sets") {
+      Some(value) => {
+        let sets = gj_obj(value)
+        for name, words in sets {
+          reserved_sets[name] = gj_arr(words).map(gj_str)
+        }
+      }
+      None => ()
+    }
+
     Success({
       start,
       rules,
@@ -508,6 +644,7 @@ pub fn grammar_from_json(json_str : String) -> ParseResult[Grammar] {
       word,
       conflicts,
       supertypes,
+      reserved_sets,
     })
   } catch {
     GJBadField(msg) =>

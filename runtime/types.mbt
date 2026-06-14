@@ -100,6 +100,8 @@ pub(all) struct CstNode {
   // 叶节点字段（children 为空时有效）
   /// 创建该叶节点时的 LR 状态（Shift 前栈顶 LR 状态，增量复用匹配用）
   parse_state : Int
+  /// Whether extras were consumed immediately before this reusable node.
+  extras_consumed_before : Bool
   /// 词法器实际读到的末尾字节偏移（>= end_byte，增量边界检查用）
   lookahead_bytes : Int
   /// 该 token 是关键字（两阶段词法用）
@@ -154,6 +156,7 @@ pub fn CstNode::leaf(
   lookahead_bytes : Int,
   is_keyword : Bool,
   extra : Bool,
+  extras_consumed_before? : Bool = false,
 ) -> CstNode {
   {
     symbol,
@@ -163,6 +166,7 @@ pub fn CstNode::leaf(
     start_point,
     end_point,
     parse_state,
+    extras_consumed_before,
     lookahead_bytes,
     is_keyword,
     children: [],
@@ -231,6 +235,7 @@ pub fn CstNode::inner(
   fragile_left : Bool,
   fragile_right : Bool,
   parse_state : Int,
+  extras_consumed_before? : Bool = false,
 ) -> CstNode {
   let start_byte = if children.is_empty() {
     0
@@ -256,6 +261,11 @@ pub fn CstNode::inner(
   } else {
     last_positioned_child(children).end_point
   }
+  let node_extras_consumed_before = if children.is_empty() {
+    extras_consumed_before
+  } else {
+    first_positioned_child(children).extras_consumed_before
+  }
   {
     symbol,
     is_named,
@@ -264,6 +274,7 @@ pub fn CstNode::inner(
     start_point,
     end_point,
     parse_state,
+    extras_consumed_before: node_extras_consumed_before,
     lookahead_bytes: 0,
     is_keyword: false,
     children,
@@ -296,6 +307,7 @@ pub fn CstNode::error_node(
     start_point,
     end_point,
     parse_state: 0,
+    extras_consumed_before: false,
     lookahead_bytes: 0,
     is_keyword: false,
     children,
@@ -327,6 +339,7 @@ pub fn CstNode::missing_leaf(
     start_point: point,
     end_point: point,
     parse_state: 0,
+    extras_consumed_before: false,
     lookahead_bytes: byte_pos,
     is_keyword: false,
     children: [],

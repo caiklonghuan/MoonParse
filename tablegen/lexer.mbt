@@ -721,10 +721,14 @@ fn subset_construct(
     // 寻找优先级最小的接受 NFA 状态
     let mut best_pri = -1
     let mut best_tid : TerminalId = -1
+    let accepts : Array[TerminalId] = []
     for nfa_s in nfa_set {
       match accept_info.get(nfa_s) {
         Some(pair) => {
           let (tid, pri) = pair
+          if !accepts.contains(tid) {
+            accepts.push(tid)
+          }
           if best_pri < 0 || pri < best_pri {
             best_pri = pri
             best_tid = tid
@@ -734,12 +738,13 @@ fn subset_construct(
       }
     }
     let accept : TerminalId? = if best_tid >= 0 { Some(best_tid) } else { None }
+    accepts.sort_by(fn(a, b) { a.compare(b) })
     let transitions : Map[Char, DfaStateId] = Map::new()
     for tp in dfa_trans[did] {
       let (ch, tid2) = tp
       transitions.set(ch, tid2)
     }
-    result.push({ id: did, transitions, accept })
+    result.push({ id: did, transitions, accept, accepts })
     did = did + 1
   }
   result
@@ -772,13 +777,10 @@ fn minimize_dfa(
   for _ in 0..<n {
     class_of.push(0)
   }
-  let accept_to_class : Map[Int, Int] = Map::new()
+  let accept_to_class : Map[String, Int] = Map::new()
   let mut num_classes = 0
   for i in 0..<n {
-    let key = match dfa[i].accept {
-      None => -1
-      Some(tid) => tid
-    }
+    let key = dfa[i].accepts.map(fn(tid) { tid.to_string() }).join(",")
     match accept_to_class.get(key) {
       Some(c) => class_of[i] = c
       None => {
@@ -885,7 +887,12 @@ fn minimize_dfa(
     for ch, t in orig.transitions {
       new_trans.set(ch, remap[class_of[t]])
     }
-    result.push({ id: new_id, transitions: new_trans, accept: orig.accept })
+    result.push({
+      id: new_id,
+      transitions: new_trans,
+      accept: orig.accept,
+      accepts: orig.accepts,
+    })
   }
   result
 }
