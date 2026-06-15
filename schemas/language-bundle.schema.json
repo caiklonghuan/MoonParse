@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonparse.dev/schemas/language-bundle-v1.json",
+  "title": "MoonParse Language Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "softwareVersion", "pack", "grammarJson", "parseTable", "queries", "scanner", "capabilities"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "softwareVersion": { "type": "string" },
+    "pack": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": { "id": { "type": "string" }, "version": { "type": "string" } }
+    },
+    "grammarJson": { "type": "string" },
+    "parseTable": {
+      "type": "object",
+      "required": ["schemaVersion", "json", "binaryBase64"],
+      "properties": {
+        "schemaVersion": { "const": 3 },
+        "json": { "type": "string" },
+        "binaryBase64": { "type": "string", "contentEncoding": "base64" }
+      }
+    },
+    "queries": {
+      "type": "object",
+      "required": ["highlights", "locals", "bindings"],
+      "properties": {
+        "highlights": { "type": ["string", "null"] },
+        "locals": { "type": ["string", "null"] },
+        "bindings": { "type": ["string", "null"] }
+      }
+    },
+    "scanner": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["id", "apiVersion", "config"],
+          "properties": {
+            "id": { "type": "string" },
+            "apiVersion": { "type": "integer", "minimum": 1 },
+            "config": { "type": ["string", "null"] }
+          }
+        }
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["highlights", "locals", "bindings", "scanner"],
+      "properties": {
+        "highlights": { "type": "boolean" },
+        "locals": { "type": "boolean" },
+        "bindings": { "type": "boolean" },
+        "scanner": { "type": "boolean" }
+      }
+    }
+  }
+}

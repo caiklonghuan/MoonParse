@@ -1,5 +1,5 @@
 start expression
-extras [/[ \t\n\r]+/, /\/\/[^\n\r]*(\r\n|\n|\r)?/, /\/\*([^*]|\*+[^*/])*\*+\//]
+extras [/[ \t\n\r]+/, /\/\/[^\n\r]*(\r\n|\n|\r)?/, /\/\*[^*]*(\*[^/][^*]*)*\*\//]
 rule expression: additive_expression
 rule additive_expression: multiplicative_expression | prec.left(1, additive_expression ("+" | "-") multiplicative_expression)
 rule multiplicative_expression: unary_expression | prec.left(2, multiplicative_expression ("*" | "/" | "%") unary_expression)

@@ -1,0 +1,217 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/languagepack"
+
+import {
+  "caiklonghuan/MoonParse/query",
+  "caiklonghuan/MoonParse/runtime",
+  "caiklonghuan/MoonParse/tablegen",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn build_bundle(LanguagePackSource, PackBuildOptions) -> Result[LanguageBundle, Array[PackDiagnostic]]
+
+pub fn bundle_from_json(String) -> Result[LanguageBundle, Array[PackDiagnostic]]
+
+pub fn bundle_to_json(LanguageBundle) -> String
+
+pub fn check_pack(LanguagePackSource, PackBuildOptions) -> Array[PackDiagnostic]
+
+pub fn exec_bundle_query(LanguageBundle, BundleQueryKind, @runtime.CstNode, String) -> Result[Array[@query.CaptureResult], PackDiagnostic]
+
+pub fn has_pack_errors(Array[PackDiagnostic]) -> Bool
+
+pub fn load_corpus(LanguagePack) -> Array[CorpusCase]
+
+pub fn load_manifest(String) -> Result[LanguagePackManifest, Array[PackDiagnostic]]
+
+pub fn load_pack(LanguagePackSource) -> Result[LanguagePack, Array[PackDiagnostic]]
+
+pub fn pack_diagnostic(String, PackSeverity, String, path? : String, line? : Int, column? : Int, hint? : String) -> PackDiagnostic
+
+pub fn parse_bundle(LanguageBundle, String, scanner_provider? : PackScannerProvider) -> Result[@runtime.CstNode, PackDiagnostic]
+
+pub fn parse_corpus_document(String, String, String) -> Result[CorpusDocument, Array[PackDiagnostic]]
+
+pub fn rewrite_corpus_snapshots(CorpusDocument, Array[CorpusSnapshotUpdate]) -> Result[String, Array[PackDiagnostic]]
+
+pub fn valid_pack_path(String) -> Bool
+
+// Errors
+type ManifestDecodeError derive(@debug.Debug)
+
+// Types and methods
+pub(all) struct BundleCapabilities {
+  highlights : Bool
+  locals : Bool
+  bindings : Bool
+  scanner : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum BundleQueryKind {
+  Highlights
+  Locals
+  Bindings
+} derive(Eq, @debug.Debug)
+
+pub(all) struct CorpusCase {
+  name : String
+  source : String
+  expected_error : String
+  sexp_contains : Array[String]
+  sexp_not_contains : Array[String]
+  path : String
+  expected_sexp : String?
+  source_line : Int
+  expectation_line : Int
+} derive(@debug.Debug)
+
+pub(all) struct CorpusDocument {
+  path : String
+  text : String
+  format : String
+  cases : Array[CorpusCase]
+  expectation_starts : Array[Int]
+  expectation_ends : Array[Int]
+  newline : String
+} derive(@debug.Debug)
+
+pub(all) struct CorpusResource {
+  directory : String
+  format : String
+} derive(@debug.Debug)
+
+pub(all) struct CorpusSnapshotUpdate {
+  case_index : Int
+  case_name : String
+  sexp : String
+} derive(@debug.Debug)
+
+pub(all) enum GrammarFormat {
+  Dsl
+  Json
+} derive(Eq, @debug.Debug)
+
+pub(all) struct GrammarResource {
+  path : String
+  format : GrammarFormat
+} derive(@debug.Debug)
+
+pub(all) struct LanguageBundle {
+  schema_version : Int
+  parse_table_schema_version : Int
+  software_version : String
+  pack_id : String
+  pack_version : String
+  pack_name : String
+  pack_maturity : String
+  pack_extensions : Array[String]
+  grammar_json : String
+  table : @tablegen.ParseTable
+  table_json : String
+  table_binary : Bytes
+  highlights_source : String?
+  locals_source : String?
+  bindings_source : String?
+  highlights_query : @query.CompiledQuery?
+  locals_query : @query.CompiledQuery?
+  bindings_query : @query.CompiledQuery?
+  scanner : ScannerDescriptor?
+  capabilities : BundleCapabilities
+}
+
+pub(all) struct LanguagePack {
+  manifest : LanguagePackManifest
+  grammar_source : String
+  highlights_query : String?
+  locals_query : String?
+  bindings_query : String?
+  scanner : ScannerDescriptor?
+  corpus : Array[CorpusCase]
+} derive(@debug.Debug)
+
+pub(all) struct LanguagePackManifest {
+  schema_version : Int
+  id : String
+  name : String
+  version : String
+  maturity : PackMaturity
+  entry_rule : String
+  extensions : Array[String]
+  compatibility : PackCompatibility
+  grammar : GrammarResource
+  queries : QueryResources
+  scanner : ScannerDescriptor?
+  corpus : CorpusResource
+  build : PackBuildPolicy
+} derive(@debug.Debug)
+
+pub(all) struct LanguagePackSource {
+  manifest : String
+  files : Map[String, Bytes]
+}
+pub fn LanguagePackSource::new(String, Map[String, Bytes]) -> Self
+
+pub(all) struct PackBuildOptions {
+  software_version : String
+  known_scanners : Array[(String, Int)]
+} derive(@debug.Debug)
+pub fn PackBuildOptions::default() -> Self
+
+pub(all) struct PackBuildPolicy {
+  allow_ambiguous_conflicts : Bool
+} derive(@debug.Debug)
+
+pub(all) struct PackCompatibility {
+  minimum_moonparse_version : String
+  maximum_moonparse_version_exclusive : String
+} derive(@debug.Debug)
+
+pub(all) struct PackDiagnostic {
+  code : String
+  severity : PackSeverity
+  message : String
+  path : String
+  line : Int
+  column : Int
+  hint : String?
+} derive(@debug.Debug)
+pub impl Show for PackDiagnostic
+
+pub(all) enum PackMaturity {
+  Stable
+  Subset
+  Experimental
+  Imported
+} derive(Eq, @debug.Debug)
+
+pub(all) struct PackScannerProvider {
+  id : String
+  api_version : Int
+  create : (@tablegen.ParseTable) -> &@runtime.StatefulScanner
+}
+
+pub(all) enum PackSeverity {
+  Info
+  Warning
+  Error
+} derive(Eq, @debug.Debug)
+pub impl Show for PackSeverity
+
+pub(all) struct QueryResources {
+  highlights : String?
+  locals : String?
+  bindings : String?
+} derive(@debug.Debug)
+
+pub(all) struct ScannerDescriptor {
+  id : String
+  api_version : Int
+  config_path : String?
+  config : String?
+} derive(@debug.Debug)
+
+// Type aliases
+
+// Traits
+

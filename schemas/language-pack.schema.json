@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moonparse.dev/schemas/language-pack-v1.json",
+  "title": "MoonParse Language Pack Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "version", "maturity", "entryRule", "extensions"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "name": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:[-+][0-9A-Za-z.-]+)?$" },
+    "maturity": { "enum": ["stable", "subset", "experimental", "imported"] },
+    "entryRule": { "type": "string", "minLength": 1 },
+    "extensions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^\\.[^/\\\\]+$" }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumMoonParseVersion", "maximumMoonParseVersionExclusive"],
+      "properties": {
+        "minimumMoonParseVersion": { "type": "string" },
+        "maximumMoonParseVersionExclusive": { "type": "string" }
+      }
+    },
+    "grammar": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/packPath" },
+        "format": { "enum": ["dsl", "json"] }
+      }
+    },
+    "queries": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "highlights": { "$ref": "#/$defs/packPath" },
+        "locals": { "$ref": "#/$defs/packPath" },
+        "bindings": { "$ref": "#/$defs/packPath" }
+      }
+    },
+    "scanner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "apiVersion"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "apiVersion": { "type": "integer", "minimum": 1 },
+        "config": { "$ref": "#/$defs/packPath" }
+      }
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "directory": { "$ref": "#/$defs/packPath" },
+        "format": {
+          "enum": ["moonparse-corpus-v1", "moonparse-corpus-v2"]
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowAmbiguousConflicts": { "type": "boolean", "default": false }
+      }
+    }
+  },
+  "$defs": {
+    "packPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\).+$"
+    }
+  }
+}

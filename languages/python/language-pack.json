@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "python",
+  "name": "Python",
+  "version": "0.1.0",
+  "maturity": "subset",
+  "entryRule": "module",
+  "extensions": [
+    ".py",
+    ".pyw"
+  ],
+  "compatibility": {
+    "minimumMoonParseVersion": "0.1.0",
+    "maximumMoonParseVersionExclusive": "0.2.0"
+  },
+  "grammar": {
+    "path": "grammar/main.grammar",
+    "format": "dsl"
+  },
+  "queries": {
+    "highlights": "queries/highlights.scm",
+    "bindings": "queries/bindings.scm"
+  },
+  "scanner": {
+    "id": "python-indent",
+    "apiVersion": 1,
+    "config": "scanner/scanner.json"
+  },
+  "corpus": {
+    "directory": "corpus",
+    "format": "moonparse-corpus-v1"
+  },
+  "build": {
+    "allowAmbiguousConflicts": false
+  }
+}

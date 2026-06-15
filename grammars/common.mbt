@@ -20,7 +20,7 @@ pub let c_line_comment_pattern : String =
 ///|
 /// C 风格块注释 `/* … */`，支持内嵌 `*` 序列（非贪婪）。
 pub let c_block_comment_pattern : String =
-  #|/\/\*([^*]|\*+[^*/])*\*+\//
+  #|/\/\*[^*]*(\*[^/][^*]*)*\*\//
 
 ///|
 /// Python / Shell / Ruby / TOML 风格行注释 `# …`，消耗至行尾。
@@ -149,7 +149,7 @@ pub fn dash_comment_extras() -> String {
 /// 运算符优先级（从低到高）：加减 < 乘除取余 < 一元减/正/逻辑非。
 pub let expression_grammar : String =
   #|start expression
-  #|extras [/[ \t\n\r]+/, /\/\/[^\n\r]*(\r\n|\n|\r)?/, /\/\*([^*]|\*+[^*/])*\*+\//]
+  #|extras [/[ \t\n\r]+/, /\/\/[^\n\r]*(\r\n|\n|\r)?/, /\/\*[^*]*(\*[^/][^*]*)*\*\//]
   #|rule expression: additive_expression
   #|rule additive_expression: multiplicative_expression | prec.left(1, additive_expression ("+" | "-") multiplicative_expression)
   #|rule multiplicative_expression: unary_expression | prec.left(2, multiplicative_expression ("*" | "/" | "%") unary_expression)

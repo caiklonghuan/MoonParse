@@ -8,24 +8,13 @@
 
 ///|
 /// JSON Grammar DSL 字符串
-pub let json_grammar : String =
-  #|start json
-  #|extras [/[ \t\n\r]+/]
-  #|rule json: value
-  #|rule value: object | array | jstring | number | "true" | "false" | "null"
-  #|rule object: "{" pairs? "}"
-  #|rule pairs:  pair ("," pair)*
-  #|rule pair:   jstring ":" value
-  #|rule array:    "[" elements? "]"
-  #|rule elements: value ("," value)*
-  #|rule jstring: /"([^"\\]|\\["\\bfnrt]|\\u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])*"/
-  #|rule number:  /-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/
+pub let json_grammar : String = builtin_json_pack.grammar_source
 
 ///|
 // 预编译 ParseTable（模块加载时编译一次，后续复用）
 
 ///|
-let json_table : @tablegen.ParseTable = compile_builtin_grammar(json_grammar)
+let json_table : @tablegen.ParseTable = builtin_json_bundle.table
 
 ///|
 pub fn parse_json(

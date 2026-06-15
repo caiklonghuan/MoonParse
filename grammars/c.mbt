@@ -9,7 +9,7 @@
 ///|
 pub let c_grammar : String =
   #|start translation_unit
-  #|extras [/[ \t\n\r]+/, /\/\/[^\n\r]*/, /\/\*([^*]|\*+[^*/])*\*+\//]
+  #|extras [/[ \t\n\r]+/, /\/\/[^\n\r]*/, /\/\*[^*]*(\*[^/][^*]*)*\*\//]
   #|conflicts [[labeled_statement, expression_statement], [primary_expression]]
   #|rule translation_unit: item*
   #|rule item: preproc_directive | function_definition | declaration

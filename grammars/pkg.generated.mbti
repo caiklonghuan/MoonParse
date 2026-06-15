@@ -2,6 +2,7 @@
 package "caiklonghuan/MoonParse/grammars"
 
 import {
+  "caiklonghuan/MoonParse/languagepack",
   "caiklonghuan/MoonParse/runtime",
   "caiklonghuan/MoonParse/tablegen",
 }
@@ -24,6 +25,8 @@ pub let backtick_string_pattern : String
 pub let binary_int_pattern : String
 
 pub fn binding_query_for_lang(String) -> String?
+
+pub fn builtin_pack_scanner_provider(@languagepack.LanguageBundle) -> @languagepack.PackScannerProvider?
 
 pub let c_bindings_query : String
 
@@ -48,6 +51,12 @@ pub let dash_line_comment_pattern : String
 pub let decimal_int_pattern : String
 
 pub let dq_string_pattern : String
+
+pub fn embedded_json_pack_source() -> @languagepack.LanguagePackSource
+
+pub fn embedded_moonbit_pack_source() -> @languagepack.LanguagePackSource
+
+pub fn embedded_python_pack_source() -> @languagepack.LanguagePackSource
 
 pub let expression_grammar : String
 
@@ -81,13 +90,23 @@ pub let json_grammar : String
 
 pub let json_highlight_query : String
 
+pub fn json_language_bundle() -> @languagepack.LanguageBundle
+
+pub fn json_language_pack() -> @languagepack.LanguagePack
+
 pub fn json_sexp(String) -> String
+
+pub fn known_pack_scanners() -> Array[(String, Int)]
 
 pub let moonbit_bindings_query : String
 
 pub let moonbit_grammar : String
 
 pub let moonbit_highlight_query : String
+
+pub fn moonbit_language_bundle() -> @languagepack.LanguageBundle
+
+pub fn moonbit_language_pack() -> @languagepack.LanguagePack
 
 pub let moonbit_locals_query : String
 
@@ -115,6 +134,10 @@ pub let python_grammar : String
 
 pub fn python_indent_scanner(@tablegen.ParseTable) -> &@runtime.StatefulScanner
 
+pub fn python_language_bundle() -> @languagepack.LanguageBundle
+
+pub fn python_language_pack() -> @languagepack.LanguagePack
+
 pub fn python_sexp(String) -> String
 
 pub fn python_tree(String) -> String
@@ -122,6 +145,8 @@ pub fn python_tree(String) -> String
 pub let signed_number_pattern : String
 
 pub let sq_string_pattern : String
+
+pub fn tree_sitter_rust_scanner(@tablegen.ParseTable) -> &@runtime.StatefulScanner
 
 pub let whitespace_pattern : String
 
@@ -137,6 +162,11 @@ pub struct PythonIndentScanner {
   mut emitted_eof_newline : Bool
 }
 pub fn PythonIndentScanner::new(@tablegen.ParseTable) -> Self
+
+pub struct RustTreeSitterScanner {
+  raw_string_id : Int?
+}
+pub fn RustTreeSitterScanner::new(@tablegen.ParseTable) -> Self
 
 // Type aliases
 

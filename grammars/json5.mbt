@@ -10,7 +10,7 @@
 ///|
 pub let json5_grammar : String =
   #|start json5
-  #|extras [/[ \t\n\r]+/, /[ \t]*\/\/[^\n\r]*(\r\n|\n|\r)?/, /\/\*([^*]|\*+[^*/])*\*+\//]
+  #|extras [/[ \t\n\r]+/, /\/\/[^\n\r]*/, /\/\*[^*]*(\*[^/][^*]*)*\*\//]
   #|rule json5: value
   #|rule value: object | array | string | number | "true" | "false" | "null" | "Infinity" | "NaN" | "+Infinity" | "-Infinity"
   #|rule object: "{" members? ","? "}"

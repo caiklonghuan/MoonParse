@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "moonbit",
+  "name": "MoonBit",
+  "version": "0.1.0",
+  "maturity": "experimental",
+  "entryRule": "module",
+  "extensions": [
+    ".mbt"
+  ],
+  "compatibility": {
+    "minimumMoonParseVersion": "0.1.0",
+    "maximumMoonParseVersionExclusive": "0.2.0"
+  },
+  "grammar": {
+    "path": "grammar/main.grammar",
+    "format": "dsl"
+  },
+  "queries": {
+    "highlights": "queries/highlights.scm",
+    "locals": "queries/locals.scm",
+    "bindings": "queries/bindings.scm"
+  },
+  "corpus": {
+    "directory": "corpus",
+    "format": "moonparse-corpus-v1"
+  },
+  "build": {
+    "allowAmbiguousConflicts": true
+  }
+}

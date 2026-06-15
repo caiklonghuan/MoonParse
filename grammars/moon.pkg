@@ -2,4 +2,6 @@ import {
   "caiklonghuan/MoonParse/grammar",
   "caiklonghuan/MoonParse/tablegen",
   "caiklonghuan/MoonParse/runtime",
+  "caiklonghuan/MoonParse/languagepack" @languagepack,
+  "moonbitlang/core/encoding/utf8" @utf8,
 }

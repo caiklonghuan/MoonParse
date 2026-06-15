@@ -1,0 +1,8 @@
+import {
+  "caiklonghuan/MoonParse/grammar" @grammar,
+  "caiklonghuan/MoonParse/tablegen" @tablegen,
+  "caiklonghuan/MoonParse/runtime" @runtime,
+  "caiklonghuan/MoonParse/query" @query,
+  "moonbitlang/core/json" @json,
+  "moonbitlang/core/encoding/utf8" @utf8,
+}

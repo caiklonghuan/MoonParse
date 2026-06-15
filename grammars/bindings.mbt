@@ -26,39 +26,11 @@ pub let grammar_dsl_bindings_query : String =
 /// MoonBit 绑定查询。
 ///
 /// 函数体 block 为作用域，let/fn/参数为定义，标识符为引用。
-pub let moonbit_bindings_query : String =
-  #|; 作用域
-  #|(block) @scope.block
-  #|(function_decl) @scope.function
-  #|
-  #|; 定义
-  #|(function_decl (fn_name (identifier) @definition.function))
-  #|(let_statement (identifier) @definition.variable)
-  #|(parameter (identifier) @definition.parameter)
-  #|(struct_decl (identifier) @definition.type)
-  #|(enum_decl (identifier) @definition.type)
-  #|(type_alias_decl (identifier) @definition.type)
-  #|(enum_case (identifier) @definition.variable)
-  #|
-  #|; 引用
-  #|(identifier) @reference.variable
 
 ///|
 /// Python 绑定查询。
 ///
 /// 函数/类体为作用域，def/class/参数为定义，标识符为引用。
-pub let python_bindings_query : String =
-  #|; 作用域
-  #|(function_definition) @scope.function
-  #|(class_definition) @scope.class
-  #|
-  #|; 定义
-  #|(function_definition name: (identifier) @definition.function)
-  #|(class_definition name: (identifier) @definition.type)
-  #|(parameters (identifier) @definition.parameter)
-  #|
-  #|; 引用
-  #|(identifier) @reference.variable
 
 ///|
 /// C 绑定查询。
@@ -90,3 +62,11 @@ pub fn binding_query_for_lang(lang_id : String) -> String? {
     _ => None
   }
 }
+
+///|
+/// MoonBit Pack 中的权威 Binding Query。
+pub let moonbit_bindings_query : String = builtin_moonbit_bundle.bindings_source.unwrap()
+
+///|
+/// Python Pack 中的权威 Binding Query。
+pub let python_bindings_query : String = builtin_python_bundle.bindings_source.unwrap()
