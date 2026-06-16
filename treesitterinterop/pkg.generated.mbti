@@ -1,0 +1,90 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/treesitterinterop"
+
+import {
+  "caiklonghuan/MoonParse/languagepack",
+}
+
+// Values
+pub fn compatibility_report_to_json(TreeSitterCompatibilityReport) -> String
+
+pub fn convert_tree_sitter_corpus(String, String, TreeSitterImportOptions) -> (String, Array[@languagepack.PackDiagnostic])
+
+pub fn convert_tree_sitter_query(String, String, TreeSitterImportOptions) -> (String, Array[@languagepack.PackDiagnostic])
+
+pub fn export_tree_sitter_grammar(String, String, TreeSitterExportOptions) -> TreeSitterExportResult
+
+pub fn export_tree_sitter_pack(@languagepack.LanguagePackSource, TreeSitterExportOptions) -> TreeSitterExportResult
+
+pub fn import_tree_sitter_grammar(String, String, TreeSitterImportOptions) -> TreeSitterImportResult
+
+pub fn import_tree_sitter_project(TreeSitterProjectSource, TreeSitterImportOptions) -> TreeSitterImportResult
+
+pub fn source_manifest_to_json(TreeSitterProjectSource) -> String
+
+pub fn tree_sitter_export_report_to_json(TreeSitterExportReport) -> String
+
+// Errors
+
+// Types and methods
+pub(all) struct TreeSitterCompatibilityReport {
+  grammar_path : String
+  grammar_name : String
+  diagnostics : Array[@languagepack.PackDiagnostic]
+  unsupported_nodes : Array[String]
+  generated_inline_tokens : Array[String]
+  highlights_status : String
+  locals_status : String
+  tags_status : String
+  scanner_required : Bool
+  scanner_id : String?
+  scanner_status : String
+}
+
+pub(all) struct TreeSitterExportOptions {
+  grammar_name : String?
+}
+
+pub(all) struct TreeSitterExportReport {
+  source_path : String
+  grammar_name : String
+  diagnostics : Array[@languagepack.PackDiagnostic]
+  exported_rules : Array[String]
+  unsupported_patterns : Array[String]
+  monomorphized_rules : Array[String]
+}
+
+pub(all) struct TreeSitterExportResult {
+  grammar_json : String
+  diagnostics : Array[@languagepack.PackDiagnostic]
+  report : TreeSitterExportReport
+}
+
+pub(all) struct TreeSitterImportOptions {
+  output_id : String?
+  output_name : String?
+  package_version : String?
+  extensions : Array[String]
+  allow_tags_bindings_candidate : Bool
+}
+
+pub(all) struct TreeSitterImportResult {
+  files : Map[String, Bytes]
+  diagnostics : Array[@languagepack.PackDiagnostic]
+  report : TreeSitterCompatibilityReport
+}
+
+pub(all) struct TreeSitterProjectSource {
+  grammar_json : String
+  tree_sitter_json : String?
+  package_json : String?
+  queries : Map[String, String]
+  corpus : Map[String, String]
+  source_files : Map[String, Bytes]
+  project_name : String?
+}
+
+// Type aliases
+
+// Traits
+
