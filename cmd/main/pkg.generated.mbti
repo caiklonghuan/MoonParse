@@ -10,6 +10,8 @@ import {
 }
 
 // Values
+pub fn atomic_write_file(String, String) -> Result[Unit, String]
+
 pub fn cmd_build(BuildArgs) -> Int
 
 pub fn cmd_check(CheckArgs) -> Int
@@ -22,6 +24,8 @@ pub fn cmd_fmt(FmtArgs) -> Int
 
 pub fn cmd_generate(GenerateArgs) -> Int
 
+pub fn cmd_pack(PackCommand) -> Int
+
 pub fn cmd_parse(ParseArgs) -> Int
 
 pub fn cmd_query(QueryArgs) -> Int
@@ -33,6 +37,8 @@ pub fn cmd_wasm(WasmArgs) -> Int
 pub fn init_reporter() -> Unit
 
 pub fn isatty(Int) -> Bool
+
+pub fn list_files(String) -> Result[Array[String], String]
 
 pub fn make_dir(String) -> Result[Unit, String]
 
@@ -49,6 +55,8 @@ pub fn process_exit(Int) -> Unit
 pub fn read_bytes(String) -> Result[Bytes, String]
 
 pub fn read_file(String) -> Result[String, String]
+
+pub fn read_line() -> String?
 
 pub fn read_stdin() -> String
 
@@ -111,6 +119,7 @@ pub enum Command {
   Wasm(WasmArgs)
   Dump(DumpArgs)
   Clean(CleanArgs)
+  Pack(PackCommand)
   Help(String?)
   Version
 } derive(@debug.Debug)
@@ -153,9 +162,77 @@ pub enum OutputFormat {
 } derive(Eq, @debug.Debug)
 pub impl Show for OutputFormat
 
+pub(all) struct PackBuildArgs {
+  directory : String
+  output : String?
+  targets : Array[PackBuildTarget]
+  out_dir : String?
+  package_name : String?
+  format : PackOutputFormat
+} derive(@debug.Debug)
+
+pub(all) enum PackBuildTarget {
+  Bundle
+  Moonbit
+  Wasm
+  Npm
+} derive(Eq, @debug.Debug)
+
+pub(all) struct PackCheckArgs {
+  directory : String
+  format : PackOutputFormat
+} derive(@debug.Debug)
+
+pub(all) enum PackCommand {
+  Init(PackInitArgs)
+  Check(PackCheckArgs)
+  Test(PackTestArgs)
+  Build(PackBuildArgs)
+  ImportTreeSitter(PackImportTreeSitterArgs)
+  ExportTreeSitter(PackExportTreeSitterArgs)
+} derive(@debug.Debug)
+
+pub(all) struct PackExportTreeSitterArgs {
+  directory : String
+  output : String
+  format : PackOutputFormat
+} derive(@debug.Debug)
+
+pub(all) struct PackImportTreeSitterArgs {
+  source_dir : String
+  directory : String
+  id : String?
+  name : String?
+  version : String?
+  extensions : Array[String]
+  format : PackOutputFormat
+} derive(@debug.Debug)
+
+pub(all) struct PackInitArgs {
+  id : String?
+  name : String?
+  entry_rule : String?
+  extensions : Array[String]
+  maturity : String?
+  directory : String?
+  format : PackOutputFormat
+} derive(@debug.Debug)
+
+pub(all) enum PackOutputFormat {
+  Human
+  Json
+} derive(Eq, @debug.Debug)
+
+pub(all) struct PackTestArgs {
+  directory : String
+  update : Bool
+  format : PackOutputFormat
+} derive(@debug.Debug)
+
 pub struct ParseArgs {
   grammar_file : String?
   table_file : String?
+  bundle_file : String?
   input_file : String?
   format : OutputFormat
   output : String?
@@ -170,6 +247,7 @@ pub struct QueryArgs {
   input_file : String?
   grammar_file : String?
   table_file : String?
+  bundle_file : String?
   json : Bool
   count : Bool
 } derive(@debug.Debug)

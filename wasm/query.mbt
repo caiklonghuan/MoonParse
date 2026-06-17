@@ -167,6 +167,7 @@ pub fn query_free(query_id : Int) -> Unit {
 
 // ── BindingGraph → JSON 序列化 ──────────────────────────────
 
+///|
 fn binding_graph_to_json(g : @query.BindingGraph) -> String {
   let buf = StringBuilder::new()
   buf.write_char('{')
@@ -178,7 +179,9 @@ fn binding_graph_to_json(g : @query.BindingGraph) -> String {
   // scopes
   buf.write_string("\"scopes\":[")
   for i in 0..<g.scopes.length() {
-    if i > 0 { buf.write_char(',') }
+    if i > 0 {
+      buf.write_char(',')
+    }
     scope_to_json(buf, g.scopes[i])
   }
   buf.write_char(']')
@@ -187,7 +190,9 @@ fn binding_graph_to_json(g : @query.BindingGraph) -> String {
   // definitions
   buf.write_string("\"definitions\":[")
   for i in 0..<g.definitions.length() {
-    if i > 0 { buf.write_char(',') }
+    if i > 0 {
+      buf.write_char(',')
+    }
     definition_to_json(buf, g.definitions[i])
   }
   buf.write_char(']')
@@ -196,7 +201,9 @@ fn binding_graph_to_json(g : @query.BindingGraph) -> String {
   // references
   buf.write_string("\"references\":[")
   for i in 0..<g.references.length() {
-    if i > 0 { buf.write_char(',') }
+    if i > 0 {
+      buf.write_char(',')
+    }
     reference_to_json(buf, g.references[i])
   }
   buf.write_char(']')
@@ -205,7 +212,9 @@ fn binding_graph_to_json(g : @query.BindingGraph) -> String {
   // edges
   buf.write_string("\"edges\":[")
   for i in 0..<g.edges.length() {
-    if i > 0 { buf.write_char(',') }
+    if i > 0 {
+      buf.write_char(',')
+    }
     edge_to_json(buf, g.edges[i])
   }
   buf.write_char(']')
@@ -214,7 +223,9 @@ fn binding_graph_to_json(g : @query.BindingGraph) -> String {
   // diagnostics
   buf.write_string("\"diagnostics\":[")
   for i in 0..<g.diagnostics.length() {
-    if i > 0 { buf.write_char(',') }
+    if i > 0 {
+      buf.write_char(',')
+    }
     diagnostic_to_json(buf, g.diagnostics[i])
   }
   buf.write_char(']')
@@ -223,6 +234,7 @@ fn binding_graph_to_json(g : @query.BindingGraph) -> String {
   buf.to_string()
 }
 
+///|
 fn scope_to_json(buf : StringBuilder, s : @query.BindingScope) -> Unit {
   buf.write_char('{')
   write_kvi(buf, "id", s.id)
@@ -237,7 +249,11 @@ fn scope_to_json(buf : StringBuilder, s : @query.BindingScope) -> Unit {
   buf.write_char('}')
 }
 
-fn definition_to_json(buf : StringBuilder, d : @query.BindingDefinition) -> Unit {
+///|
+fn definition_to_json(
+  buf : StringBuilder,
+  d : @query.BindingDefinition,
+) -> Unit {
   buf.write_char('{')
   write_kvi(buf, "id", d.id)
   buf.write_char(',')
@@ -255,6 +271,7 @@ fn definition_to_json(buf : StringBuilder, d : @query.BindingDefinition) -> Unit
   buf.write_char('}')
 }
 
+///|
 fn reference_to_json(buf : StringBuilder, r : @query.BindingReference) -> Unit {
   buf.write_char('{')
   write_kvi(buf, "id", r.id)
@@ -273,6 +290,7 @@ fn reference_to_json(buf : StringBuilder, r : @query.BindingReference) -> Unit {
   buf.write_char('}')
 }
 
+///|
 fn edge_to_json(buf : StringBuilder, e : @query.BindingEdge) -> Unit {
   buf.write_char('{')
   write_kvi(buf, "reference_id", e.reference_id)
@@ -281,7 +299,11 @@ fn edge_to_json(buf : StringBuilder, e : @query.BindingEdge) -> Unit {
   buf.write_char('}')
 }
 
-fn diagnostic_to_json(buf : StringBuilder, d : @query.BindingDiagnostic) -> Unit {
+///|
+fn diagnostic_to_json(
+  buf : StringBuilder,
+  d : @query.BindingDiagnostic,
+) -> Unit {
   buf.write_char('{')
   write_kvs(buf, "kind", diag_kind_str(d.kind))
   buf.write_char(',')
@@ -299,6 +321,7 @@ fn diagnostic_to_json(buf : StringBuilder, d : @query.BindingDiagnostic) -> Unit
 
 // ── enum → string ──────────────────────────────────────────
 
+///|
 fn scope_kind_str(k : @query.ScopeKind) -> String {
   match k {
     Module => "module"
@@ -310,6 +333,7 @@ fn scope_kind_str(k : @query.ScopeKind) -> String {
   }
 }
 
+///|
 fn symbol_kind_str(k : @query.SymbolKind) -> String {
   match k {
     Variable => "variable"
@@ -321,6 +345,7 @@ fn symbol_kind_str(k : @query.SymbolKind) -> String {
   }
 }
 
+///|
 fn namespace_str(ns : @query.NameSpace) -> String {
   match ns {
     Value => "value"
@@ -329,6 +354,7 @@ fn namespace_str(ns : @query.NameSpace) -> String {
   }
 }
 
+///|
 fn diag_kind_str(k : @query.BindingDiagKind) -> String {
   match k {
     Unresolved => "unresolved"

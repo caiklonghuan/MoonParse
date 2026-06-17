@@ -463,6 +463,69 @@ let last_dsl_error : Array[String] = [""]
 let last_parse_error_msg : Array[String] = [""]
 
 ///|
+let last_bundle_error_msg : Array[String] = [""]
+
+///|
+pub fn bundle_error_last() -> String {
+  last_bundle_error_msg[0]
+}
+
+///|
+pub fn bundle_register(json : String) -> Int {
+  last_bundle_error_msg[0] = ""
+  let bundle = match @languagepack.bundle_from_json(json) {
+    Ok(value) => value
+    Err(errors) => {
+      last_bundle_error_msg[0] = errors
+        .map(fn(error) { error.to_string() })
+        .join("\n")
+      return -1
+    }
+  }
+  let scanner_kind = match bundle.scanner {
+    None => ParserScannerKind::None
+    Some(scanner) if scanner.id == "python-indent" && scanner.api_version == 1 =>
+      ParserScannerKind::PythonIndent
+    Some(scanner) => {
+      last_bundle_error_msg[0] = "unsupported scanner '" +
+        scanner.id +
+        "' API " +
+        scanner.api_version.to_string()
+      return -1
+    }
+  }
+  let parser_id = register_parser_entry(bundle.table, "", [], scanner_kind)
+  bundle_registry.register({ bundle, parser_id })
+}
+
+///|
+pub fn bundle_parser_id(bundle_id : Int) -> Int {
+  match bundle_registry.get(bundle_id) {
+    Some(entry) => entry.parser_id
+    None => -1
+  }
+}
+
+///|
+pub fn bundle_json(bundle_id : Int) -> String {
+  match bundle_registry.get(bundle_id) {
+    Some(entry) => @languagepack.bundle_to_json(entry.bundle)
+    None => ""
+  }
+}
+
+///|
+pub fn bundle_free(bundle_id : Int) -> Unit {
+  match bundle_registry.get(bundle_id) {
+    Some(entry) => {
+      ignore(parser_registry.remove(entry.parser_id))
+      ignore(bundle_registry.remove(bundle_id))
+    }
+    None => ()
+  }
+}
+
+///|
 /// 全局解析配置（GLR 错误恢复参数）。
 /// 使用 parse_config_set / parse_config_reset 修改；默认值与 tree-sitter 行为一致。
 let global_parse_config : Array[@runtime.ParseConfig] = [
@@ -1358,6 +1421,32 @@ pub fn builtin_grammars_json() -> String {
   write_kvs(buf, "moonbit", @grammars.moonbit_grammar)
   buf.write_char(',')
   write_kvs(buf, "python", @grammars.python_grammar)
+  buf.write_char('}')
+  buf.to_string()
+}
+
+///|
+/// 返回 P0 标准 Pack 对应的预编译 Bundle。所有运行时由此消费同一序列化格式。
+pub fn builtin_bundles_json() -> String {
+  let buf = StringBuilder::new()
+  buf.write_char('{')
+  write_kvs(
+    buf,
+    "json",
+    @languagepack.bundle_to_json(@grammars.json_language_bundle()),
+  )
+  buf.write_char(',')
+  write_kvs(
+    buf,
+    "python",
+    @languagepack.bundle_to_json(@grammars.python_language_bundle()),
+  )
+  buf.write_char(',')
+  write_kvs(
+    buf,
+    "moonbit",
+    @languagepack.bundle_to_json(@grammars.moonbit_language_bundle()),
+  )
   buf.write_char('}')
   buf.to_string()
 }

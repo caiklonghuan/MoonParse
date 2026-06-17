@@ -172,7 +172,30 @@ export declare class MoonParser {
   free(): void;
 }
 
+export interface LanguageBundleCapabilities {
+  highlights: boolean;
+  locals: boolean;
+  bindings: boolean;
+  scanner: boolean;
+}
+
+export declare class MoonLanguage {
+  readonly id: string;
+  readonly version: string;
+  readonly name: string;
+  readonly extensions: string[];
+  readonly capabilities: LanguageBundleCapabilities;
+  readonly bundle: object;
+  readonly parser: MoonParser;
+  parse(source: string): ParseTree;
+  highlight(tree: ParseTree): HighlightRange[];
+  resolveLocals(tree: ParseTree): Record<string, boolean>;
+  resolveBindings(tree: ParseTree): BindingGraph;
+  free(): void;
+}
+
 export interface MoonParseInstance {
+  loadBundle(bundleJson: string): MoonLanguage;
   createParser(dsl: string): MoonParser;
   createParserFromJson(tableJson: string, builtinId?: string | null): MoonParser;
   /** 从预编译的二进制解析表创建解析器（由 build 命令或 tableBytes() 导出的 MPT 字节）。 */
@@ -182,6 +205,7 @@ export interface MoonParseInstance {
   validateDsl(dsl: string): boolean;
   /** 返回所有内置语法（JSON 格式），key 为 languageId。 */
   builtinGrammarsJson(): string;
+  builtinBundlesJson(): string;
   /**
    * 对 DSL 字符串做纯语法 + 语义校验（不执行 tablegen），返回错误数组。
    * 无错误时返回空数组，有错误时返回 [{rule, kind?, message}, ...]。

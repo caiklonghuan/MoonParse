@@ -4,6 +4,7 @@ import type { MoonQuery, ParseTree, HighlightRange } from "../../wasm/moonparse.
 import type { DocumentEntry } from "./document-manager.js";
 import { byteRangeToUtf16 } from "./position.js";
 import type { MoonParseRuntime } from "./runtime.js";
+import { LANGUAGE_PACK_RESOURCES } from "./language-pack-resources.js";
 
 // ── Token type 映射 ──
 
@@ -141,9 +142,10 @@ const JSON_HL = `
 const HL_QUERIES: Record<string, string> = {
   "__dsl__": GRAMMAR_DSL_HL,
   "c": C_HL,
-  "python": PYTHON_HL,
-  "json": JSON_HL,
+  "python": LANGUAGE_PACK_RESOURCES.python.highlightQuery ?? PYTHON_HL,
+  "json": LANGUAGE_PACK_RESOURCES.json.highlightQuery ?? JSON_HL,
   "json5": JSON_HL,
+  "moonbit": LANGUAGE_PACK_RESOURCES.moonbit.highlightQuery ?? "",
 };
 
 // ── SemanticTokensManager ──
@@ -178,6 +180,14 @@ export class SemanticTokensManager {
 
   // 从 ParseTree 生成 LSP semantic tokens（全量）
   generateTokens(entry: DocumentEntry, tree: ParseTree): number[] | null {
+    const bundleLanguage = this.runtime.getLanguage(entry.languageId);
+    if (bundleLanguage) {
+      try {
+        return this.encodeTokens(entry, bundleLanguage.highlight(tree));
+      } catch {
+        return null;
+      }
+    }
     const lang = this.cache.get(entry.languageId);
     if (!lang?.hlQuery) return null;
 
@@ -200,6 +210,17 @@ export class SemanticTokensManager {
     rangeStartByte: number,
     rangeEndByte: number,
   ): number[] | null {
+    const bundleLanguage = this.runtime.getLanguage(entry.languageId);
+    if (bundleLanguage) {
+      try {
+        const highlights = bundleLanguage.highlight(tree).filter(
+          (h) => h.end_byte > rangeStartByte && h.start_byte < rangeEndByte,
+        );
+        return this.encodeTokens(entry, highlights);
+      } catch {
+        return null;
+      }
+    }
     const lang = this.cache.get(entry.languageId);
     if (!lang?.hlQuery) return null;
 

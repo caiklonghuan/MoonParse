@@ -1,5 +1,6 @@
 <script setup>
-const version = '__VERSION__'
+const version = `v${__MOONPARSE_VERSION__}`
+const commit = __MOONPARSE_COMMIT__
 const year = new Date().getFullYear()
 
 const footerSections = [
@@ -46,8 +47,8 @@ const footerSections = [
       </div>
 
       <div class="footer-meta">
-        <span class="footer-version">{{ version }}</span>
-        <a class="footer-repo" href="https://github.com/moonbitlang/MoonParse" target="_blank" rel="noopener">GitHub</a>
+        <span class="footer-version">{{ version }} · {{ commit }}</span>
+        <a class="footer-repo" href="https://github.com/caiklonghuan/MoonParse" target="_blank" rel="noopener">GitHub</a>
         <span class="footer-right">© {{ year }} MoonBit</span>
       </div>
     </div>

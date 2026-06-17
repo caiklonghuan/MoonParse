@@ -7,7 +7,19 @@ import {
 }
 
 // Values
+pub fn builtin_bundles_json() -> String
+
 pub fn builtin_grammars_json() -> String
+
+pub fn bundle_error_last() -> String
+
+pub fn bundle_free(Int) -> Unit
+
+pub fn bundle_json(Int) -> String
+
+pub fn bundle_parser_id(Int) -> Int
+
+pub fn bundle_register(String) -> Int
 
 pub fn cst_to_json(@runtime.CstNode, String, @tablegen.ParseTable) -> String
 

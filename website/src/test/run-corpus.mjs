@@ -114,9 +114,14 @@ async function runLanguage(mp, language) {
     for (const corpusFile of corpusFiles) {
       const cases = parseCorpusCases(await readFile(corpusFile, "utf8"));
       for (const testCase of cases) {
-        const tree = parser.parse(testCase.source);
+        const context = `${language.id}/${corpusFile.pathname.split("/").pop()}/${testCase.name}`;
+        let tree;
         try {
-          const context = `${language.id}/${corpusFile.pathname.split("/").pop()}/${testCase.name}`;
+          tree = parser.parse(testCase.source);
+        } catch (error) {
+          throw new Error(`${context}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+        }
+        try {
           const errorSummary = tree.errorSummary();
           if (errorSummary !== testCase.expectations.error) {
             throw new Error(

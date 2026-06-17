@@ -12,6 +12,11 @@
 - 提供可跨边界使用的语法树游标；
 - 在已解析语法树上执行结构化查询与语法高亮；
 - 输出编译诊断、运行时解析错误、版本信息以及可序列化的解析表数据；
+- 通过 `loadBundle()` 创建同时持有 Parser、Query、Scanner 与元数据的 `MoonLanguage`；
+
+## 构建与发布物
+
+从仓库根目录执行 `npm run build` 更新发布物，执行 `npm run build:check` 检查入库发布物是否过期。`wasm/moonparse.wasm` 是唯一权威 WASM 二进制；`website/public/` 中的运行时副本仅在 Website 构建时生成，不进入 Git。版本由根目录 `VERSION` 同步，禁止在本目录单独修改。
 
 ## 2. 在整体系统中的位置
 
@@ -77,6 +82,7 @@ Grammar DSL / Grammar JSON / ParseTable JSON / ParseTable Bytes
 | 高亮 API             | `highlight_exec`、`highlight_exec_with_locals`、`highlight_names_json`                                                                                             | 在语法树上执行高亮和局部变量解析                                  |
 | 兼容性薄封装         | `wasm_create_parser`、`wasm_create_parser_from_json`、`wasm_parse`、`wasm_parse_incremental`、`wasm_node_sexp`、`wasm_query`、`wasm_free_tree`、`wasm_free_parser` | 与`web-tree-sitter` 风格更接近的一次性接口                        |
 | 其他工具             | `moonparse_version`                                                                                                                                                | 返回版本字符串                                                    |
+| LanguageBundle       | `bundle_register`、`bundle_free`；JS `loadBundle()` / `MoonLanguage`                                                                                               | 统一校验双格式 ParseTable，并提供 parse/highlight/locals/bindings |
 
 ## 5. 用户如何使用
 

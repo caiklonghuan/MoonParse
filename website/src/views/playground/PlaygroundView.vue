@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, provide, watch, onMounted, onUnmounted } from 'vue'
+import { ref, shallowRef, computed, provide, watch, onMounted, onUnmounted } from 'vue'
 import SplitPane        from '@/components/layout/SplitPane.vue'
 import EditorPanel      from '@/components/editor/EditorPanel.vue'
 import TreePanel        from '@/components/tree/TreePanel.vue'
@@ -37,7 +37,11 @@ if (!savedState) {
 }
 
 const { mp, loading, error: mpError } = useMoonParse()
-const { parser, parserError, building }  = useParser(grammarDsl)
+const { parser: grammarParser, parserError: grammarParserError, building } = useParser(grammarDsl)
+const importedLanguage = shallowRef(null)
+const bundleError = ref(null)
+const parser = computed(() => importedLanguage.value?.parser ?? grammarParser.value)
+const parserError = computed(() => bundleError.value ?? grammarParserError.value)
 const { tree, parseTime, isIncremental, triggerEdit } = useParseTree(parser, sourceCode)
 
 watch([grammarDsl, sourceCode, queryPattern, hlQueryStr], ([g, s, q, h]) =>
@@ -46,7 +50,7 @@ watch([grammarDsl, sourceCode, queryPattern, hlQueryStr], ([g, s, q, h]) =>
 
 const editorPanelRef = ref(null)
 const queryPanelRef  = ref(null)
-const currentPresetId = computed(() => findBuiltinPresetByGrammar(grammarDsl.value)?.id ?? 'custom')
+const currentPresetId = computed(() => importedLanguage.value?.id ?? findBuiltinPresetByGrammar(grammarDsl.value)?.id ?? 'custom')
 
 const { highlightRanges } = useHighlight(mp, tree, hlQueryStr, currentPresetId, sourceCode)
 const { dslErrors } = useGrammarValidation(grammarDsl)
@@ -68,7 +72,10 @@ const MOBILE_TABS = [
 
 function onResize() { isMobile.value = window.innerWidth <= 768 }
 onMounted(()   => window.addEventListener('resize', onResize))
-onUnmounted(() => window.removeEventListener('resize', onResize))
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
+  try { importedLanguage.value?.free() } catch (_) {}
+})
 
 function onSourceChange(val) { sourceCode.value = val }
 function onEdit(inputEdit)   { triggerEdit(inputEdit) }
@@ -102,6 +109,11 @@ function applyCustomPreset() {
 }
 
 function applyPreset(id) {
+  if (importedLanguage.value) {
+    try { importedLanguage.value.free() } catch (_) {}
+    importedLanguage.value = null
+  }
+  bundleError.value = null
   if (id === 'custom') {
     applyCustomPreset()
     return
@@ -116,6 +128,24 @@ function applyPreset(id) {
   hlQueryStr.value = preset.highlightQuery ?? ''
   mobileTab.value = 0
   clearSourceHighlight()
+}
+
+async function importBundle(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || !mp.value) return
+  bundleError.value = null
+  try {
+    const next = mp.value.loadBundle(await file.text())
+    const previous = importedLanguage.value
+    importedLanguage.value = next
+    if (previous) previous.free()
+    hlQueryStr.value = ''
+    queryPattern.value = ''
+    mobileTab.value = 0
+  } catch (e) {
+    bundleError.value = e?.message ?? String(e)
+  }
 }
 
 function onPresetChange(event) {
@@ -175,6 +205,15 @@ useKeyboard({
               {{ preset.name }}
             </option>
           </select>
+        </label>
+
+        <label class="playground-toolbar-field bundle-import">
+          <span>Language Bundle</span>
+          <input type="file" accept=".json,application/json" @change="importBundle">
+          <small v-if="importedLanguage">
+            {{ importedLanguage.name }} {{ importedLanguage.version }} ·
+            {{ Object.entries(importedLanguage.capabilities).filter(([, enabled]) => enabled).map(([name]) => name).join(', ') || 'parse' }}
+          </small>
         </label>
 
         <div class="playground-toolbar-chips">
@@ -536,4 +575,3 @@ useKeyboard({
 
 
 </style>
-

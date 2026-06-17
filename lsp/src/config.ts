@@ -21,6 +21,9 @@ export interface ServerConfig {
 
   // 解析防抖延迟（毫秒），连续输入时只触发最后一次。默认 100
   debounceMs: number;
+
+  // 启动时加载的 LanguageBundle；配置扩展名优先于 Bundle 元数据。
+  languageBundles: Array<{ path: string; extensions?: string[] }>;
 }
 
 export type ServerTraceLevel = "off" | "messages" | "verbose";
@@ -41,6 +44,7 @@ export const defaultConfig: ServerConfig = {
   incrementalParse: true,
   wasmPath: "./moonparse.wasm",
   debounceMs: 100,
+  languageBundles: [],
 };
 
 // 将用户部分配置合并到默认值
@@ -48,16 +52,17 @@ export function mergeConfig(
   defaults: ServerConfig,
   overrides: Partial<ServerConfig> | undefined,
 ): ServerConfig {
-  if (!overrides) return defaults;
+  const value = overrides ?? {};
   return {
-    trace: overrides.trace ?? defaults.trace,
-    maxDiagnostics: overrides.maxDiagnostics ?? defaults.maxDiagnostics,
+    trace: value.trace ?? defaults.trace,
+    maxDiagnostics: value.maxDiagnostics ?? defaults.maxDiagnostics,
     enabledExtensions:
-      overrides.enabledExtensions ?? defaults.enabledExtensions,
+      [...(value.enabledExtensions ?? defaults.enabledExtensions)],
     grammarAssociations:
-      overrides.grammarAssociations ?? defaults.grammarAssociations,
-    incrementalParse: overrides.incrementalParse ?? defaults.incrementalParse,
-    wasmPath: overrides.wasmPath ?? defaults.wasmPath,
-    debounceMs: overrides.debounceMs ?? defaults.debounceMs,
+      { ...(value.grammarAssociations ?? defaults.grammarAssociations) },
+    incrementalParse: value.incrementalParse ?? defaults.incrementalParse,
+    wasmPath: value.wasmPath ?? defaults.wasmPath,
+    debounceMs: value.debounceMs ?? defaults.debounceMs,
+    languageBundles: [...(value.languageBundles ?? defaults.languageBundles)],
   };
 }

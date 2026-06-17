@@ -1,3 +1,5 @@
+import { LANGUAGE_PACK_RESOURCES } from './languagePackResources.js'
+
 export const BUILTIN_LANGUAGE_PRESETS = [
   {
     id: 'json',
@@ -39,7 +41,7 @@ rule number: /-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?/`,
     name: 'JSON5',
     desc: '来自 grammars/json5.mbt 的内置 JSON5 文法，支持注释、尾随逗号和未加引号的 key。',
     grammar: String.raw`start json5
-extras [/[ \t\n\r]+/, /[ \t]*\/\/[^\n\r]*(\r\n|\n|\r)?/, /\/\*([^*]|\*+[^*/])*\*+\//]
+extras [/[ \t\n\r]+/, /\/\/[^\n\r]*/, /\/\*[^*]*(\*[^/][^*]*)*\*\//]
 rule json5: value
 rule value: object | array | string | number | "true" | "false" | "null" | "Infinity" | "NaN" | "+Infinity" | "-Infinity"
 rule object: "{" members? ","? "}"
@@ -84,7 +86,7 @@ rule identifier: /[$A-Za-z_][$0-9A-Za-z_]*/`,
     name: 'C',
     desc: '来自 grammars/c.mbt 的在线同步版，覆盖 typedef、struct/union/enum 定义、数组、sizeof、强制转换、goto/label 以及完整的表达式优先级。',
     grammar: String.raw`start translation_unit
-extras [/[ \t\n\r]+/, /\/\/[^\n\r]*/, /\/\*([^*]|\*+[^*/])*\*+\//]
+extras [/[ \t\n\r]+/, /\/\/[^\n\r]*/, /\/\*[^*]*(\*[^/][^*]*)*\*\//]
 conflicts [[labeled_statement, expression_statement]]
 rule translation_unit: item*
 rule item: preproc_directive | function_definition | declaration
@@ -661,6 +663,17 @@ test "shapes" {
 ">=" @operator`,
   },
 ]
+
+for (const preset of BUILTIN_LANGUAGE_PRESETS) {
+  const pack = LANGUAGE_PACK_RESOURCES[preset.id]
+  if (pack) {
+    preset.grammar = pack.grammar
+    if (pack.highlightQuery) preset.highlightQuery = pack.highlightQuery
+    if (pack.localsQuery) preset.localsQuery = pack.localsQuery
+    if (pack.bindingsQuery) preset.bindingsQuery = pack.bindingsQuery
+    preset.languagePack = pack.manifest
+  }
+}
 
 const ADDITIONAL_DEMO_PRESETS = [
   {

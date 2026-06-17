@@ -9,7 +9,7 @@ const grammarToPresetId = new Map(
 
 // Start fetching precompiled tables immediately (lazy chunk, loads in parallel)
 const tablesReady = import('@/data/precompiledTables.js')
-  .then(m => m.PRECOMPILED_TABLES)
+  .then(m => ({ tables: m.PRECOMPILED_TABLES, bundles: m.PRECOMPILED_BUNDLES ?? {} }))
   .catch(() => ({}))
 
 export function useParser(grammarDsl) {
@@ -37,8 +37,17 @@ export function useParser(grammarDsl) {
       // Try precompiled table first (instant, no tablegen)
       const presetId = grammarToPresetId.get(dsl)
       if (presetId) {
-        const tables = await tablesReady
+        const { tables, bundles } = await tablesReady
         if (id !== buildId) return
+        const bundleJson = bundles[presetId]
+        if (bundleJson) {
+          const language = mp.value.loadBundle(bundleJson)
+          parser.value = language.parser
+          // parser.free() is intentionally replaced so the owning Bundle and
+          // its compiled queries are released together.
+          parser.value.free = () => language.free()
+          return
+        }
         const tableJson = tables[presetId]
         if (tableJson) {
           parser.value = mp.value.createParserFromJson(tableJson, presetId)

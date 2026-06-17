@@ -20,7 +20,10 @@ const ROOT = resolve(__dirname, '..')
 const wasmPath = resolve(ROOT, 'public/moonparse.wasm')
 const bytes = readFileSync(wasmPath)
 const mod = await WebAssembly.compile(bytes, { builtins: ['js-string'] })
-const importObj = { '_': new Proxy({}, { get(_, name) { return name } }) }
+const importObj = {
+  '_': new Proxy({}, { get(_, name) { return name } }),
+  console: { log(value) { globalThis.console?.log?.(value) } },
+}
 const { exports: wasm } = await WebAssembly.instantiate(mod, importObj)
 
 function createParser(dsl) {
@@ -46,15 +49,21 @@ const { BUILTIN_LANGUAGE_PRESETS, EXAMPLE_PRESETS } = await import(pathToFileURL
 // ---------- precompile each preset ----------
 
 const tables = {}
+const bundles = JSON.parse(wasm.builtin_bundles_json?.() ?? '{}')
 let total = 0
 const allPresets = EXAMPLE_PRESETS ?? BUILTIN_LANGUAGE_PRESETS
 
 for (const preset of allPresets) {
   const t0 = performance.now()
   try {
-    const pid = createParser(preset.grammar)
-    const json = tableJson(pid)
-    freeParser(pid)
+    let json
+    if (bundles[preset.id]) {
+      json = JSON.parse(bundles[preset.id]).parseTable.json
+    } else {
+      const pid = createParser(preset.grammar)
+      json = tableJson(pid)
+      freeParser(pid)
+    }
     tables[preset.id] = json
     const ms = (performance.now() - t0).toFixed(1)
     const kb = (json.length / 1024).toFixed(1)
@@ -79,6 +88,7 @@ for (const [id, json] of Object.entries(tables)) {
 }
 
 code += '}\n'
+code += `\nexport const PRECOMPILED_BUNDLES = ${JSON.stringify(bundles, null, 2)}\n`
 
 writeFileSync(outPath, code, 'utf-8')
 const outKB = (code.length / 1024).toFixed(1)

@@ -23,6 +23,7 @@ pub struct ParseArgs {
   grammar_file : String?
   /// 解析表文件路径（.parse_table），与 grammar_file 互斥
   table_file : String?
+  bundle_file : String?
   /// 输入文件路径（None = 从 stdin 读取）
   input_file : String?
   /// 输出格式：sexp（默认）/ json / dot / tree
@@ -64,6 +65,7 @@ pub struct QueryArgs {
   grammar_file : String?
   /// 解析表文件路径（与 grammar_file 互斥）
   table_file : String?
+  bundle_file : String?
   /// 是否输出 JSON 格式
   json : Bool
   /// 是否只输出匹配数量
@@ -129,6 +131,82 @@ pub struct CleanArgs {
 } derive(Debug)
 
 ///|
+pub(all) enum PackOutputFormat {
+  Human
+  Json
+} derive(Debug, Eq)
+
+///|
+pub(all) struct PackInitArgs {
+  id : String?
+  name : String?
+  entry_rule : String?
+  extensions : Array[String]
+  maturity : String?
+  directory : String?
+  format : PackOutputFormat
+} derive(Debug)
+
+///|
+pub(all) struct PackCheckArgs {
+  directory : String
+  format : PackOutputFormat
+} derive(Debug)
+
+///|
+pub(all) struct PackTestArgs {
+  directory : String
+  update : Bool
+  format : PackOutputFormat
+} derive(Debug)
+
+///|
+pub(all) struct PackBuildArgs {
+  directory : String
+  output : String?
+  targets : Array[PackBuildTarget]
+  out_dir : String?
+  package_name : String?
+  format : PackOutputFormat
+} derive(Debug)
+
+///|
+pub(all) struct PackImportTreeSitterArgs {
+  source_dir : String
+  directory : String
+  id : String?
+  name : String?
+  version : String?
+  extensions : Array[String]
+  format : PackOutputFormat
+} derive(Debug)
+
+///|
+pub(all) struct PackExportTreeSitterArgs {
+  directory : String
+  output : String
+  format : PackOutputFormat
+} derive(Debug)
+
+///|
+pub(all) enum PackBuildTarget {
+  Bundle
+  Moonbit
+  Wasm
+  Npm
+} derive(Debug, Eq)
+
+///|
+pub(all) enum PackCommand {
+  Init(PackInitArgs)
+  Check(PackCheckArgs)
+  Test(PackTestArgs)
+  Build(PackBuildArgs)
+  ImportTreeSitter(PackImportTreeSitterArgs)
+  ExportTreeSitter(PackExportTreeSitterArgs)
+} derive(Debug)
+
+///|
 /// 解析后的顶层命令
 pub enum Command {
   Generate(GenerateArgs)
@@ -141,6 +219,7 @@ pub enum Command {
   Wasm(WasmArgs)
   Dump(DumpArgs)
   Clean(CleanArgs)
+  Pack(PackCommand)
   /// None = 全局帮助，Some(cmd_name) = 子命令帮助
   Help(String?)
   Version
@@ -156,7 +235,7 @@ pub impl Show for GenerateArgs with output(self, logger) {
 ///|
 pub impl Show for ParseArgs with output(self, logger) {
   logger.write_string(
-    "ParseArgs(grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, input_file: \{self.input_file}, format: \{self.format}, output: \{self.output}, outdir: \{self.outdir}, tokens: \{self.tokens}, error_summary: \{self.error_summary})",
+    "ParseArgs(grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, bundle_file: \{self.bundle_file}, input_file: \{self.input_file}, format: \{self.format}, output: \{self.output}, outdir: \{self.outdir}, tokens: \{self.tokens}, error_summary: \{self.error_summary})",
   )
 }
 
@@ -177,7 +256,7 @@ pub impl Show for FmtArgs with output(self, logger) {
 ///|
 pub impl Show for QueryArgs with output(self, logger) {
   logger.write_string(
-    "QueryArgs(pattern: \{self.pattern}, input_file: \{self.input_file}, grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, json: \{self.json}, count: \{self.count})",
+    "QueryArgs(pattern: \{self.pattern}, input_file: \{self.input_file}, grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, bundle_file: \{self.bundle_file}, json: \{self.json}, count: \{self.count})",
   )
 }
 
@@ -242,6 +321,7 @@ pub impl Show for Command with output(self, logger) {
     Wasm(args) => logger.write_string("Wasm(\{args})")
     Dump(args) => logger.write_string("Dump(\{args})")
     Clean(args) => logger.write_string("Clean(\{args})")
+    Pack(_) => logger.write_string("Pack")
     Help(sub) => logger.write_string("Help(\{sub})")
     Version => logger.write_string("Version")
   }
@@ -354,8 +434,322 @@ pub fn parse_args(argv : Array[String]) -> Result[Command, String] {
     "wasm" => parse_wasm(p)
     "dump" => parse_dump(p)
     "clean" => parse_clean(p)
+    "pack" => parse_pack(p)
     other => Err("unknown command '\{other}'\n\{global_usage()}")
   }
+}
+
+///|
+fn parse_pack(p : ArgParser) -> Result[Command, String] {
+  let mut format = PackOutputFormat::Human
+  if p.peek() == Some("--format") {
+    ignore(p.next())
+    match p.require_value("--format") {
+      Ok("human") => format = Human
+      Ok("json") => format = Json
+      Ok(value) =>
+        return Err("pack: unknown format '" + value + "'\n" + pack_usage())
+      Err(error) => return Err(error)
+    }
+  }
+  let sub = match p.next() {
+    Some(value) => value
+    None => return Err("pack: subcommand required\n" + pack_usage())
+  }
+  match sub {
+    "init" => parse_pack_init(p, format)
+    "check" => parse_pack_check(p, format)
+    "test" => parse_pack_test(p, format)
+    "build" => parse_pack_build(p, format)
+    "import-tree-sitter" => parse_pack_import_tree_sitter(p, format)
+    "export-tree-sitter" => parse_pack_export_tree_sitter(p, format)
+    "help" | "--help" | "-h" => Ok(Help(Some("pack")))
+    other => Err("pack: unknown subcommand '" + other + "'\n" + pack_usage())
+  }
+}
+
+///|
+fn parse_pack_export_tree_sitter(
+  p : ArgParser,
+  format : PackOutputFormat,
+) -> Result[Command, String] {
+  let mut directory : String? = None
+  let mut output : String? = None
+  while !p.at_end() {
+    match p.next() {
+      Some("--output") | Some("-o") =>
+        match p.require_value("--output") {
+          Ok(value) => output = Some(value)
+          Err(error) => return Err(error)
+        }
+      Some("--help") | Some("-h") => return Ok(Help(Some("pack")))
+      Some(value) =>
+        if value.has_prefix("-") {
+          return Err("pack export-tree-sitter: unknown flag '" + value + "'")
+        } else if directory is Some(_) {
+          return Err(
+            "pack export-tree-sitter: only one pack directory is allowed",
+          )
+        } else {
+          directory = Some(value)
+        }
+      None => ()
+    }
+  }
+  match (directory, output) {
+    (Some(directory), Some(output)) =>
+      Ok(Pack(ExportTreeSitter({ directory, output, format })))
+    (None, _) =>
+      Err("pack export-tree-sitter: pack directory required\n" + pack_usage())
+    (_, None) =>
+      Err(
+        "pack export-tree-sitter: -o <grammar.json> required\n" + pack_usage(),
+      )
+  }
+}
+
+///|
+fn parse_pack_import_tree_sitter(
+  p : ArgParser,
+  format : PackOutputFormat,
+) -> Result[Command, String] {
+  let mut source_dir : String? = None
+  let mut directory : String? = None
+  let mut id : String? = None
+  let mut name : String? = None
+  let mut version : String? = None
+  let extensions : Array[String] = []
+  while !p.at_end() {
+    match p.next() {
+      Some("--dir") =>
+        match p.require_value("--dir") {
+          Ok(value) => directory = Some(value)
+          Err(error) => return Err(error)
+        }
+      Some("--id") =>
+        match p.require_value("--id") {
+          Ok(value) => id = Some(value)
+          Err(error) => return Err(error)
+        }
+      Some("--name") =>
+        match p.require_value("--name") {
+          Ok(value) => name = Some(value)
+          Err(error) => return Err(error)
+        }
+      Some("--version") =>
+        match p.require_value("--version") {
+          Ok(value) => version = Some(value)
+          Err(error) => return Err(error)
+        }
+      Some("--extension") =>
+        match p.require_value("--extension") {
+          Ok(value) => extensions.push(value)
+          Err(error) => return Err(error)
+        }
+      Some("--help") | Some("-h") => return Ok(Help(Some("pack")))
+      Some(value) =>
+        if value.has_prefix("-") {
+          return Err("pack import-tree-sitter: unknown flag '" + value + "'")
+        } else if source_dir is Some(_) {
+          return Err(
+            "pack import-tree-sitter: only one source directory is allowed",
+          )
+        } else {
+          source_dir = Some(value)
+        }
+      None => ()
+    }
+  }
+  match (source_dir, directory) {
+    (Some(source_dir), Some(directory)) =>
+      Ok(
+        Pack(
+          ImportTreeSitter({
+            source_dir,
+            directory,
+            id,
+            name,
+            version,
+            extensions,
+            format,
+          }),
+        ),
+      )
+    (None, _) =>
+      Err("pack import-tree-sitter: source directory required\n" + pack_usage())
+    (_, None) =>
+      Err("pack import-tree-sitter: --dir <pack-dir> required\n" + pack_usage())
+  }
+}
+
+///|
+fn parse_pack_init(
+  p : ArgParser,
+  format : PackOutputFormat,
+) -> Result[Command, String] {
+  let mut id : String? = None
+  let mut name : String? = None
+  let mut entry_rule : String? = None
+  let extensions : Array[String] = []
+  let mut maturity : String? = None
+  let mut directory : String? = None
+  while !p.at_end() {
+    match p.peek() {
+      Some("--name") => {
+        ignore(p.next())
+        match p.require_value("--name") {
+          Ok(v) => name = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--entry-rule") => {
+        ignore(p.next())
+        match p.require_value("--entry-rule") {
+          Ok(v) => entry_rule = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--extension") => {
+        ignore(p.next())
+        match p.require_value("--extension") {
+          Ok(v) => extensions.push(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--maturity") => {
+        ignore(p.next())
+        match p.require_value("--maturity") {
+          Ok(v) => maturity = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--dir") => {
+        ignore(p.next())
+        match p.require_value("--dir") {
+          Ok(v) => directory = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--help") | Some("-h") => return Ok(Help(Some("pack")))
+      Some(value) =>
+        if value.has_prefix("-") {
+          return Err("pack init: unknown flag '" + value + "'")
+        } else if id is Some(_) {
+          return Err("pack init: only one id is allowed")
+        } else {
+          ignore(p.next())
+          id = Some(value)
+        }
+      None => break
+    }
+  }
+  Ok(
+    Pack(
+      Init({ id, name, entry_rule, extensions, maturity, directory, format }),
+    ),
+  )
+}
+
+///|
+fn parse_pack_check(
+  p : ArgParser,
+  format : PackOutputFormat,
+) -> Result[Command, String] {
+  let directory = match p.next() {
+    Some(v) => v
+    None => "."
+  }
+  if !p.at_end() {
+    return Err("pack check: too many arguments")
+  }
+  Ok(Pack(Check({ directory, format })))
+}
+
+///|
+fn parse_pack_test(
+  p : ArgParser,
+  format : PackOutputFormat,
+) -> Result[Command, String] {
+  let mut directory = "."
+  let mut update = false
+  while !p.at_end() {
+    match p.next() {
+      Some("--update") => update = true
+      Some(v) =>
+        if v.has_prefix("-") {
+          return Err("pack test: unknown flag '" + v + "'")
+        } else if directory != "." {
+          return Err("pack test: too many arguments")
+        } else {
+          directory = v
+        }
+      None => ()
+    }
+  }
+  Ok(Pack(Test({ directory, update, format })))
+}
+
+///|
+fn parse_pack_build(
+  p : ArgParser,
+  format : PackOutputFormat,
+) -> Result[Command, String] {
+  let mut directory = "."
+  let mut output : String? = None
+  let targets : Array[PackBuildTarget] = []
+  let mut out_dir : String? = None
+  let mut package_name : String? = None
+  while !p.at_end() {
+    match p.next() {
+      Some("--output") | Some("-o") =>
+        match p.require_value("--output") {
+          Ok(v) => output = Some(v)
+          Err(e) => return Err(e)
+        }
+      Some("--target") =>
+        match p.require_value("--target") {
+          Ok("bundle") => targets.push(Bundle)
+          Ok("moonbit") => targets.push(Moonbit)
+          Ok("wasm") => targets.push(Wasm)
+          Ok("npm") => targets.push(Npm)
+          Ok(v) => return Err("pack build: unknown target '" + v + "'")
+          Err(e) => return Err(e)
+        }
+      Some("--out-dir") =>
+        match p.require_value("--out-dir") {
+          Ok(v) => out_dir = Some(v)
+          Err(e) => return Err(e)
+        }
+      Some("--package-name") =>
+        match p.require_value("--package-name") {
+          Ok(v) => package_name = Some(v)
+          Err(e) => return Err(e)
+        }
+      Some(v) =>
+        if v.has_prefix("-") {
+          return Err("pack build: unknown flag '" + v + "'")
+        } else if directory != "." {
+          return Err("pack build: too many arguments")
+        } else {
+          directory = v
+        }
+      None => ()
+    }
+  }
+  if output is Some(_) &&
+    !targets.is_empty() &&
+    (targets.length() != 1 || targets[0] != Bundle) {
+    return Err(
+      "pack build: --output is only valid with the single bundle target",
+    )
+  }
+  if out_dir is Some(_) && targets.is_empty() {
+    return Err("pack build: --out-dir requires at least one --target")
+  }
+  if package_name is Some(_) && !targets.contains(Npm) {
+    return Err("pack build: --package-name requires --target npm")
+  }
+  Ok(Pack(Build({ directory, output, targets, out_dir, package_name, format })))
 }
 
 ///|
@@ -408,6 +802,7 @@ fn parse_generate(p : ArgParser) -> Result[Command, String] {
 fn parse_parse(p : ArgParser) -> Result[Command, String] {
   let mut grammar_file : String? = None
   let mut table_file : String? = None
+  let mut bundle_file : String? = None
   let mut input_file : String? = None
   let mut format = Sexp
   let mut output : String? = None
@@ -428,6 +823,13 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
         let _ = p.next()
         match p.require_value("--table") {
           Ok(v) => table_file = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--bundle") | Some("-b") => {
+        let _ = p.next()
+        match p.require_value("--bundle") {
+          Ok(v) => bundle_file = Some(v)
           Err(e) => return Err(e)
         }
       }
@@ -478,7 +880,7 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
           let _ = p.next()
           // 首个位置参数：无 --grammar/--table 时视为 grammar_file；
           // 第二个位置参数视为 input_file
-          if grammar_file is None && table_file is None {
+          if grammar_file is None && table_file is None && bundle_file is None {
             grammar_file = Some(s)
           } else {
             input_file = Some(s)
@@ -487,9 +889,12 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
       None => break
     }
   }
-  if grammar_file is Some(_) && table_file is Some(_) {
+  let source_count = (if grammar_file is Some(_) { 1 } else { 0 }) +
+    (if table_file is Some(_) { 1 } else { 0 }) +
+    (if bundle_file is Some(_) { 1 } else { 0 })
+  if source_count > 1 {
     return Err(
-      "parse: cannot use --grammar and --table together\n\{parse_usage()}",
+      "parse: --grammar, --table and --bundle are mutually exclusive\n\{parse_usage()}",
     )
   }
   if output is Some(_) && outdir is Some(_) {
@@ -497,13 +902,16 @@ fn parse_parse(p : ArgParser) -> Result[Command, String] {
       "parse: cannot use --output and --outdir together\n\{parse_usage()}",
     )
   }
-  if grammar_file is None && table_file is None {
-    return Err("parse: grammar or table file required\n\{parse_usage()}")
+  if source_count == 0 {
+    return Err(
+      "parse: grammar, table or bundle file required\n\{parse_usage()}",
+    )
   }
   Ok(
     Parse({
       grammar_file,
       table_file,
+      bundle_file,
       input_file,
       format,
       output,
@@ -579,6 +987,7 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
   let mut input_file : String? = None
   let mut grammar_file : String? = None
   let mut table_file : String? = None
+  let mut bundle_file : String? = None
   let mut json = false
   let mut count = false
   while !p.at_end() {
@@ -595,6 +1004,13 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
         let _ = p.next()
         match p.require_value("--table") {
           Ok(v) => table_file = Some(v)
+          Err(e) => return Err(e)
+        }
+      }
+      Some("--bundle") | Some("-b") => {
+        let _ = p.next()
+        match p.require_value("--bundle") {
+          Ok(v) => bundle_file = Some(v)
           Err(e) => return Err(e)
         }
       }
@@ -621,16 +1037,21 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
       None => break
     }
   }
-  if grammar_file is Some(_) && table_file is Some(_) {
+  let source_count = (if grammar_file is Some(_) { 1 } else { 0 }) +
+    (if table_file is Some(_) { 1 } else { 0 }) +
+    (if bundle_file is Some(_) { 1 } else { 0 })
+  if source_count > 1 {
     return Err(
-      "query: cannot use --grammar and --table together\n\{query_usage()}",
+      "query: --grammar, --table and --bundle are mutually exclusive\n\{query_usage()}",
     )
   }
   match pattern {
     None => Err("query: pattern required\n\{query_usage()}")
     Some(pat) => {
-      if grammar_file is None && table_file is None {
-        return Err("query: --grammar or --table required\n\{query_usage()}")
+      if source_count == 0 {
+        return Err(
+          "query: --grammar, --table or --bundle required\n\{query_usage()}",
+        )
       }
       Ok(
         Query({
@@ -638,6 +1059,7 @@ fn parse_query(p : ArgParser) -> Result[Command, String] {
           input_file,
           grammar_file,
           table_file,
+          bundle_file,
           json,
           count,
         }),
@@ -684,6 +1106,7 @@ fn global_usage() -> String {
     #|  wasm           <file>          Build WASM distribution package
     #|  dump           <target> <file> Dump internal structures for debugging
     #|  clean                          Remove generated/, build/, dist/
+    #|  pack           <command>       Create, check, test, or build a Language Pack
     #|
     #|Global options (before <command>):
     #|  --no-color     Disable ANSI color output
@@ -694,6 +1117,41 @@ fn global_usage() -> String {
     #|  -v, --version  Show version
     #|
     #|Run 'moonparse help <command>' for command-specific help.
+  )
+}
+
+///|
+fn pack_usage() -> String {
+  (
+    #|Usage: moonparse pack [--format human|json] <command> [options]
+    #|
+    #|Commands:
+    #|  init [<id>] [options]       Create a Language Pack (interactive without id)
+    #|  check [<pack-dir>]          Validate a Language Pack
+    #|  test [<pack-dir>] [--update] Run Corpus tests or update v2 snapshots
+    #|  build [<pack-dir>] [options] Build Bundle and distribution targets
+    #|  import-tree-sitter <tree-sitter-dir> --dir <pack-dir>
+    #|                              Import Tree-sitter grammar.json as a Pack
+    #|  export-tree-sitter <pack-dir> -o <grammar.json>
+    #|                              Export a Pack as Tree-sitter grammar.json
+    #|
+    #|Init options:
+    #|  --name <name> --entry-rule <rule> --extension <ext>
+    #|  --maturity <value> --dir <path>
+    #|
+    #|Build options:
+    #|  --target bundle|moonbit|wasm|npm  Repeatable; default is Bundle only
+    #|  --out-dir <dir>                   Distribution root (default: dist/<id>)
+    #|  --package-name <name>             Override NPM package name
+    #|  -o, --output <file>               Single Bundle output only
+    #|
+    #|Import Tree-sitter options:
+    #|  --dir <path>                      Target Pack directory
+    #|  --id <id> --name <name> --version <semver>
+    #|  --extension <ext>                 Repeatable extension override
+    #|
+    #|Export Tree-sitter options:
+    #|  -o, --output <grammar.json>       Output grammar.json path
   )
 }
 
@@ -714,11 +1172,12 @@ fn generate_usage() -> String {
 ///|
 fn parse_usage() -> String {
   (
-    #|Usage: moonparse parse (-g <file.grammar> | -t <file.parse_table>) [input-file] [options]
+    #|Usage: moonparse parse (-g <grammar> | -t <table> | -b <bundle>) [input-file] [options]
     #|
     #|Options:
     #|  -g, --grammar <file>  Grammar file (.grammar)
     #|  -t, --table   <file>  Parse table file (.parse_table)
+    #|  -b, --bundle  <file>  LanguageBundle JSON (enables its Scanner)
     #|  --format <fmt>        Output format: sexp (default), json, dot (Graphviz), tree
     #|  -o, --output <file>   Write output to file instead of stdout
     #|  --outdir <dir>        Write output to auto-named file under directory
@@ -779,6 +1238,7 @@ fn query_usage() -> String {
     #|Options:
     #|  -g, --grammar <file>  Grammar file (.grammar)
     #|  -t, --table   <file>  Parse table file (.parse_table)
+    #|  -b, --bundle  <file>  LanguageBundle JSON; pattern may be highlights/locals/bindings
     #|  --json                Output JSON format
     #|  --count               Only print match count
     #|  -h, --help            Show this help

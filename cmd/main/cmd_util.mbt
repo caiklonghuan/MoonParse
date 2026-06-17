@@ -271,3 +271,25 @@ fn load_table_from_grammar(
     Err(msg) => Err(msg)
   }
 }
+
+///|
+fn load_bundle_from_file(
+  path : String,
+) -> Result[@languagepack.LanguageBundle, String] {
+  match read_file(path) {
+    Err(message) => Err(message)
+    Ok(json) =>
+      match @languagepack.bundle_from_json(json) {
+        Ok(bundle) => Ok(bundle)
+        Err(errors) =>
+          Err(errors.map(fn(error) { error.to_string() }).join("\n"))
+      }
+  }
+}
+
+///|
+fn builtin_bundle_scanner_provider(
+  bundle : @languagepack.LanguageBundle,
+) -> @languagepack.PackScannerProvider? {
+  @grammars.builtin_pack_scanner_provider(bundle)
+}

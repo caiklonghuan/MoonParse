@@ -3,6 +3,9 @@ import {
   "caiklonghuan/MoonParse/tablegen" @tablegen,
   "caiklonghuan/MoonParse/runtime" @runtime,
   "caiklonghuan/MoonParse/query" @query,
+  "caiklonghuan/MoonParse/languagepack" @languagepack,
+  "caiklonghuan/MoonParse/grammars" @grammars,
+  "caiklonghuan/MoonParse/treesitterinterop" @treesitterinterop,
   "moonbitlang/core/buffer" @buffer,
   "moonbitlang/core/encoding/utf8" @utf8,
   "moonbitlang/core/env" @env,
@@ -11,6 +14,8 @@ import {
 options(
   "is-main": true,
   targets: {
+    "cmd_pack.mbt": [ "native", "llvm" ],
+    "cmd_pack_wasm.mbt": [ "wasm", "wasm-gc" ],
     "io_native.mbt": [ "native", "llvm" ],
     "io_wasm.mbt": [ "wasm", "wasm-gc" ],
   },

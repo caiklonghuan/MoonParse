@@ -9,6 +9,29 @@ const isNode =
 
 const JS_STRING_BUILTINS_OPTS = { builtins: ['js-string'] };
 
+function uint8ArrayToBase64(bytes) {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64');
+  }
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function base64ToUint8Array(base64) {
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(base64, 'base64'));
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 async function loadWasmModule(wasmUrl) {
   if (isBrowser) {
     if (typeof WebAssembly.compileStreaming === "function") {
@@ -62,6 +85,14 @@ class ParseTree {
     return this._wasm.tree_root_sexp(this.handle) ?? "";
   }
 
+  text() {
+    return this._wasm.tree_to_text?.(this.handle) ?? "";
+  }
+
+  prettyText() {
+    return this._wasm.tree_to_pretty_text?.(this.handle) ?? "";
+  }
+
   errorSummary() {
     return this._wasm.tree_error_summary(this.handle) ?? "invalid";
   }
@@ -97,6 +128,7 @@ class ParseTree {
 }
 class MoonParser {
   constructor(handle, wasm) {
+    /** @type {number} @readonly */
     this.handle = handle;
     this._wasm = wasm;
   }
@@ -108,15 +140,17 @@ class MoonParser {
   parse(source) {
     const tid = this._wasm.parse_full(this.handle, source);
     if (tid < 0) {
-      throw new Error("[MoonParse] parse() failed — check the grammar or source");
+      const detail = this._wasm.parse_error_last?.() || "check the grammar or source";
+      throw new Error(`[MoonParse] parse() failed — ${detail}`);
     }
     return new ParseTree(tid, this._wasm);
   }
 
   parseIncremental(source, oldTree, edit) {
+    const oldHandle = oldTree.handle;
     const tid = this._wasm.parse_incremental(
       this.handle,
-      oldTree.handle,
+      oldHandle,
       source,
       edit.start_byte,
       edit.old_end_byte,
@@ -129,16 +163,20 @@ class MoonParser {
       edit.new_end_col,
     );
     if (tid < 0) {
-      throw new Error(
-        "[MoonParse] parseIncremental() failed — check parser_id, old_tree_id, and edit fields",
-      );
+      const detail = this._wasm.parse_error_last?.() || "check parser_id, old_tree_id, and edit fields";
+      throw new Error(`[MoonParse] parseIncremental() failed — ${detail}`);
     }
+    this._wasm.tree_free(oldHandle);
     oldTree.handle = -1;
     return new ParseTree(tid, this._wasm);
   }
 
   tableJson() {
     return this._wasm.parser_table_to_json(this.handle) ?? "";
+  }
+  tableBytes() {
+    const base64 = this._wasm.parser_table_to_base64?.(this.handle) ?? "";
+    return base64ToUint8Array(base64);
   }
   diagnosticsJson() {
     return this._wasm.parser_diagnostics_json(this.handle) ?? "[]";
@@ -170,6 +208,8 @@ class TreeCursor {
   get isError()   { return this._wasm.cursor_node_is_error(this.handle)   !== 0; }
   get isMissing() { return this._wasm.cursor_node_is_missing(this.handle) !== 0; }
   get isExtra()   { return this._wasm.cursor_node_extra(this.handle)       !== 0; }
+  get hasChanges() { return this._wasm.cursor_node_has_changes?.(this.handle) !== 0; }
+  get isKeyword()  { return this._wasm.cursor_node_is_keyword?.(this.handle)  !== 0; }
   get childCount()      { return this._wasm.cursor_node_child_count(this.handle); }
   get namedChildCount() { return this._wasm.cursor_node_named_child_count(this.handle); }
   get startByte() { return this._wasm.cursor_node_start_byte(this.handle); }
@@ -199,7 +239,7 @@ class MoonQuery {
       try {
         const parsed = JSON.parse(errJson);
         msg = parsed.message ?? parsed.error ?? errJson;
-      } catch (_) {}
+      } catch (_) { /* errJson was not JSON; use as-is */ }
       throw new Error(`[MoonParse] compileQuery() failed: ${msg || "syntax error in query pattern"}`);
     }
   }
@@ -226,11 +266,73 @@ class MoonQuery {
   }
 }
 
+class MoonLanguage {
+  constructor(bundleJson, wasm) {
+    this._wasm = wasm;
+    this.handle = wasm.bundle_register(bundleJson);
+    if (this.handle < 0) {
+      throw new Error(`[MoonParse] loadBundle() failed: ${wasm.bundle_error_last?.() || "invalid LanguageBundle"}`);
+    }
+    try {
+      this.bundle = JSON.parse(bundleJson);
+      this.id = this.bundle.pack.id;
+      this.version = this.bundle.pack.version;
+      this.name = this.bundle.pack.name ?? this.id;
+      this.extensions = this.bundle.pack.extensions ?? [];
+      this.capabilities = this.bundle.capabilities;
+      const parserId = wasm.bundle_parser_id(this.handle);
+      if (parserId < 0) throw new Error("bundle parser is unavailable");
+      this.parser = new MoonParser(parserId, wasm);
+      this.highlightsQuery = this.bundle.queries?.highlights ? new MoonQuery(this.bundle.queries.highlights, wasm) : null;
+      this.localsQuery = this.bundle.queries?.locals ? new MoonQuery(this.bundle.queries.locals, wasm) : null;
+      this.bindingsQuery = this.bundle.queries?.bindings ? new MoonQuery(this.bundle.queries.bindings, wasm) : null;
+    } catch (error) {
+      this.highlightsQuery?.free();
+      this.localsQuery?.free();
+      this.bindingsQuery?.free();
+      wasm.bundle_free(this.handle);
+      if (this.parser) this.parser.handle = -1;
+      this.handle = -1;
+      throw error;
+    }
+  }
+  parse(source) { return this.parser.parse(source); }
+  highlight(tree) {
+    if (!this.highlightsQuery) return [];
+    return tree.highlight(this.highlightsQuery, this.localsQuery ?? undefined);
+  }
+  resolveLocals(tree) {
+    return this.localsQuery ? this.localsQuery.resolveLocals(tree) : {};
+  }
+  resolveBindings(tree) {
+    return this.bindingsQuery ? this.bindingsQuery.resolveBindings(tree) : {
+      uri: "", scopes: [], definitions: [], references: [], edges: [], diagnostics: [],
+    };
+  }
+  free() {
+    if (this.handle < 0) return;
+    this.highlightsQuery?.free();
+    this.localsQuery?.free();
+    this.bindingsQuery?.free();
+    this._wasm.bundle_free(this.handle);
+    this.parser.handle = -1;
+    this.handle = -1;
+  }
+}
+
 export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
   const mod = await loadWasmModule(wasmUrl);
 
+  // MoonBit wasm-gc with use-js-builtin-string imports:
+  // - "_" module: all 385 imports are string-constant globals; field name IS the string value.
+  // - "wasm:js-string": provided natively by V8 via { builtins: ['js-string'] } compile option.
   const importObj = {
     "_": new Proxy({}, { get(_, name) { return name; } }),
+    "console": {
+      log(value) {
+        globalThis.console?.log?.(value);
+      },
+    },
   };
 
   const { exports: wasm } = await WebAssembly.instantiate(mod, importObj);
@@ -251,11 +353,15 @@ export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
   }
 
   return {
+    loadBundle(bundleJson) {
+      return new MoonLanguage(bundleJson, wasm);
+    },
     createParser(dsl) {
       const pid = wasm.parser_create_from_dsl(dsl);
       if (pid < 0) {
+        const errMsg = wasm.parser_dsl_error_last?.() ?? "";
         throw new Error(
-          "[MoonParse] createParser() failed — grammar DSL parse error"
+          `[MoonParse] createParser() failed: ${errMsg || "grammar DSL parse error"}`
         );
       }
       return new MoonParser(pid, wasm);
@@ -272,6 +378,29 @@ export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
       return new MoonParser(pid, wasm);
     },
 
+    createParserFromBytes(bytes) {
+      const base64 = uint8ArrayToBase64(bytes);
+      const pid = wasm.parser_create_from_base64(base64);
+      if (pid < 0) {
+        throw new Error(
+          "[MoonParse] createParserFromBytes() failed — invalid binary table"
+        );
+      }
+      return new MoonParser(pid, wasm);
+    },
+
+    createParserFromGrammarObject(grammarObj) {
+      const json = JSON.stringify(grammarObj);
+      const pid = wasm.parser_create_from_grammar_json(json);
+      if (pid < 0) {
+        const errMsg = wasm.parser_dsl_error_last?.() ?? "";
+        throw new Error(
+          `[MoonParse] createParserFromGrammarObject() failed: ${errMsg || "invalid grammar JSON"}`
+        );
+      }
+      return new MoonParser(pid, wasm);
+    },
+
     compileQuery(pattern) {
       return new MoonQuery(pattern, wasm);
     },
@@ -281,36 +410,63 @@ export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
       return JSON.parse(json);
     },
 
-    validateGrammarDsl(dsl) {
-      const json = wasm.grammar_validate_dsl?.(dsl) ?? '[]';
-      try { return JSON.parse(json); } catch { return []; }
+    validateDsl(dsl) {
+      const pid = wasm.parser_create_from_dsl(dsl);
+      if (pid < 0) return false;
+      wasm.parser_free(pid);
+      return true;
     },
 
-    setParseConfig(cfg) {
-      wasm.parse_config_set?.(
-        cfg.error_cost_per_skipped_tree ?? -1,
-        cfg.error_cost_per_skipped_char ?? -1,
-        cfg.error_cost_per_skipped_line ?? -1,
-        cfg.error_cost_per_missing_tree ?? -1,
-        cfg.error_cost_per_recovery     ?? -1,
-        cfg.max_version_count           ?? -1,
-        cfg.max_version_count_overflow  ?? -1,
+    validateDslErrors(dsl) {
+      const json = wasm.grammar_validate_dsl?.(dsl) ?? "[]";
+      return JSON.parse(json);
+    },
+
+    builtinGrammarsJson() {
+      return wasm.builtin_grammars_json() ?? "{}";
+    },
+    builtinBundlesJson() {
+      return wasm.builtin_bundles_json() ?? "{}";
+    },
+
+    version() {
+      return wasm.moonparse_version() ?? "0.0.0";
+    },
+
+    parseErrorLast() {
+      return wasm.parse_error_last?.() ?? "";
+    },
+
+    setParseConfig(config = {}) {
+      const d = {
+        errorCostPerSkippedTree:     100,
+        errorCostPerSkippedChar:     1,
+        errorCostPerSkippedLine:     30,
+        errorCostPerMissingTree:     110,
+        errorCostPerRecovery:        500,
+        maxVersionCount:             6,
+        maxVersionCountOverflow:     4,
+      };
+      wasm.parse_config_set(
+        config.errorCostPerSkippedTree     ?? -1,
+        config.errorCostPerSkippedChar     ?? -1,
+        config.errorCostPerSkippedLine     ?? -1,
+        config.errorCostPerMissingTree     ?? -1,
+        config.errorCostPerRecovery        ?? -1,
+        config.maxVersionCount             ?? -1,
+        config.maxVersionCountOverflow     ?? -1,
       );
+      void d;
     },
 
     resetParseConfig() {
       wasm.parse_config_reset?.();
     },
 
-    builtinGrammars() {
-      const json = wasm.builtin_grammars_json?.() ?? '{}';
-      try { return JSON.parse(json); } catch { return {}; }
-    },
-
-    version() {
-      return wasm.moonparse_version() ?? "0.0.0";
+    byteOffsetToCharCol(source, line, colBytes) {
+      return wasm.tree_byte_offset_to_char_col?.(source, line, colBytes) ?? colBytes;
     },
   };
 }
 
-export { ParseTree, MoonParser, TreeCursor, MoonQuery };
+export { ParseTree, MoonParser, TreeCursor, MoonQuery, MoonLanguage };

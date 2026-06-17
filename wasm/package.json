@@ -8,9 +8,12 @@
     "moonparse.js",
     "moonparse.d.ts",
     "moonparse.wasm",
+    "build-info.json",
     "README.md"
   ],
   "scripts": {
-    "build": "pwsh ../build_dist.ps1"
+    "build": "node ../scripts/build-artifacts.mjs",
+    "build:check": "node ../scripts/build-artifacts.mjs --check",
+    "test": "node ../examples/api_smoke/node-smoke.mjs"
   }
 }

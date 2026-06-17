@@ -81,6 +81,15 @@ priv struct TreeEntry {
 let parser_registry : Registry[ParserEntry] = Registry::new()
 
 ///|
+priv struct BundleEntry {
+  bundle : @languagepack.LanguageBundle
+  parser_id : Int
+}
+
+///|
+let bundle_registry : Registry[BundleEntry] = Registry::new()
+
+///|
 let tree_registry : Registry[TreeEntry] = Registry::new()
 
 ///|

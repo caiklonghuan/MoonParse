@@ -74,28 +74,43 @@ fn print_captures_json(
 ///|
 /// query 命令主体
 pub fn cmd_query(args : QueryArgs) -> Int {
+  let bundle = match args.bundle_file {
+    Some(path) =>
+      match load_bundle_from_file(path) {
+        Ok(value) => Some(value)
+        Err(msg) => {
+          print_err("error: cannot load bundle '\{path}': " + msg)
+          return 2
+        }
+      }
+    None => None
+  }
   // 1. 加载解析表
-  let table = match (args.grammar_file, args.table_file) {
-    (_, Some(tf)) =>
-      match load_table_from_file(tf) {
-        Ok(t) => t
-        Err(msg) => {
-          print_err("error: cannot load table '\{tf}': " + msg)
+  let table = match bundle {
+    Some(value) => value.table
+    None =>
+      match (args.grammar_file, args.table_file) {
+        (_, Some(tf)) =>
+          match load_table_from_file(tf) {
+            Ok(t) => t
+            Err(msg) => {
+              print_err("error: cannot load table '\{tf}': " + msg)
+              return 2
+            }
+          }
+        (Some(gf), _) =>
+          match load_table_from_grammar(gf) {
+            Ok(t) => t
+            Err(msg) => {
+              print_err("error: cannot compile grammar: " + msg)
+              return 2
+            }
+          }
+        (None, None) => {
+          print_err("error: --grammar or --table required")
           return 2
         }
       }
-    (Some(gf), _) =>
-      match load_table_from_grammar(gf) {
-        Ok(t) => t
-        Err(msg) => {
-          print_err("error: cannot compile grammar: " + msg)
-          return 2
-        }
-      }
-    (None, None) => {
-      print_err("error: --grammar or --table required")
-      return 2
-    }
   }
 
   // 读取输入
@@ -112,19 +127,48 @@ pub fn cmd_query(args : QueryArgs) -> Int {
   }
 
   // 解析输入
-  let root = match @runtime.parse(table, input) {
-    Ok(r) => r
-    Err(e) => {
-      report_parse_error(e, args.input_file, Some(input))
-      return 2
+  let root = match bundle {
+    Some(value) => {
+      let result = match builtin_bundle_scanner_provider(value) {
+        Some(provider) =>
+          @languagepack.parse_bundle(value, input, scanner_provider=provider)
+        None => @languagepack.parse_bundle(value, input)
+      }
+      match result {
+        Ok(root) => root
+        Err(error) => {
+          print_err("error[\{error.code}]: \{error.message}")
+          return 2
+        }
+      }
     }
+    None =>
+      match @runtime.parse(table, input) {
+        Ok(r) => r
+        Err(e) => {
+          report_parse_error(e, args.input_file, Some(input))
+          return 2
+        }
+      }
   }
 
   // 编译查询模式
-  let compiled = match @query.compile(args.pattern) {
+  let pattern = match bundle {
+    Some(value) if args.pattern == "highlights" =>
+      value.highlights_source.unwrap_or("")
+    Some(value) if args.pattern == "locals" => value.locals_source.unwrap_or("")
+    Some(value) if args.pattern == "bindings" =>
+      value.bindings_source.unwrap_or("")
+    _ => args.pattern
+  }
+  if pattern.is_empty() {
+    print_err("error: requested Bundle query is unavailable")
+    return 2
+  }
+  let compiled = match @query.compile(pattern) {
     Ok(q) => q
     Err(e) => {
-      report_query_error(e, Some(args.pattern))
+      report_query_error(e, Some(pattern))
       return 2
     }
   }

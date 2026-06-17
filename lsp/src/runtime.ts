@@ -13,6 +13,7 @@ import {
   type HighlightRange,
   type CstNode,
   type ParseConfig,
+  type MoonLanguage,
 } from "../../wasm/moonparse.js";
 
 import type { Logger } from "./logger.js";
@@ -23,6 +24,7 @@ import type { Logger } from "./logger.js";
 interface ParserCache {
   parser: MoonParser;
   languageId: string;
+  language?: MoonLanguage;
 }
 
 // ── CST 错误节点（供 diagnostics 转换用） ──
@@ -113,8 +115,14 @@ export class MoonParseRuntime {
     this.ensureLoaded();
     this.freeParser(languageId);
 
-    const builtinsJson = this.mp!.builtinGrammarsJson?.() ?? "{}";
     try {
+      const bundles = JSON.parse(
+        this.mp!.builtinBundlesJson?.() ?? "{}",
+      ) as Record<string, string>;
+      if (bundles[languageId]) {
+        return this.loadBundle(bundles[languageId]).parser;
+      }
+      const builtinsJson = this.mp!.builtinGrammarsJson?.() ?? "{}";
       const all = JSON.parse(builtinsJson) as Record<string, string>;
       const dsl = all[languageId];
       if (!dsl) {
@@ -130,6 +138,30 @@ export class MoonParseRuntime {
       this.logger.error(`内置语法解析失败: ${languageId}`);
       return null;
     }
+  }
+
+  // 从 LanguageBundle 创建语言。先完成全部验证，再原子替换旧实例。
+  loadBundle(bundleJson: string): MoonLanguage {
+    this.ensureLoaded();
+    const language = this.mp!.loadBundle(bundleJson);
+    const previous = this.parsers.get(language.id);
+    this.parsers.set(language.id, {
+      parser: language.parser,
+      languageId: language.id,
+      language,
+    });
+    if (previous) {
+      try {
+        if (previous.language) previous.language.free();
+        else previous.parser.free();
+      } catch { /* 保留已经成功注册的新语言 */ }
+    }
+    this.logger.info(`LanguageBundle 已加载: ${language.id}@${language.version}`);
+    return language;
+  }
+
+  getLanguage(languageId: string): MoonLanguage | undefined {
+    return this.parsers.get(languageId)?.language;
   }
 
   // ── 解析 ──
@@ -179,7 +211,8 @@ export class MoonParseRuntime {
     const cached = this.parsers.get(languageId);
     if (cached) {
       try {
-        cached.parser.free();
+        if (cached.language) cached.language.free();
+        else cached.parser.free();
       } catch { /* 忽略 */ }
       this.parsers.delete(languageId);
     }

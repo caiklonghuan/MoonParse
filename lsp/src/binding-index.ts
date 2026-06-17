@@ -13,6 +13,7 @@ import type {
 } from "../../wasm/moonparse.js";
 
 import type { DocumentEntry } from "./document-manager.js";
+import { LANGUAGE_PACK_RESOURCES } from "./language-pack-resources.js";
 import { utf16ToByteOffset } from "./position.js";
 
 // ── 查找结果 ──
@@ -304,8 +305,8 @@ const C_BINDINGS = `
 
 const BINDING_QUERIES: Record<string, string> = {
   "__dsl__": GRAMMAR_DSL_BINDINGS,
-  "moonbit": MOONBIT_BINDINGS,
-  "python": PYTHON_BINDINGS,
+  "moonbit": LANGUAGE_PACK_RESOURCES.moonbit.bindingsQuery ?? MOONBIT_BINDINGS,
+  "python": LANGUAGE_PACK_RESOURCES.python.bindingsQuery ?? PYTHON_BINDINGS,
   "c": C_BINDINGS,
 };
 

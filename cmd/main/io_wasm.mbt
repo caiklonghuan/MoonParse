@@ -173,6 +173,25 @@ fn read_stdin_impl() -> String {
 }
 
 ///|
+fn read_line_impl() -> String? {
+  None
+}
+
+///|
+fn list_files_impl(path : String) -> Result[Array[String], String] {
+  Err("Pack CLI directory access is unavailable on WASM: " + path)
+}
+
+///|
+fn atomic_write_file_impl(
+  path : String,
+  content : String,
+) -> Result[Unit, String] {
+  let _ = content
+  Err("Pack CLI atomic writes are unavailable on WASM: " + path)
+}
+
+///|
 fn print_err_impl(s : String) -> Unit {
   // wasm-gc 无独立 stderr，退化为 stdout
   println("[stderr] \{s}")

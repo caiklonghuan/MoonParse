@@ -4,12 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "sync-runtime": "node scripts/sync-runtime.mjs",
     "precompile": "node scripts/precompile-grammars.mjs",
     "test:corpus": "node src/test/run-corpus.mjs",
+    "test:smoke": "node scripts/smoke-built.mjs",
     "test:c-tree": "node src/test/run-corpus.mjs c",
     "test:python-tree": "node src/test/run-corpus.mjs python",
     "dev": "vite",
-    "build": "node scripts/precompile-grammars.mjs && vite build",
+    "build": "npm run sync-runtime && node scripts/precompile-grammars.mjs && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

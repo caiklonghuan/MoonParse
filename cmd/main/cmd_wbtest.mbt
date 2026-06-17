@@ -227,6 +227,73 @@ test "parse_args/unknown_subcommand_returns_err" {
 }
 
 ///|
+test "parse_args/pack check json" {
+  match parse_args(["pack", "--format", "json", "check", "languages/json"]) {
+    Ok(Pack(Check(args))) => {
+      assert_eq(args.directory, "languages/json")
+      assert_true(args.format == PackOutputFormat::Json)
+    }
+    other => abort("unexpected result: \{other}")
+  }
+}
+
+///|
+test "parse_args/pack init options" {
+  match
+    parse_args(["pack", "init", "demo", "--name", "Demo", "--extension", ".dm"]) {
+    Ok(Pack(Init(args))) => {
+      assert_eq(args.id, Some("demo"))
+      assert_eq(args.name, Some("Demo"))
+      assert_eq(args.extensions, [".dm"])
+    }
+    other => abort("unexpected result: \{other}")
+  }
+}
+
+///|
+test "parse_args/pack test update" {
+  match parse_args(["pack", "test", "sample", "--update"]) {
+    Ok(Pack(Test(args))) => {
+      assert_eq(args.directory, "sample")
+      assert_true(args.update)
+    }
+    other => abort("unexpected result: \{other}")
+  }
+}
+
+///|
+test "parse_args/pack build distribution targets" {
+  match
+    parse_args([
+      "pack", "build", "sample", "--target", "bundle", "--target", "npm", "--out-dir",
+      "dist/sample", "--package-name", "@example/sample",
+    ]) {
+    Ok(Pack(Build(args))) => {
+      assert_eq(args.targets.length(), 2)
+      assert_true(args.targets[0] == PackBuildTarget::Bundle)
+      assert_true(args.targets[1] == PackBuildTarget::Npm)
+      assert_eq(args.out_dir, Some("dist/sample"))
+      assert_eq(args.package_name, Some("@example/sample"))
+    }
+    other => abort("unexpected result: \{other}")
+  }
+}
+
+///|
+test "parse_args/bundle input and source exclusivity" {
+  match parse_args(["parse", "--bundle", "json.bundle.json", "input.json"]) {
+    Ok(Parse(args)) => assert_eq(args.bundle_file, Some("json.bundle.json"))
+    other => abort("unexpected result: \{other}")
+  }
+  assert_true(
+    parse_args([
+      "query", "(number) @n", "--bundle", "json.bundle.json", "--grammar", "json.grammar",
+    ])
+    is Err(_),
+  )
+}
+
+///|
 test "parse_args/generate_missing_grammar_file_returns_err" {
   let result = parse_args(["generate"])
   match result {

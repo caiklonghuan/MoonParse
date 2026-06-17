@@ -65,6 +65,7 @@ stdout / stderr / output files / exit code
 - `fmt`
 - `query`
 - `test`
+- `pack init|check|test|build`
 - `clean`
 
 全局参数目前有两类：

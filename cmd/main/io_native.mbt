@@ -61,6 +61,25 @@ extern "c" fn c_fwrite(
 ) -> Int = "fwrite"
 
 ///|
+#borrow(buf)
+extern "c" fn c_fgets(buf : Bytes, size : Int, file : Int64) -> Int64 = "fgets"
+
+///|
+#borrow(command, mode)
+extern "c" fn c_popen(command : Bytes, mode : Bytes) -> Int64 = "popen"
+
+///|
+extern "c" fn c_pclose(file : Int64) -> Int = "pclose"
+
+///|
+#borrow(old_path, new_path)
+extern "c" fn c_rename(old_path : Bytes, new_path : Bytes) -> Int = "rename"
+
+///|
+#borrow(path)
+extern "c" fn c_remove(path : Bytes) -> Int = "remove"
+
+///|
 // POSIX read(fd, buf, count): 从文件描述符读取最多 count 字节
 // 返回实际读取字节数；0 = EOF；负数 = 错误
 #borrow(buf)
@@ -150,6 +169,92 @@ fn read_stdin_impl() -> String {
     n = c_read(0, chunk, 4096)
   }
   out.to_string()
+}
+
+///|
+fn read_line_impl() -> String? {
+  let out = @buffer.new()
+  let byte = Bytes::new(1)
+  let mut read = c_read(0, byte, 1)
+  if read <= 0 {
+    return None
+  }
+  while read > 0 && byte[0] != b'\n' {
+    if byte[0] != b'\r' {
+      out.write_byte(byte[0])
+    }
+    read = c_read(0, byte, 1)
+  }
+  Some(@utf8.decode_lossy(out.to_bytes()))
+}
+
+///|
+fn run_file_listing(command : String) -> Array[String]? {
+  let pipe = c_popen(str_to_cstr(command), str_to_cstr("r"))
+  if pipe == 0L {
+    return None
+  }
+  let result : Array[String] = []
+  let buf = Bytes::new(8192)
+  while c_fgets(buf, 8192, pipe) != 0L {
+    let mut end = 0
+    while end < buf.length() && buf[end] != b'\x00' {
+      end = end + 1
+    }
+    let line = @utf8.decode_lossy(buf[0:end]).trim().to_string()
+    if !line.is_empty() {
+      result.push(line)
+    }
+  }
+  let code = c_pclose(pipe)
+  if code == 0 {
+    Some(result)
+  } else {
+    None
+  }
+}
+
+///|
+fn list_files_impl(path : String) -> Result[Array[String], String] {
+  match run_file_listing("dir /s /b /a-d " + shell_quote(path) + " 2>NUL") {
+    Some(files) => Ok(files)
+    None =>
+      match
+        run_file_listing("find " + shell_quote(path) + " -type f 2>/dev/null") {
+        Some(files) => Ok(files)
+        None => Err("cannot list directory: " + path)
+      }
+  }
+}
+
+///|
+fn atomic_write_file_impl(
+  path : String,
+  content : String,
+) -> Result[Unit, String] {
+  let temp = path + ".moonparse.tmp"
+  match write_file_impl(temp, content) {
+    Err(error) => Err(error)
+    Ok(_) =>
+      if c_rename(str_to_cstr(temp), str_to_cstr(path)) == 0 {
+        Ok(())
+      } else {
+        let backup = path + ".moonparse.bak"
+        ignore(c_remove(str_to_cstr(backup)))
+        if c_rename(str_to_cstr(path), str_to_cstr(backup)) != 0 {
+          ignore(c_remove(str_to_cstr(temp)))
+          return Err("cannot preserve existing file before replace: " + path)
+        }
+        if c_rename(str_to_cstr(temp), str_to_cstr(path)) == 0 {
+          ignore(c_remove(str_to_cstr(backup)))
+          Ok(())
+        } else {
+          ignore(c_rename(str_to_cstr(backup), str_to_cstr(path)))
+          ignore(c_remove(str_to_cstr(temp)))
+          Err("cannot replace file: " + path)
+        }
+      }
+  }
 }
 
 ///|

@@ -73,7 +73,7 @@ const sections = [
       row('MoonBit 原生支持', '✓', '✗', 'MoonParse 直接用 MoonBit 实现，可提供无需 FFI 的原生 MoonBit API。'),
       row('零 JS 运行时依赖', '✓', '✗', 'MoonParse 可仅以单个 WASM 文件分发；tree-sitter 常见集成仍依赖额外绑定。'),
       row('Node.js 支持', '✓', '✓', 'tree-sitter 的 Node 生态更成熟；MoonParse 则通过 WASM 直接接入 Node。'),
-      row('编辑器集成', '规划中', '✓', 'tree-sitter 已广泛用于 Neovim、Helix、Emacs；MoonParse 的 LSP 集成仍在推进。'),
+      row('编辑器集成', '部分完成', '✓', 'MoonParse 已提供诊断、语义高亮、符号、悬停、定义、引用、补全、格式化和 Code Action；Rename、Folding 等仍待补齐。'),
       row('现成文法生态', '持续增长', '500+', 'tree-sitter 的成熟文法数量更多；MoonParse 当前已提供 JSON、MoonBit、C 等示例。'),
     ],
   },

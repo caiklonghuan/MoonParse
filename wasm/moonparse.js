@@ -266,6 +266,60 @@ class MoonQuery {
   }
 }
 
+class MoonLanguage {
+  constructor(bundleJson, wasm) {
+    this._wasm = wasm;
+    this.handle = wasm.bundle_register(bundleJson);
+    if (this.handle < 0) {
+      throw new Error(`[MoonParse] loadBundle() failed: ${wasm.bundle_error_last?.() || "invalid LanguageBundle"}`);
+    }
+    try {
+      this.bundle = JSON.parse(bundleJson);
+      this.id = this.bundle.pack.id;
+      this.version = this.bundle.pack.version;
+      this.name = this.bundle.pack.name ?? this.id;
+      this.extensions = this.bundle.pack.extensions ?? [];
+      this.capabilities = this.bundle.capabilities;
+      const parserId = wasm.bundle_parser_id(this.handle);
+      if (parserId < 0) throw new Error("bundle parser is unavailable");
+      this.parser = new MoonParser(parserId, wasm);
+      this.highlightsQuery = this.bundle.queries?.highlights ? new MoonQuery(this.bundle.queries.highlights, wasm) : null;
+      this.localsQuery = this.bundle.queries?.locals ? new MoonQuery(this.bundle.queries.locals, wasm) : null;
+      this.bindingsQuery = this.bundle.queries?.bindings ? new MoonQuery(this.bundle.queries.bindings, wasm) : null;
+    } catch (error) {
+      this.highlightsQuery?.free();
+      this.localsQuery?.free();
+      this.bindingsQuery?.free();
+      wasm.bundle_free(this.handle);
+      if (this.parser) this.parser.handle = -1;
+      this.handle = -1;
+      throw error;
+    }
+  }
+  parse(source) { return this.parser.parse(source); }
+  highlight(tree) {
+    if (!this.highlightsQuery) return [];
+    return tree.highlight(this.highlightsQuery, this.localsQuery ?? undefined);
+  }
+  resolveLocals(tree) {
+    return this.localsQuery ? this.localsQuery.resolveLocals(tree) : {};
+  }
+  resolveBindings(tree) {
+    return this.bindingsQuery ? this.bindingsQuery.resolveBindings(tree) : {
+      uri: "", scopes: [], definitions: [], references: [], edges: [], diagnostics: [],
+    };
+  }
+  free() {
+    if (this.handle < 0) return;
+    this.highlightsQuery?.free();
+    this.localsQuery?.free();
+    this.bindingsQuery?.free();
+    this._wasm.bundle_free(this.handle);
+    this.parser.handle = -1;
+    this.handle = -1;
+  }
+}
+
 export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
   const mod = await loadWasmModule(wasmUrl);
 
@@ -299,6 +353,9 @@ export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
   }
 
   return {
+    loadBundle(bundleJson) {
+      return new MoonLanguage(bundleJson, wasm);
+    },
     createParser(dsl) {
       const pid = wasm.parser_create_from_dsl(dsl);
       if (pid < 0) {
@@ -368,6 +425,9 @@ export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
     builtinGrammarsJson() {
       return wasm.builtin_grammars_json() ?? "{}";
     },
+    builtinBundlesJson() {
+      return wasm.builtin_bundles_json() ?? "{}";
+    },
 
     version() {
       return wasm.moonparse_version() ?? "0.0.0";
@@ -409,4 +469,4 @@ export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
   };
 }
 
-export { ParseTree, MoonParser, TreeCursor, MoonQuery };
+export { ParseTree, MoonParser, TreeCursor, MoonQuery, MoonLanguage };

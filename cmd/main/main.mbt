@@ -14,7 +14,18 @@ fn main {
   // 解析参数
   let code = match parse_args(argv) {
     Err(msg) => {
-      print_err(msg)
+      if argv.length() >= 3 &&
+        argv[0] == "pack" &&
+        argv[1] == "--format" &&
+        argv[2] == "json" {
+        println(
+          "{\"command\":\"pack\",\"status\":\"error\",\"diagnostics\":[{\"code\":\"CLI100\",\"severity\":\"error\",\"message\":\"" +
+          json_escape(msg) +
+          "\",\"path\":\"\",\"line\":0,\"column\":0,\"hint\":null}],\"summary\":{},\"artifacts\":[]}",
+        )
+      } else {
+        print_err(msg)
+      }
       2
     }
     Ok(cmd) =>
@@ -33,6 +44,7 @@ fn main {
               Some("wasm") => wasm_usage()
               Some("dump") => dump_usage()
               Some("clean") => clean_usage()
+              Some("pack") => pack_usage()
               Some(other) => "unknown command '\{other}'\n\{global_usage()}"
             },
           )
@@ -52,6 +64,7 @@ fn main {
         Wasm(args) => cmd_wasm(args)
         Dump(args) => cmd_dump(args)
         Clean(args) => cmd_clean(args)
+        Pack(args) => cmd_pack(args)
       }
   }
 

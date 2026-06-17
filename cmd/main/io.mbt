@@ -17,6 +17,24 @@ pub fn read_stdin() -> String {
 }
 
 ///|
+pub fn read_line() -> String? {
+  read_line_impl()
+}
+
+///|
+pub fn list_files(path : String) -> Result[Array[String], String] {
+  list_files_impl(path)
+}
+
+///|
+pub fn atomic_write_file(
+  path : String,
+  content : String,
+) -> Result[Unit, String] {
+  atomic_write_file_impl(path, content)
+}
+
+///|
 /// 向 stderr 输出一行（末尾追加换行符）。
 pub fn print_err(s : String) -> Unit {
   print_err_impl(s)

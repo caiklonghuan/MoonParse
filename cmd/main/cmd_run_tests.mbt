@@ -52,6 +52,7 @@ fn strip_cr(line : String) -> String {
   }
 }
 
+///|
 fn is_separator_line(line : String) -> Bool {
   let s = strip_cr(line)
   let n = s.length()

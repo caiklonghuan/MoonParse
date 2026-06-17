@@ -1,13 +1,13 @@
 import {
   createConnection,
   ProposedFeatures,
-  TextDocumentSyncKind,
   type InitializeParams,
   type InitializeResult,
   type Diagnostic,
 } from "vscode-languageserver/node.js";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
+import { readFile } from "node:fs/promises";
 
 import {
   type ServerConfig,
@@ -18,12 +18,10 @@ import {
 import { Logger } from "./logger.js";
 import { DocumentStore, type DocumentEntry } from "./document-manager.js";
 import { MoonParseRuntime, type CstErrorNode } from "./runtime.js";
+import { createServerCapabilities } from "./capabilities.js";
+import { MOONPARSE_VERSION } from "./version.js";
 import { errorsToDiagnostics, bindingDiagnosticsToDiagnostics } from "./diagnostics.js";
-import {
-  SemanticTokensManager,
-  TOKEN_TYPES,
-  TOKEN_MODIFIERS,
-} from "./semantic-tokens.js";
+import { SemanticTokensManager } from "./semantic-tokens.js";
 import { extractDocumentSymbols } from "./document-symbol.js";
 import { getHover } from "./hover.js";
 import { SymbolIndex } from "./symbol-index.js";
@@ -49,13 +47,14 @@ let shutdownReceived = false;
 
 // URI → 当前 ParseTree（用于增量解析及释放）
 const currentTrees = new Map<string, ParseTree>();
+const configuredBundleIds = new Map<string, string>();
 
 // ── 生命周期 ──
 
 connection.onInitialize(
   (params: InitializeParams): InitializeResult<ServerConfig> => {
     logger.info(
-      `MoonParse LSP v0.1.0 — 初始化 (client: ${params.clientInfo?.name ?? "unknown"} ${params.clientInfo?.version ?? ""})`,
+      `MoonParse LSP v${MOONPARSE_VERSION} — 初始化 (client: ${params.clientInfo?.name ?? "unknown"} ${params.clientInfo?.version ?? ""})`,
     );
 
     config = mergeConfig(
@@ -65,36 +64,10 @@ connection.onInitialize(
     store.updateConfig(config);
 
     return {
-      capabilities: {
-        textDocumentSync: {
-          openClose: true,
-          change: TextDocumentSyncKind.Incremental,
-        },
-        semanticTokensProvider: {
-          legend: {
-            tokenTypes: TOKEN_TYPES as unknown as string[],
-            tokenModifiers: TOKEN_MODIFIERS,
-          },
-          full: true,
-          range: true,
-        },
-        documentSymbolProvider: true,
-        hoverProvider: true,
-        definitionProvider: true,
-        referencesProvider: true,
-        completionProvider: {
-          triggerCharacters: [".", "@"],
-        },
-        documentFormattingProvider: true,
-        documentRangeFormattingProvider: true,
-        codeActionProvider: true,
-        // Phase 3+ 将启用以下能力：
-        // foldingRangeProvider / documentHighlightProvider
-        // renameProvider
-      },
+      capabilities: createServerCapabilities(),
       serverInfo: {
         name: "moonparse-lsp",
-        version: "0.1.0",
+        version: MOONPARSE_VERSION,
       },
     };
   },
@@ -104,7 +77,7 @@ connection.onInitialized(() => {
   logger.info("服务已就绪");
 
   // 异步加载 WASM，不阻塞握手
-  runtime.init().then(() => {
+  runtime.init().then(async () => {
     logger.info("WASM 运行时已就绪");
 
     // 注入句柄释放函数
@@ -114,6 +87,7 @@ connection.onInitialized(() => {
     );
 
     logger.telemetry("server.initialized");
+    await syncConfiguredBundles();
   }).catch((err) => {
     logger.error(`WASM 初始化失败: ${safeErrorMessage(err)}`);
   });
@@ -140,7 +114,7 @@ connection.onExit(() => {
 
 // ── 配置更新 ──
 
-connection.onDidChangeConfiguration((change) => {
+connection.onDidChangeConfiguration(async (change) => {
   const raw = (change.settings as { moonparse?: Partial<ServerConfig> })
     ?.moonparse;
   if (raw) {
@@ -155,7 +129,58 @@ connection.onDidChangeConfiguration((change) => {
     logger.info(
       `配置已更新 — trace=${config.trace} incremental=${config.incrementalParse}`,
     );
+    if (runtime.loaded) await syncConfiguredBundles();
   }
+});
+
+function registerBundleExtensions(id: string, extensions: string[]): void {
+  for (const raw of extensions) {
+    const extension = raw.startsWith(".") ? raw.slice(1) : raw;
+    if (!extension) continue;
+    config.grammarAssociations[extension] = id;
+    if (!config.enabledExtensions.includes(extension)) {
+      config.enabledExtensions.push(extension);
+    }
+  }
+  store.updateConfig(config);
+}
+
+async function syncConfiguredBundles(): Promise<void> {
+  const wanted = new Set(config.languageBundles.map((entry) => entry.path));
+  for (const [path, id] of configuredBundleIds) {
+    if (!wanted.has(path)) {
+      runtime.freeParser(id);
+      configuredBundleIds.delete(path);
+    }
+  }
+  for (const entry of config.languageBundles) {
+    try {
+      const bundleJson = await readFile(entry.path, "utf8");
+      const language = runtime.loadBundle(bundleJson);
+      configuredBundleIds.set(entry.path, language.id);
+      registerBundleExtensions(
+        language.id,
+        entry.extensions ?? language.extensions,
+      );
+    } catch (err) {
+      logger.error(`Bundle 加载失败 (${entry.path}): ${safeErrorMessage(err)}`);
+    }
+  }
+}
+
+connection.onRequest("moonparse/loadLanguageBundle", (params: {
+  bundleJson: string;
+  extensions?: string[];
+}) => {
+  const language = runtime.loadBundle(params.bundleJson);
+  const extensions = params.extensions ?? language.extensions;
+  registerBundleExtensions(language.id, extensions);
+  return {
+    id: language.id,
+    version: language.version,
+    capabilities: language.capabilities,
+    extensions,
+  };
 });
 
 // ── 解析触发 ──
@@ -228,8 +253,18 @@ function triggerParse(entry: DocumentEntry): void {
     }
 
     // 新索引（任意语言，按 scope/edge 精确匹配）
+    const bundleLanguage = runtime.getLanguage(entry.languageId);
     const bq = bindingQueryForLang(entry.languageId);
-    if (bq) {
+    if (bundleLanguage?.capabilities.bindings) {
+      try {
+        const graph = bundleLanguage.resolveBindings(tree);
+        const bi = new BindingIndex();
+        bi.update(entry.uri, entry, graph);
+        bindingIndexes.set(entry.uri, bi);
+      } catch {
+        bindingIndexes.delete(entry.uri);
+      }
+    } else if (bq) {
       try {
         const query = runtime.compileQuery(bq);
         const graph = runtime.queryResolveBindings(query, tree);
