@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  moonbit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up MoonBit baseline
+        uses: hustcer/setup-moonbit@v1
+        with:
+          version: 0.1.20260417+8650a31
+      - name: Check and test MoonBit packages
+        run: |
+          moon version --all
+          moon check
+          moon test
+          moon fmt --check
+      - name: Verify generated interfaces
+        run: |
+          moon info
+          git diff --exit-code -- '**/pkg.generated.mbti' 'pkg.generated.mbti'
+      - name: Record lexer performance baseline
+        run: |
+          moon run scripts -- bench-lexer --grammar all --runs 30 | tee lexer-benchmark.txt
+          {
+            echo '### Lexer benchmark'
+            echo '```text'
+            cat lexer-benchmark.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lexer-benchmark
+          path: lexer-benchmark.txt
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up MoonBit baseline
+        uses: hustcer/setup-moonbit@v1
+        with:
+          version: 0.1.20260417+8650a31
+      - name: Verify WASM release and tests
+        run: |
+          npm run build:check
+          moon test wasm
+          npm run test:wasm
+
+  lsp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lsp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: lsp/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  website:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Set up MoonBit baseline
+        uses: hustcer/setup-moonbit@v1
+        with:
+          version: 0.1.20260417+8650a31
+      - run: moon build --target wasm-gc wasm
+      - run: npm ci
+        working-directory: website
+      - run: npm run test:corpus
+        working-directory: website
+      - run: npm run build
+        working-directory: website
+      - run: npm run test:smoke
+        working-directory: website
+
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check architecture, API and documentation
+        run: |
+          npm run test:scripts
+          npm run check:boundaries
+          npm run check:api
+          npm run check:wasm-abi
+          npm run check:fixtures
+          npm run check:packs
+          npm run check:version
+          npm run check:docs
+      - name: Enforce API change governance
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-api-change.mjs --base=${{ github.event.pull_request.base.sha }}

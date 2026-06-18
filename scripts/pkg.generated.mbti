@@ -8,6 +8,8 @@ import {
 // Values
 pub fn run_bench_incremental(Array[String]) -> Int
 
+pub fn run_bench_lexer(Array[String]) -> Int
+
 pub fn run_bench_parse(Array[String]) -> Int
 
 pub fn run_bench_serialize(Array[String]) -> Int
@@ -32,6 +34,8 @@ type FuzzJsonOptions derive(@debug.Debug)
 type IncrementalOutcome derive(Eq, @debug.Debug)
 
 type JsonToken derive(@debug.Debug)
+
+type LexerBenchGrammar
 
 type MutateInputOptions derive(@debug.Debug)
 

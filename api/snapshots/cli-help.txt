@@ -1,0 +1,180 @@
+## global_usage
+Usage: moonparse [global-options] <command> [options]
+
+Commands:
+  generate       <file.grammar>  Compile grammar to .parse_table
+  parse          <file.grammar>  Parse input and print CST
+  check          <file.grammar>  Validate grammar and report conflicts
+  fmt            <file.grammar>  Format a .grammar file
+  query          <pattern>       Run S-expression query on CST
+  test           [dir]           Run corpus test cases
+  build          <file>          Build distributable parser artifact
+  wasm           <file>          Build WASM distribution package
+  dump           <target> <file> Dump internal structures for debugging
+  clean                          Remove generated/, build/, dist/
+  pack           <command>       Create, check, test, or build a Language Pack
+
+Global options (before <command>):
+  --no-color     Disable ANSI color output
+  -q, --quiet    Suppress informational output (errors/warnings still shown)
+
+Options:
+  -h, --help     Show help
+  -v, --version  Show version
+
+Run 'moonparse help <command>' for command-specific help.
+
+## generate_usage
+Usage: moonparse generate <file.grammar> [options]
+
+Options:
+  -o, --output <path>   Output file (default: <base>.parse_table)
+  --json                Output JSON format parse table (debug)
+  --diagnostic          Print LR item sets and GOTO table to stderr
+  --force               Output despite ambiguity conflicts
+  -h, --help            Show this help
+
+## parse_usage
+Usage: moonparse parse (-g <grammar> | -t <table> | -b <bundle>) [input-file] [options]
+
+Options:
+  -g, --grammar <file>  Grammar file (.grammar)
+  -t, --table   <file>  Parse table file (.parse_table)
+  -b, --bundle  <file>  LanguageBundle JSON (enables its Scanner)
+  --format <fmt>        Output format: sexp (default), json, dot (Graphviz), tree
+  -o, --output <file>   Write output to file instead of stdout
+  --outdir <dir>        Write output to auto-named file under directory
+  --tokens              Also print token stream
+  --error-summary       Only print ERROR node summary
+  --stdin               Read input from stdin
+  -h, --help            Show this help
+
+## check_usage
+Usage: moonparse check <file.grammar>
+
+Exit codes: 0 = ok, 1 = warnings, 2 = errors
+
+Options:
+  --conflict-detail     Explain each conflict with actions and Mermaid graph
+  --explain-conflicts   Alias for --conflict-detail
+  -h, --help            Show this help
+
+## fmt_usage
+Usage: moonparse fmt <file.grammar> [options]
+
+Options:
+  --check   Check only, do not write (for CI)
+  --stdout  Write result to stdout instead of in-place
+  -h, --help  Show this help
+
+## query_usage
+Usage: moonparse query <pattern> [input-file] [options]
+
+Options:
+  -g, --grammar <file>  Grammar file (.grammar)
+  -t, --table   <file>  Parse table file (.parse_table)
+  -b, --bundle  <file>  LanguageBundle JSON; pattern may be highlights/locals/bindings
+  --json                Output JSON format
+  --count               Only print match count
+  -h, --help            Show this help
+
+## test_usage
+Usage: moonparse test <spec>
+
+spec formats:
+  grammar.grammar:corpus.txt   Explicit grammar and corpus files
+  corpus.txt                   Auto-derives grammar from same basename
+
+Exit codes: 0 = all passed, 1 = test failures, 2 = load/compile error
+
+Options:
+  -h, --help  Show this help
+
+## build_usage
+Usage: moonparse build <file> [options]
+
+Input: .grammar file (generates parse table first) or .parse_table file
+
+Output: build/
+  parser.parse_table   Binary parse table (native target)
+  parser.wasm          Same artifact with .wasm extension (with --wasm)
+
+Options:
+  -o, --output <dir>   Output directory (default: build/)
+  --wasm               Also write parser.wasm alongside parser.parse_table
+  --conflict-detail    Explain each grammar conflict with actions and graph
+  --explain-conflicts  Alias for --conflict-detail
+  -h, --help           Show this help
+
+## wasm_usage
+Usage: moonparse wasm (-g <file.grammar> | -t <file.parse_table>) [options]
+
+Build a WASM distribution package from a grammar or parse table.
+
+Output: dist/
+  parser.js            JavaScript module (embeds grammar DSL)
+  parser.parse_table   Binary parse table
+
+Options:
+  -g, --grammar <file>  Grammar file (.grammar)
+  -t, --table   <file>  Parse table file (.parse_table)
+  -o, --output <dir>    Output directory (default: dist/)
+  -h, --help            Show this help
+
+## dump_usage
+Usage: moonparse dump <target> <file> [options]
+
+Targets:
+  ir         Print the grammar IR (rules, terminals, precedences)
+  table      Print the LALR parse table as JSON
+  automaton  Print LR(0) item sets and GOTO transitions
+
+Input: .grammar file (or .parse_table for 'table' target)
+
+Options:
+  -h, --help  Show this help
+
+Examples:
+  moonparse dump ir      grammar.grammar
+  moonparse dump table   grammar.grammar
+  moonparse dump automaton grammar.grammar
+
+## clean_usage
+Usage: moonparse clean [options]
+
+Remove build artifacts: generated/, build/, dist/
+
+Options:
+  -f, --force  Skip confirmation (currently always skips, reserved for future use)
+  -h, --help   Show this help
+
+## pack_usage
+Usage: moonparse pack [--format human|json] <command> [options]
+
+Commands:
+  init [<id>] [options]       Create a Language Pack (interactive without id)
+  check [<pack-dir>]          Validate a Language Pack
+  test [<pack-dir>] [--update] Run Corpus tests or update v2 snapshots
+  build [<pack-dir>] [options] Build Bundle and distribution targets
+  import-tree-sitter <tree-sitter-dir> --dir <pack-dir>
+                              Import Tree-sitter grammar.json as a Pack
+  export-tree-sitter <pack-dir> -o <grammar.json>
+                              Export a Pack as Tree-sitter grammar.json
+
+Init options:
+  --name <name> --entry-rule <rule> --extension <ext>
+  --maturity <value> --dir <path>
+
+Build options:
+  --target bundle|moonbit|wasm|npm  Repeatable; default is Bundle only
+  --out-dir <dir>                   Distribution root (default: dist/<id>)
+  --package-name <name>             Override NPM package name
+  -o, --output <file>               Single Bundle output only
+
+Import Tree-sitter options:
+  --dir <path>                      Target Pack directory
+  --id <id> --name <name> --version <semver>
+  --extension <ext>                 Repeatable extension override
+
+Export Tree-sitter options:
+  -o, --output <grammar.json>       Output grammar.json path

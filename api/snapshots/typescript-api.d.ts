@@ -85,7 +85,62 @@ export declare class MoonQuery {
   exec(tree: ParseTree): CaptureResult[];
   /** 在语法树上运行 locals 查询，返回局部变量解析结果（start_byte → true 的映射）。 */
   resolveLocals(tree: ParseTree): Record<string, boolean>;
+  /** 在语法树上运行 binding 查询，返回完整 BindingGraph。 */
+  resolveBindings(tree: ParseTree): BindingGraph;
   free(): void;
+}
+
+// ── BindingGraph（来自 query/bindings.mbt 的 JSON wire type） ──
+
+export interface BindingScope {
+  id: number;
+  parent: number;
+  start_byte: number;
+  end_byte: number;
+  kind: string;
+}
+
+export interface BindingDefinition {
+  id: number;
+  name: string;
+  kind: string;
+  ns: string;
+  scope_id: number;
+  start_byte: number;
+  end_byte: number;
+}
+
+export interface BindingReference {
+  id: number;
+  name: string;
+  kind: string;
+  ns: string;
+  scope_id: number;
+  start_byte: number;
+  end_byte: number;
+}
+
+export interface BindingEdge {
+  reference_id: number;
+  definition_id: number;
+}
+
+export interface BindingDiagnostic {
+  kind: string;
+  message: string;
+  reference_id: number;
+  definition_id: number;
+  start_byte: number;
+  end_byte: number;
+}
+
+export interface BindingGraph {
+  uri: string;
+  scopes: BindingScope[];
+  definitions: BindingDefinition[];
+  references: BindingReference[];
+  edges: BindingEdge[];
+  diagnostics: BindingDiagnostic[];
 }
 
 
@@ -94,6 +149,10 @@ export declare class ParseTree {
   readonly json: string;
   readonly root: CstNode;
   sexp(): string;
+  /** 导出带缩进、span 和叶子原文的完整调试树文本。 */
+  text(): string;
+  /** 导出隐藏 extras/token/零宽节点并折叠常见包装节点的简化调试树文本。 */
+  prettyText(): string;
   errorSummary(): string;
   walk(): TreeCursor;
   query(pattern: string): CaptureResult[];
@@ -113,7 +172,30 @@ export declare class MoonParser {
   free(): void;
 }
 
+export interface LanguageBundleCapabilities {
+  highlights: boolean;
+  locals: boolean;
+  bindings: boolean;
+  scanner: boolean;
+}
+
+export declare class MoonLanguage {
+  readonly id: string;
+  readonly version: string;
+  readonly name: string;
+  readonly extensions: string[];
+  readonly capabilities: LanguageBundleCapabilities;
+  readonly bundle: object;
+  readonly parser: MoonParser;
+  parse(source: string): ParseTree;
+  highlight(tree: ParseTree): HighlightRange[];
+  resolveLocals(tree: ParseTree): Record<string, boolean>;
+  resolveBindings(tree: ParseTree): BindingGraph;
+  free(): void;
+}
+
 export interface MoonParseInstance {
+  loadBundle(bundleJson: string): MoonLanguage;
   createParser(dsl: string): MoonParser;
   createParserFromJson(tableJson: string, builtinId?: string | null): MoonParser;
   /** 从预编译的二进制解析表创建解析器（由 build 命令或 tableBytes() 导出的 MPT 字节）。 */
@@ -121,6 +203,9 @@ export interface MoonParseInstance {
   /** 从 grammar_to_json 格式的 Grammar 对象直接编译解析器，无需手写 DSL 字符串。 */
   createParserFromGrammarObject(grammarObj: object): MoonParser;
   validateDsl(dsl: string): boolean;
+  /** 返回所有内置语法（JSON 格式），key 为 languageId。 */
+  builtinGrammarsJson(): string;
+  builtinBundlesJson(): string;
   /**
    * 对 DSL 字符串做纯语法 + 语义校验（不执行 tablegen），返回错误数组。
    * 无错误时返回空数组，有错误时返回 [{rule, kind?, message}, ...]。

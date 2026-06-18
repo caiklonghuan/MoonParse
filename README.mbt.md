@@ -10,6 +10,7 @@ MoonBit 编写的解析器生成器与语言工具链基础设施。当前仓库
 - 查询能力：结构化 query、capture、高亮范围和 locals 解析。
 - 内置语法：`json`、`json5`、`c`、`python`、`moonbit`。
 - 对外集成：根包 API、`cmd/` 命令行入口（仓库内通过 `moon run cmd/main --` 调用）、`wasm/` 宿主桥接、`website/` 文档与在线 playground。
+- Language Pack：版本化 Manifest、Grammar/Query/Scanner/Corpus 组织，以及可跨宿主加载的统一 Bundle。
 
 当前已确认的仓库级状态：
 
@@ -17,34 +18,23 @@ MoonBit 编写的解析器生成器与语言工具链基础设施。当前仓库
 - `wasm/wasm_wbtest.mbt` 当前 targeted whitebox 回归可通过。
 - `website/` 生产构建当前可通过。
 
-## 构建
+## 构建与测试
 
-面向仓库使用者的常用构建入口如下：
+仓库统一使用 Node.js 22。`VERSION` 是软件版本的唯一来源；根目录脚本负责跨 MoonBit、WASM、LSP 与 Website 的构建和一致性检查。
 
 ```bash
-# 构建主模块与分包
-moon build
+# 安装各 Node 工作区依赖
+npm --prefix lsp ci
+npm --prefix website ci
 
-# 运行 CLI 入口
-moon run cmd/main -- --help
-
-# 构建 release wasm 产物
-moon build --target wasm-gc --release --strip
-
-# 启动 website 开发环境
-Push-Location website
-npm install
-npm run dev
-Pop-Location
-
-# 构建 website 静态产物
-Push-Location website
-npm install
+# 构建权威 WASM、组装 NPM 目录并同步 Website 运行时
 npm run build
-Pop-Location
+
+# 完整本地门禁
+npm test
 ```
 
-`moon build` 覆盖根包 API 与各分包；website 目录提供 `dev`、`build`、`preview` 三个前端入口；release wasm 产物用于浏览器和宿主侧集成。
+MoonBit 单独验证仍可使用 `moon check`、`moon test`、`moon fmt --check` 和 `moon info`。详细命令见 [测试指南](docs/testing.md)，生成物归属见 [生成物说明](docs/generated-artifacts.md)。
 
 ## 使用方式
 
@@ -356,7 +346,7 @@ Pop-Location
 
 ## 文档导航
 
-- [DESIGN.md](DESIGN.md)：根目录设计摘要，说明总体架构、关键决策、当前边界和风险。
+- [docs/architecture.md](docs/architecture.md)：总体架构、依赖方向与模块边界。
 - [README.md](README.md)：与本文件同步的 GitHub 入口 README。
 - [grammar/README.md](grammar/README.md)：Grammar DSL 与前端模型。
 - [tablegen/README.md](tablegen/README.md)：建表链路与冲突处理。

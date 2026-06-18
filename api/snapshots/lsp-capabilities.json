@@ -1,0 +1,36 @@
+{
+  "textDocumentSync": {
+    "openClose": true,
+    "change": 2
+  },
+  "semanticTokensProvider": {
+    "legend": {
+      "tokenTypes": [
+        "function",
+        "variable",
+        "keyword",
+        "string",
+        "number",
+        "comment",
+        "type",
+        "operator"
+      ],
+      "tokenModifiers": []
+    },
+    "full": true,
+    "range": true
+  },
+  "documentSymbolProvider": true,
+  "hoverProvider": true,
+  "definitionProvider": true,
+  "referencesProvider": true,
+  "completionProvider": {
+    "triggerCharacters": [
+      ".",
+      "@"
+    ]
+  },
+  "documentFormattingProvider": true,
+  "documentRangeFormattingProvider": true,
+  "codeActionProvider": true
+}

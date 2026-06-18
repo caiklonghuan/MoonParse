@@ -10,35 +10,28 @@ MoonBit 编写的解析器生成器与语言工具链基础设施。当前仓库
 - 查询能力：结构化 query、capture、高亮范围和 locals 解析。
 - 内置语法：`json`、`json5`、`c`、`python`、`moonbit`。
 - 对外集成：根包 API、`cmd/` 命令行入口（仓库内通过 `moon run cmd/main --` 调用）、`wasm/` 宿主桥接、`website/` 文档与在线 playground。
+- Language Pack：版本化 Manifest、Grammar/Query/Scanner/Corpus 组织，以及可跨宿主加载的统一 Bundle。
 
-## 构建
+## 构建与测试
 
-面向仓库使用者的常用构建入口如下：
+仓库统一使用 Node.js 22。`VERSION` 是软件版本的唯一来源；根目录脚本负责跨 MoonBit、WASM、LSP 与 Website 的构建和一致性检查。
 
 ```bash
-# 构建主模块与分包
-moon build
+# 安装各 Node 工作区依赖
+npm --prefix lsp ci
+npm --prefix website ci
 
-# 运行 CLI 入口
-moon run cmd/main -- --help
-
-# 构建 release wasm 产物
-moon build --target wasm-gc --release --strip
-
-# 启动 website 开发环境
-Push-Location website
-npm install
-npm run dev
-Pop-Location
-
-# 构建 website 静态产物
-Push-Location website
-npm install
+# 构建权威 WASM、组装 NPM 目录并同步 Website 运行时
 npm run build
-Pop-Location
+
+# 在临时构建结果与入库发布物之间做 freshness 检查
+npm run build:check
+
+# 完整本地门禁
+npm test
 ```
 
-`moon build` 覆盖根包 API 与各分包；website 目录提供 `dev`、`build`、`preview` 三个前端入口；release wasm 产物用于浏览器和宿主侧集成。
+MoonBit 单独验证仍可使用 `moon check`、`moon test`、`moon fmt --check` 和 `moon info`。详细命令见 [测试指南](docs/testing.md)，生成物归属见 [生成物说明](docs/generated-artifacts.md)。
 
 ## 使用方式
 
@@ -117,15 +110,15 @@ moon run cmd/main -- generate grammars/json.grammar -o out/json.parse_table
 # 2) 生成按语法固化的分发目录
 moon run cmd/main -- wasm -t out/json.parse_table -o out/dist
 
-# 3) 构建 MoonParse 的真实 wasm 运行时
-moon build --target wasm-gc --release --strip
+# 3) 构建并同步 MoonParse 的权威 wasm 运行时
+npm run build
 ```
 
 其中：
 
 - `out/dist/parser.js` 是按语法固化后的 ES Module 胶水；
 - `out/json.parse_table` 是可单独缓存或分发的二进制解析表；
-- `_build/wasm-gc/release/build/wasm/wasm.wasm` 是 MoonParse 的真实 wasm 运行时，通常需要复制为和宿主约定的 `moonparse.wasm` 路径。
+- `wasm/moonparse.wasm` 是入库的唯一权威二进制发布物；构建脚本负责从 MoonBit release 构建结果更新它。
 
 浏览器侧如果直接加载 runtime + 解析表，可以这样接入：
 
@@ -287,18 +280,15 @@ release wasm + precompiled table
 
 ### website 与分发约束
 
-当前 website 采用“预编译表优先”的思路：
+website 采用“构建时生成、发布物不重复入库”的方式：
 
 - `website/src/data/languagePresets.js` 提供内置 grammar 定义。
-- `website/src/data/precompiledTables.js` 提供预编译表缓存。
-- `website/public/moonparse.wasm` 提供实际浏览器运行时。
+- `website/src/data/precompiledTables.js` 在构建时生成预编译表缓存。
+- `website/public/moonparse.{js,wasm}` 在构建时从 `wasm/` 同步。
 
 当 runtime / wasm 或内置 grammar 发生变化时，分发路径需要同步执行：
 
-1. 使用 `_build/wasm-gc/release/build/wasm/wasm.wasm` 作为最新 wasm 产物来源。
-2. 同步复制到 `wasm/moonparse.wasm` 和 `website/public/moonparse.wasm`。
-3. 重新运行 `node scripts/precompile-grammars.mjs` 更新预编译表。
-4. 执行 `npm run build` 验证 website 产物。
+统一执行根目录 `npm run build`；CI 使用 `npm run build:check` 检测发布物或生成物漂移。不要手工提交 Website 副本或 `out/`。
 
 ## 进阶命令
 
@@ -326,3 +316,8 @@ moon run scripts -- help
 - [wasm/README.md](wasm/README.md)：WASM 宿主接口。
 - [cmd/README.md](cmd/README.md)：命令行工作流，仓库内统一通过 `moon run cmd/main --` 调用。
 - [scripts/README.md](scripts/README.md)：fuzz 和 benchmark。
+- [docs/architecture.md](docs/architecture.md)：模块边界与依赖方向。
+- [docs/api-stability.md](docs/api-stability.md)：公开 API 与兼容策略。
+- [docs/compatibility.md](docs/compatibility.md)：版本、废弃与格式兼容规则。
+- [docs/testing.md](docs/testing.md)：本地和 CI 测试基线。
+- [docs/language-packs.md](docs/language-packs.md)：Language Pack、Bundle 与内置语言迁移。

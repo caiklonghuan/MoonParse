@@ -379,6 +379,21 @@ moon run scripts -- bench-incremental --grammar both --size medium --runs 10
 ```bash
 moon run scripts -- bench-serialize --grammar both --runs 1
 moon run scripts -- bench-parse --grammar both --runs 1
+
+## Lexer regression benchmark
+
+P1a adds a raw lexer benchmark for the built-in JSON, expression, and MoonBit
+grammars:
+
+```bash
+moon run scripts -- bench-lexer --grammar all --runs 30
+```
+
+The command requires at least 30 warmed samples and reports median latency,
+scanned characters, DFA transitions, and lexer-cache hits. CI records the full
+output as both a job summary and the `lexer-benchmark` artifact. Compare runs
+from the same MoonBit toolchain and target; a median regression above 15% is a
+release blocker.
 ```
 
 适合在：

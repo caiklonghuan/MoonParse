@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "softwareVersion": "0.1.0",
+  "surfaces": {
+    "moonbit-mbti": "tracked-in-package",
+    "wasm-exports": "advanced",
+    "typescript-api": "stable-public",
+    "cli-help": "application",
+    "cli-exit-codes": "application",
+    "lsp-capabilities": "application",
+    "parse-table-v3-fixture": "advanced",
+    "languagepack-mbti": "stable-public"
+  }
+}

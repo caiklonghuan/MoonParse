@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "global": {
+    "success": 0,
+    "invalidArguments": 2
+  },
+  "check": {
+    "ok": 0,
+    "warnings": 1,
+    "errors": 2
+  },
+  "test": {
+    "passed": 0,
+    "failures": 1,
+    "loadOrCompileError": 2
+  },
+  "pack": {
+    "success": 0,
+    "warningsOrTestFailures": 1,
+    "fatalError": 2
+  }
+}

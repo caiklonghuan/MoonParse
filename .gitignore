@@ -1,5 +1,11 @@
 .DS_Store
 _build/
+build/
+out/
+dist/
+**/dist/
+node_modules/
+**/node_modules/
 .mooncakes/
 .moonagent/
 .vite/
@@ -10,9 +16,11 @@ DESIGN.md
 REVIEW.md
 designprompt.md
 designreview.md
-.gitignore
 reviewprompt.md
 .claude/
 方向.md
 harmonymd
 todo/
+website/public/moonparse.js
+website/public/moonparse.wasm
+website/src/data/precompiledTables.js

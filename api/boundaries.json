@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "modulePrefix": "caiklonghuan/MoonParse",
+  "ignoredDirectories": [
+    ".git",
+    "_build",
+    "build",
+    "dist",
+    "node_modules",
+    "out"
+  ],
+  "packages": {
+    ".": {
+      "name": "root",
+      "layer": "stable-public",
+      "allow": ["grammar", "tablegen", "runtime", "grammars"]
+    },
+    "grammar": {
+      "name": "grammar",
+      "layer": "stable-public",
+      "allow": []
+    },
+    "tablegen": {
+      "name": "tablegen",
+      "layer": "advanced",
+      "allow": ["grammar"]
+    },
+    "runtime": {
+      "name": "runtime",
+      "layer": "stable-public",
+      "allow": ["grammar", "tablegen"]
+    },
+    "query": {
+      "name": "query",
+      "layer": "stable-public",
+      "allow": ["grammar", "tablegen", "runtime"]
+    },
+    "languagepack": {
+      "name": "languagepack",
+      "layer": "stable-public",
+      "allow": ["grammar", "tablegen", "runtime", "query"]
+    },
+    "treesitterinterop": {
+      "name": "treesitterinterop",
+      "layer": "adapter",
+      "allow": ["grammar", "query", "languagepack"]
+    },
+    "grammars": {
+      "name": "grammars",
+      "layer": "resource",
+      "allow": ["grammar", "tablegen", "runtime", "languagepack"]
+    },
+    "wasm": {
+      "name": "wasm",
+      "layer": "adapter",
+      "allow": ["grammar", "tablegen", "runtime", "query", "languagepack", "grammars"]
+    },
+    "cmd/main": {
+      "name": "cmd",
+      "layer": "application",
+      "allow": ["grammar", "tablegen", "runtime", "query", "languagepack", "grammars", "treesitterinterop"]
+    },
+    "scripts": {
+      "name": "scripts",
+      "layer": "internal",
+      "allow": ["grammar", "tablegen", "runtime", "grammars"]
+    },
+    "examples/api_smoke": {
+      "name": "api-smoke",
+      "layer": "compatibility-test",
+      "allow": [".", "grammar", "tablegen", "runtime", "query"]
+    }
+  }
+}

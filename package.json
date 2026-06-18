@@ -1,0 +1,23 @@
+{
+  "name": "moonparse-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node scripts/test-all.mjs",
+    "build": "node scripts/build-artifacts.mjs",
+    "build:check": "node scripts/build-artifacts.mjs --check",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:api": "node scripts/api-snapshots.mjs --check",
+    "check:wasm-abi": "node scripts/check-wasm-abi.mjs",
+    "check:fixtures": "node scripts/compat-fixtures.mjs --check",
+    "check:packs": "node scripts/embed-language-packs.mjs --check",
+    "check:version": "node scripts/version.mjs --check",
+    "test:scripts": "node --test --experimental-test-isolation=none scripts/*.test.mjs",
+    "test:wasm": "node examples/api_smoke/node-smoke.mjs"
+  }
+}

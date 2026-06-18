@@ -11,6 +11,7 @@ fn global_usage() -> String {
     #|  moon run scripts -- bench-parse [--grammar json|expression|both] [--runs N]
     #|  moon run scripts -- bench-incremental [--grammar json|expression|both] [--runs N] [--size small|medium|large]
     #|  moon run scripts -- bench-serialize [--grammar json|expression|both] [--runs N]
+    #|  moon run scripts -- bench-lexer [--grammar json|expression|moonbit|all] [--runs N]
     #|
     #|subcommands:
     #|  fuzz-json          Run deterministic JSON guided fuzz and optional mutation fuzz.
@@ -19,6 +20,7 @@ fn global_usage() -> String {
     #|  bench-parse        Benchmark parse table generation and full/error parse timing + table size.
     #|  bench-incremental  Benchmark incremental vs full parse timing for various edit scenarios.
     #|  bench-serialize    Benchmark parse table serialize/deserialize timing and byte counts.
+    #|  bench-lexer        Benchmark raw lexer selection for JSON, expression, and MoonBit.
     #|
     #|examples:
     #|  moon run scripts -- fuzz-json --count 1000 --seed 61093
@@ -40,6 +42,7 @@ fn help_for(subcommand : String?) -> String {
     Some("bench-parse") => bench_parse_usage()
     Some("bench-incremental") => bench_incremental_usage()
     Some("bench-serialize") => bench_serialize_usage()
+    Some("bench-lexer") => lexer_bench_usage()
     Some(other) => "unknown subcommand '\{other}'\n\n" + global_usage()
   }
 }
@@ -73,6 +76,7 @@ fn main {
       "bench-parse" => run_bench_parse(argv[1:].to_array())
       "bench-incremental" => run_bench_incremental(argv[1:].to_array())
       "bench-serialize" => run_bench_serialize(argv[1:].to_array())
+      "bench-lexer" => run_bench_lexer(argv[1:].to_array())
       other => {
         println("unknown subcommand '\{other}'")
         println("")
