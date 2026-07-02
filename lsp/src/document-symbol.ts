@@ -1,9 +1,10 @@
 // documentSymbol — CST 遍历提取代码大纲（函数/类/结构体/变量/规则等）
 
 import { SymbolKind, type DocumentSymbol } from "vscode-languageserver";
-import type { TreeCursor, ParseTree } from "../../wasm/moonparse.js";
+import type { BindingDefinition, TreeCursor, ParseTree } from "../../wasm/moonparse.js";
 import type { DocumentEntry } from "./document-manager.js";
 import { byteOffsetToUtf16, type LspPosition } from "./position.js";
+import type { BindingIndex } from "./binding-index.js";
 // ── 节点类型 → SymbolKind 映射 ──
 // Grammar DSL 特有类型在前，通用类型在后
 
@@ -42,7 +43,13 @@ const PER_LANG_KINDS: Record<string, Record<string, SymbolKind>> = {
 export function extractDocumentSymbols(
   entry: DocumentEntry,
   tree: ParseTree,
+  bindingIndex?: BindingIndex,
 ): DocumentSymbol[] {
+  if (bindingIndex && !bindingIndex.isEmpty()) {
+    const bindingSymbols = extractBindingDocumentSymbols(entry, bindingIndex);
+    if (bindingSymbols.length > 0) return bindingSymbols;
+  }
+
   const cursor = tree.walk();
   const symbols: DocumentSymbol[] = [];
   const langKinds = PER_LANG_KINDS[entry.languageId] ?? {};
@@ -85,6 +92,102 @@ export function extractDocumentSymbols(
   walk(cursor, symbols);
   cursor.free();
   return symbols;
+}
+
+function extractBindingDocumentSymbols(
+  entry: DocumentEntry,
+  bindingIndex: BindingIndex,
+): DocumentSymbol[] {
+  const nodes = bindingIndex.allDefinitions().map((definition) =>
+    bindingDefinitionToNode(entry, definition));
+  nodes.sort((a, b) =>
+    a.startByte - b.startByte ||
+    b.endByte - a.endByte ||
+    a.symbol.name.localeCompare(b.symbol.name));
+
+  const roots: DocumentSymbol[] = [];
+  const stack: BindingSymbolNode[] = [];
+  for (const node of nodes) {
+    while (stack.length > 0 && !containsRange(stack[stack.length - 1], node)) {
+      stack.pop();
+    }
+    const parent = stack[stack.length - 1];
+    if (parent && containsRange(parent, node)) {
+      parent.symbol.children ??= [];
+      parent.symbol.children.push(node.symbol);
+    } else {
+      roots.push(node.symbol);
+    }
+    stack.push(node);
+  }
+  return roots;
+}
+
+interface BindingSymbolNode {
+  symbol: DocumentSymbol;
+  startByte: number;
+  endByte: number;
+}
+
+function bindingDefinitionToNode(
+  entry: DocumentEntry,
+  definition: BindingDefinition,
+): BindingSymbolNode {
+  const startByte = definition.declaration_start_byte ?? definition.start_byte;
+  const endByte = definition.declaration_end_byte ?? definition.end_byte;
+  const fullRange = posRange(entry, startByte, endByte);
+  const selRange = posRange(entry, definition.start_byte, definition.end_byte);
+  return {
+    startByte,
+    endByte,
+    symbol: {
+      name: definition.name,
+      kind: bindingSymbolKind(definition.kind),
+      range: { start: fullRange[0], end: fullRange[1] },
+      selectionRange: { start: selRange[0], end: selRange[1] },
+      children: [],
+    },
+  };
+}
+
+function containsRange(parent: BindingSymbolNode, child: BindingSymbolNode): boolean {
+  if (parent.startByte === child.startByte && parent.endByte === child.endByte) {
+    return false;
+  }
+  return parent.startByte <= child.startByte && child.endByte <= parent.endByte;
+}
+
+function bindingSymbolKind(kind: string): SymbolKind {
+  switch (kind) {
+    case "function":
+      return SymbolKind.Function;
+    case "method":
+      return SymbolKind.Method;
+    case "constant":
+      return SymbolKind.Constant;
+    case "parameter":
+    case "variable":
+      return SymbolKind.Variable;
+    case "struct":
+      return SymbolKind.Struct;
+    case "enum":
+      return SymbolKind.Enum;
+    case "trait":
+      return SymbolKind.Interface;
+    case "field":
+      return SymbolKind.Field;
+    case "enum_member":
+      return SymbolKind.EnumMember;
+    case "type_parameter":
+      return SymbolKind.TypeParameter;
+    case "rule":
+      return SymbolKind.Function;
+    case "token":
+      return SymbolKind.Variable;
+    case "type":
+    default:
+      return SymbolKind.Class;
+  }
 }
 
 // ── 名称提取 ──

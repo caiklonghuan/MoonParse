@@ -29,6 +29,11 @@ export interface SymbolHit {
   endByte: number;
 }
 
+export interface ResolvedBindingSymbol {
+  hit: SymbolHit;
+  definition: BindingDefinition;
+}
+
 // ── BindingIndex ──
 
 export class BindingIndex {
@@ -197,6 +202,121 @@ export class BindingIndex {
     return result;
   }
 
+  visibleDefinitionsAtByte(byte: number): BindingDefinition[] {
+    const scopeId = this.containingScopeId(byte);
+    return scopeId === null ? [] : this.visibleDefinitions(scopeId);
+  }
+
+  containingScopeId(byte: number): number | null {
+    if (!this.graph || this.graph.scopes.length === 0) return null;
+    let best: BindingScope | null = null;
+    for (const scope of this.graph.scopes) {
+      if (scope.start_byte <= byte && byte <= scope.end_byte) {
+        if (!best ||
+          (scope.start_byte >= best.start_byte && scope.end_byte <= best.end_byte)) {
+          best = scope;
+        }
+      }
+    }
+    return best?.id ?? null;
+  }
+
+  scopeChain(scopeId: number): BindingScope[] {
+    if (!this.graph) return [];
+    const result: BindingScope[] = [];
+    const seen = new Set<number>();
+    let current = scopeId;
+    while (current >= 0 && !seen.has(current)) {
+      seen.add(current);
+      const scope = this.getScope(current);
+      if (!scope) break;
+      result.push(scope);
+      current = scope.parent;
+    }
+    return result;
+  }
+
+  resolveSymbol(hit: SymbolHit): ResolvedBindingSymbol | null {
+    const definition = hit.kind === "definition"
+      ? this.getDefinition(hit.id)
+      : this.findDefinition(hit.id);
+    return definition ? { hit, definition } : null;
+  }
+
+  resolveSymbolAt(
+    entry: DocumentEntry,
+    line: number,
+    character: number,
+  ): ResolvedBindingSymbol | null {
+    const hit = this.getSymbolAt(entry, line, character);
+    return hit ? this.resolveSymbol(hit) : null;
+  }
+
+  referencesForDefinition(
+    defId: number,
+    includeDeclaration: boolean,
+  ): Array<BindingDefinition | BindingReference> {
+    const result: Array<BindingDefinition | BindingReference> = [];
+    if (includeDeclaration) {
+      const def = this.getDefinition(defId);
+      if (def) result.push(def);
+    }
+    result.push(...this.findReferences(defId));
+    return sortUniqueBindings(result);
+  }
+
+  allDefinitions(): BindingDefinition[] {
+    return sortDefinitions([...this.defs.values()]);
+  }
+
+  allReferences(): BindingReference[] {
+    return sortReferences([...this.refs.values()]);
+  }
+
+  definitionsInScope(scopeId: number): BindingDefinition[] {
+    return sortDefinitions([...(this.scopeDefs.get(scopeId) ?? [])]);
+  }
+
+  hasDefinition(defId: number): boolean {
+    return this.defs.has(defId);
+  }
+
+  wouldResolveNameToDefinition(
+    scopeId: number,
+    name: string,
+    ns: string,
+    targetDefId: number,
+  ): boolean {
+    const target = this.getDefinition(targetDefId);
+    if (!target) return false;
+    for (const scope of this.scopeChain(scopeId)) {
+      const blockers = (this.scopeDefs.get(scope.id) ?? []).filter(
+        (d) => d.ns === ns && d.name === name && d.id !== targetDefId,
+      );
+      if (blockers.length > 0) return false;
+      if (scope.id === target.scope_id) return true;
+    }
+    return false;
+  }
+
+  wouldNameBeCapturedByDefinition(
+    scopeId: number,
+    name: string,
+    ns: string,
+    targetDefId: number,
+  ): boolean {
+    const target = this.getDefinition(targetDefId);
+    if (!target) return false;
+    for (const scope of this.scopeChain(scopeId)) {
+      const blockers = (this.scopeDefs.get(scope.id) ?? []).filter(
+        (d) => d.ns === ns && d.name === name && d.id !== targetDefId,
+      );
+      if (blockers.length > 0) return false;
+      if (scope.id === target.scope_id) return true;
+    }
+    return false;
+  }
+
   // 返回所有绑定诊断
   diagnostics(): BindingDiagnostic[] {
     return this.graph?.diagnostics ?? [];
@@ -261,6 +381,44 @@ export class BindingIndex {
   }
 }
 
+function bindingStart(item: BindingDefinition | BindingReference): number {
+  return item.start_byte;
+}
+
+function bindingEnd(item: BindingDefinition | BindingReference): number {
+  return item.end_byte;
+}
+
+function sortDefinitions(defs: BindingDefinition[]): BindingDefinition[] {
+  return defs.sort((a, b) =>
+    a.start_byte - b.start_byte ||
+    a.end_byte - b.end_byte ||
+    a.id - b.id);
+}
+
+function sortReferences(refs: BindingReference[]): BindingReference[] {
+  return refs.sort((a, b) =>
+    a.start_byte - b.start_byte ||
+    a.end_byte - b.end_byte ||
+    a.id - b.id);
+}
+
+function sortUniqueBindings<T extends BindingDefinition | BindingReference>(items: T[]): T[] {
+  const sorted = items.sort((a, b) =>
+    bindingStart(a) - bindingStart(b) ||
+    bindingEnd(a) - bindingEnd(b) ||
+    a.id - b.id);
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of sorted) {
+    const key = `${bindingStart(item)}:${bindingEnd(item)}:${item.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
 // ── 内置 binding query 映射（与 grammars/bindings.mbt 中的常量一致） ──
 
 const GRAMMAR_DSL_BINDINGS = `
@@ -273,14 +431,24 @@ const GRAMMAR_DSL_BINDINGS = `
 const MOONBIT_BINDINGS = `
 (block) @scope.block
 (function_decl) @scope.function
-(function_decl (fn_name (identifier) @definition.function))
-(let_statement (identifier) @definition.variable)
-(parameter (identifier) @definition.parameter)
-(struct_decl (identifier) @definition.type)
-(enum_decl (identifier) @definition.type)
-(type_alias_decl (identifier) @definition.type)
-(enum_case (identifier) @definition.variable)
-(identifier) @reference.variable
+(struct_decl) @scope.class
+(enum_decl) @scope.class
+(trait_decl) @scope.class
+(impl_decl) @scope.class
+(function_decl (fn_name (identifier) @definition.function)) @symbol.function
+(impl_method_decl (identifier) @definition.method) @symbol.method
+(trait_method_decl (identifier) @definition.method) @symbol.method
+(const_decl (identifier) @definition.constant) @symbol.constant
+(type_alias_decl (identifier) @definition.type) @symbol.type
+(struct_decl (identifier) @definition.struct) @symbol.struct
+(enum_decl (identifier) @definition.enum) @symbol.enum
+(trait_decl (identifier) @definition.trait) @symbol.trait
+(field_decl (identifier) @definition.field) @symbol.field
+(enum_case (identifier) @definition.enum_member) @symbol.enum_member
+(parameter (identifier) @definition.parameter) @symbol.parameter
+(postfix_expression (primary_expression (qualified_identifier (identifier) @reference.soft.variable)) (postfix_suffix))
+(simple_type (qualified_identifier (identifier) @reference.soft.type))
+(primary_expression (qualified_identifier (identifier) @reference.variable))
 `;
 
 const PYTHON_BINDINGS = `

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { stripQuotes, isCloseDelimiter, type CstErrorNode } from "./runtime.js";
-import { errorsToDiagnostics } from "./diagnostics.js";
+import { bindingDiagnosticsToDiagnostics, errorsToDiagnostics } from "./diagnostics.js";
 import type { DocumentEntry } from "./document-manager.js";
 
 // ── 工具函数：构造测试用的 DocumentEntry ──
@@ -228,5 +228,48 @@ describe("diagnostic message patterns", () => {
     expect(result).toHaveLength(2);
     expect(result[0].severity).toBe(1);
     expect(result[1].severity).toBe(1);
+  });
+});
+
+describe("bindingDiagnosticsToDiagnostics", () => {
+  it("assigns stable severities and codes", () => {
+    const entry = makeEntry("abc def ghi");
+    const result = bindingDiagnosticsToDiagnostics(
+      entry,
+      [
+        {
+          kind: "unresolved",
+          message: "unresolved reference 'abc'",
+          reference_id: 1,
+          definition_id: -1,
+          start_byte: 0,
+          end_byte: 3,
+        },
+        {
+          kind: "duplicate",
+          message: "duplicate definition 'def'",
+          reference_id: -1,
+          definition_id: 2,
+          start_byte: 4,
+          end_byte: 7,
+        },
+        {
+          kind: "ambiguous",
+          message: "ambiguous reference 'ghi'",
+          reference_id: 3,
+          definition_id: -1,
+          start_byte: 8,
+          end_byte: 11,
+        },
+      ],
+      256,
+    );
+
+    expect(result.map((diag) => diag.severity)).toEqual([2, 1, 1]);
+    expect(result.map((diag) => diag.code)).toEqual([
+      "MP_BIND_UNRESOLVED",
+      "MP_BIND_DUPLICATE",
+      "MP_BIND_AMBIGUOUS",
+    ]);
   });
 });

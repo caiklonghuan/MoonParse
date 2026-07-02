@@ -7,7 +7,9 @@ import {
 } from "vscode-languageserver/node.js";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   type ServerConfig,
@@ -23,14 +25,29 @@ import { MOONPARSE_VERSION } from "./version.js";
 import { errorsToDiagnostics, bindingDiagnosticsToDiagnostics } from "./diagnostics.js";
 import { SemanticTokensManager } from "./semantic-tokens.js";
 import { extractDocumentSymbols } from "./document-symbol.js";
+import { getDocumentHighlights } from "./document-highlight.js";
+import { foldingRangesFromCaptures } from "./folding.js";
+import {
+  getWorkspaceDefinitionLocation,
+  getWorkspaceReferenceLocations,
+} from "./navigation.js";
 import { getHover } from "./hover.js";
 import { SymbolIndex } from "./symbol-index.js";
 import { BindingIndex, bindingQueryForLang } from "./binding-index.js";
 import { getCompletions } from "./completion.js";
+import { parseTableInfo } from "./parse-table-info.js";
+import { prepareRename, renameSymbol } from "./rename.js";
+import { WorkspaceIndex } from "./workspace-index.js";
+import { bindingDiagnosticsWithWorkspace } from "./workspace-bindings.js";
+import {
+  prepareWorkspaceRename,
+  renameWorkspaceSymbol,
+} from "./workspace-rename.js";
+import type { WorkspaceFileEntry } from "./workspace-index.js";
 import { formatGrammar, formatGrammarRange } from "./formatting.js";
 import { getCodeActions } from "./code-actions.js";
 import { isRangeChange, contentChangeToInputEdit } from "./input-edit.js";
-import type { ParseTree } from "../../wasm/moonparse.js";
+import type { BindingGraph, MoonQuery, ParseTree } from "../../wasm/moonparse.js";
 
 const connection = createConnection(ProposedFeatures.all);
 const logger = new Logger(connection, defaultConfig.trace);
@@ -39,15 +56,37 @@ let config: ServerConfig = { ...defaultConfig };
 let store = new DocumentStore(config);
 let runtime = new MoonParseRuntime(logger, config.wasmPath);
 let tokensManager = new SemanticTokensManager(runtime);
+const workspaceIndex = new WorkspaceIndex(config.workspaceIndex);
 let symbolIndex = new SymbolIndex();      // 旧索引，逐步迁移到 bindingIndex
-const bindingIndexes = new Map<string, BindingIndex>();  // 每 URI 一个索引
 
 // shutdown 后拒绝处理请求
 let shutdownReceived = false;
 
 // URI → 当前 ParseTree（用于增量解析及释放）
-const currentTrees = new Map<string, ParseTree>();
 const configuredBundleIds = new Map<string, string>();
+const parseDiagnosticsByUri = new Map<string, Diagnostic[]>();
+const workspaceSkipDirectories = new Set([
+  ".git",
+  ".moon",
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+]);
+
+function workspaceRootsFromInitialize(params: InitializeParams): string[] {
+  const folders = params.workspaceFolders
+    ?.map((folder) => folder.uri)
+    .filter((uri): uri is string => !!uri) ?? [];
+  if (folders.length > 0) return folders;
+  if (params.rootUri) return [params.rootUri];
+  if (params.rootPath) return [pathToFileURL(params.rootPath).href];
+  return [];
+}
+
+function shouldIndexDocument(uri: string, sizeBytes: number): boolean {
+  return workspaceIndex.shouldIndexUri(uri, sizeBytes, config.enabledExtensions);
+}
 
 // ── 生命周期 ──
 
@@ -62,6 +101,8 @@ connection.onInitialize(
       params.initializationOptions as Partial<ServerConfig> | undefined,
     );
     store.updateConfig(config);
+    workspaceIndex.updateConfig(config.workspaceIndex);
+    workspaceIndex.setRoots(workspaceRootsFromInitialize(params));
 
     return {
       capabilities: createServerCapabilities(),
@@ -88,6 +129,7 @@ connection.onInitialized(() => {
 
     logger.telemetry("server.initialized");
     await syncConfiguredBundles();
+    await indexWorkspaceRoots();
   }).catch((err) => {
     logger.error(`WASM 初始化失败: ${safeErrorMessage(err)}`);
   });
@@ -98,10 +140,7 @@ connection.onShutdown(() => {
   shutdownReceived = true;
 
   // 释放所有 ParseTree
-  for (const [, tree] of currentTrees) {
-    runtime.freeTree(tree);
-  }
-  currentTrees.clear();
+  workspaceIndex.dispose((tree) => runtime.freeTree(tree));
 
   store.dispose();
   runtime.dispose();
@@ -121,6 +160,7 @@ connection.onDidChangeConfiguration(async (change) => {
     const prevTrace = config.trace;
     config = mergeConfig(defaultConfig, raw);
     store.updateConfig(config);
+    workspaceIndex.updateConfig(config.workspaceIndex);
 
     if (config.trace !== prevTrace) {
       logger.setLevel(config.trace);
@@ -129,7 +169,10 @@ connection.onDidChangeConfiguration(async (change) => {
     logger.info(
       `配置已更新 — trace=${config.trace} incremental=${config.incrementalParse}`,
     );
-    if (runtime.loaded) await syncConfiguredBundles();
+    if (runtime.loaded) {
+      await syncConfiguredBundles();
+      await indexWorkspaceRoots();
+    }
   }
 });
 
@@ -168,6 +211,121 @@ async function syncConfiguredBundles(): Promise<void> {
   }
 }
 
+async function indexWorkspaceRoots(): Promise<void> {
+  if (!runtime.loaded || !config.workspaceIndex.enabled) return;
+
+  const roots = workspaceIndex.getRoots();
+  if (roots.length === 0) return;
+
+  for (const rootUri of roots) {
+    if (!rootUri.startsWith("file:")) continue;
+    try {
+      await scanWorkspacePath(fileURLToPath(rootUri));
+    } catch (err) {
+      logger.error(`workspace index failed (${rootUri}): ${safeErrorMessage(err)}`);
+    }
+  }
+  refreshOpenBindingDiagnostics();
+  logger.trace(`workspace index files=${workspaceIndex.size}`);
+}
+
+async function scanWorkspacePath(filePath: string): Promise<void> {
+  if (workspaceIndex.size >= config.workspaceIndex.maxFiles) return;
+
+  const info = await stat(filePath);
+  if (info.isDirectory()) {
+    await scanWorkspaceDirectory(filePath);
+    return;
+  }
+  if (info.isFile()) {
+    await indexWorkspaceFile(filePath, info.size, info.mtimeMs);
+  }
+}
+
+async function scanWorkspaceDirectory(dirPath: string): Promise<void> {
+  if (workspaceIndex.size >= config.workspaceIndex.maxFiles) return;
+
+  const entries = await readdir(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (workspaceIndex.size >= config.workspaceIndex.maxFiles) return;
+    if (entry.isDirectory()) {
+      if (workspaceSkipDirectories.has(entry.name)) continue;
+      await scanWorkspaceDirectory(join(dirPath, entry.name));
+    } else if (entry.isFile()) {
+      const filePath = join(dirPath, entry.name);
+      const info = await stat(filePath);
+      await indexWorkspaceFile(filePath, info.size, info.mtimeMs);
+    }
+  }
+}
+
+async function indexWorkspaceFile(
+  filePath: string,
+  sizeBytes: number,
+  mtimeMs: number,
+): Promise<void> {
+  const uri = pathToFileURL(filePath).href;
+  if (store.get(uri)) return;
+  if (!store.isHandled(uri) || !shouldIndexDocument(uri, sizeBytes)) return;
+
+  try {
+    const text = await readFile(filePath, "utf8");
+    const languageId = store.languageForUri(uri) ?? "unknown";
+    const entry = createWorkspaceEntry(uri, text, languageId);
+    parseWorkspaceFile(entry, sizeBytes, mtimeMs);
+  } catch (err) {
+    logger.error(`workspace file index failed (${uri}): ${safeErrorMessage(err)}`);
+  }
+}
+
+function createWorkspaceEntry(
+  uri: string,
+  text: string,
+  languageId: string,
+): DocumentEntry {
+  return {
+    uri,
+    text,
+    version: -1,
+    languageId,
+    parserHandle: -1,
+    treeHandle: -1,
+    lastDiagnostics: [],
+    lineOffsets: buildLineOffsets(text),
+  };
+}
+
+function parseWorkspaceFile(
+  entry: DocumentEntry,
+  sizeBytes: number,
+  mtimeMs: number,
+): void {
+  ensureParser(entry);
+  if (!runtime.hasParser(entry.languageId)) return;
+
+  const oldTree = workspaceIndex.tree(entry.uri);
+  if (oldTree) {
+    runtime.freeTree(oldTree);
+    workspaceIndex.clearRuntime(entry.uri);
+  }
+
+  const tree = runtime.parseFull(entry.languageId, entry.text);
+  const { graph, bindingIndex } = buildBindingsForTree(entry, tree);
+  workspaceIndex.upsertParsedDocument({
+    uri: entry.uri,
+    text: entry.text,
+    lineOffsets: entry.lineOffsets,
+    languageId: entry.languageId,
+    version: entry.version,
+    mtimeMs,
+    sizeBytes,
+    isOpen: false,
+    tree,
+    graph,
+    bindingIndex,
+  });
+}
+
 connection.onRequest("moonparse/loadLanguageBundle", (params: {
   bundleJson: string;
   extensions?: string[];
@@ -175,6 +333,7 @@ connection.onRequest("moonparse/loadLanguageBundle", (params: {
   const language = runtime.loadBundle(params.bundleJson);
   const extensions = params.extensions ?? language.extensions;
   registerBundleExtensions(language.id, extensions);
+  void indexWorkspaceRoots();
   return {
     id: language.id,
     version: language.version,
@@ -205,18 +364,53 @@ function ensureParser(entry: DocumentEntry): void {
   }
 }
 
+function buildBindingsForTree(
+  entry: DocumentEntry,
+  tree: ParseTree,
+): { graph: BindingGraph | null; bindingIndex: BindingIndex | null } {
+  const bundleLanguage = runtime.getLanguage(entry.languageId);
+  const bq = bindingQueryForLang(entry.languageId);
+  let queryToFree: MoonQuery | null = null;
+
+  try {
+    let graph: BindingGraph;
+    if (bundleLanguage?.capabilities.bindings) {
+      graph = bundleLanguage.resolveBindings(tree);
+    } else if (bq) {
+      queryToFree = runtime.compileQuery(bq);
+      graph = runtime.queryResolveBindings(queryToFree, tree);
+    } else {
+      return { graph: null, bindingIndex: null };
+    }
+
+    const bindingIndex = new BindingIndex();
+    bindingIndex.update(entry.uri, entry, graph);
+    return { graph, bindingIndex };
+  } catch {
+    return { graph: null, bindingIndex: null };
+  } finally {
+    if (queryToFree) runtime.freeQuery(queryToFree);
+  }
+}
+
 function triggerParse(entry: DocumentEntry): void {
   if (!runtime.loaded) return;
 
   ensureParser(entry);
   if (!runtime.hasParser(entry.languageId)) return;
+  if (!shouldIndexDocument(entry.uri, entry.text.length)) {
+    workspaceIndex.remove(entry.uri, (tree) => runtime.freeTree(tree));
+    parseDiagnosticsByUri.delete(entry.uri);
+    connection.sendDiagnostics({ uri: entry.uri, diagnostics: [] });
+    return;
+  }
 
   try {
     logger.trace(`parse 开始: ${entry.uri} (${entry.text.length} 字节)`);
 
     // 尝试增量解析
     let tree: ParseTree;
-    const oldTree = currentTrees.get(entry.uri);
+    const oldTree = workspaceIndex.tree(entry.uri);
     const edit = entry.pendingEdit;
     const prevText = entry.previousText;
 
@@ -225,21 +419,27 @@ function triggerParse(entry: DocumentEntry): void {
         tree = runtime.parseIncremental(
           entry.languageId, entry.text, oldTree, edit,
         );
+        workspaceIndex.clearRuntime(entry.uri);
         logger.trace(`parse 增量: ${entry.uri}`);
       } catch {
         // 增量失败 → fallback 全量
         logger.trace(`parse 增量失败，回退全量: ${entry.uri}`);
-        if (oldTree) { runtime.freeTree(oldTree); }
+        if (oldTree) {
+          runtime.freeTree(oldTree);
+          workspaceIndex.clearRuntime(entry.uri);
+        }
         tree = runtime.parseFull(entry.languageId, entry.text);
       }
     } else {
       // 全量解析
-      if (oldTree) { runtime.freeTree(oldTree); }
+      if (oldTree) {
+        runtime.freeTree(oldTree);
+        workspaceIndex.clearRuntime(entry.uri);
+      }
       tree = runtime.parseFull(entry.languageId, entry.text);
     }
 
     // 清理增量状态
-    currentTrees.set(entry.uri, tree);
     entry.pendingEdit = undefined;
     entry.previousText = undefined;
 
@@ -252,42 +452,25 @@ function triggerParse(entry: DocumentEntry): void {
       symbolIndex.build(entry.uri, entry, tree);
     }
 
-    // 新索引（任意语言，按 scope/edge 精确匹配）
-    const bundleLanguage = runtime.getLanguage(entry.languageId);
-    const bq = bindingQueryForLang(entry.languageId);
-    if (bundleLanguage?.capabilities.bindings) {
-      try {
-        const graph = bundleLanguage.resolveBindings(tree);
-        const bi = new BindingIndex();
-        bi.update(entry.uri, entry, graph);
-        bindingIndexes.set(entry.uri, bi);
-      } catch {
-        bindingIndexes.delete(entry.uri);
-      }
-    } else if (bq) {
-      try {
-        const query = runtime.compileQuery(bq);
-        const graph = runtime.queryResolveBindings(query, tree);
-        const bi = new BindingIndex();
-        bi.update(entry.uri, entry, graph);
-        bindingIndexes.set(entry.uri, bi);
-        runtime.freeQuery(query);
-      } catch {
-        // binding query 编译失败 → 清除该 URI 旧索引
-        bindingIndexes.delete(entry.uri);
-      }
-    } else {
-      // 该语言无 binding query → 清除旧索引
-      bindingIndexes.delete(entry.uri);
-    }
+    const { graph: bindingGraph, bindingIndex } = buildBindingsForTree(entry, tree);
 
     // 合并语法诊断 + 绑定诊断，推送到客户端
-    const bi = bindingIndexes.get(entry.uri);
-    const bindingDiags = bi
-      ? bindingDiagnosticsToDiagnostics(entry, bi.diagnostics(), config.maxDiagnostics)
-      : [];
-    const allDiags = [...parseDiags, ...bindingDiags];
-    connection.sendDiagnostics({ uri: entry.uri, diagnostics: allDiags });
+    workspaceIndex.upsertParsedDocument({
+      uri: entry.uri,
+      text: entry.text,
+      lineOffsets: entry.lineOffsets,
+      languageId: entry.languageId,
+      version: entry.version,
+      sizeBytes: entry.text.length,
+      isOpen: true,
+      tree,
+      graph: bindingGraph,
+      bindingIndex,
+    });
+
+    parseDiagnosticsByUri.set(entry.uri, parseDiags);
+    publishDiagnosticsForEntry(entry, parseDiags);
+    refreshOpenBindingDiagnostics(entry.uri);
 
     logger.trace(
       `parse 完成: ${entry.uri} root=${tree.root.type} errors=${errors.length}`,
@@ -299,12 +482,100 @@ function triggerParse(entry: DocumentEntry): void {
 
 // ── 文档同步：打开 / 修改 / 关闭 ──
 
+function buildBindingIndexForText(entry: DocumentEntry, text: string): BindingIndex | null {
+  if (!runtime.loaded || !runtime.hasParser(entry.languageId)) return null;
+  const tree = runtime.parseFull(entry.languageId, text);
+  let queryToFree: MoonQuery | null = null;
+  try {
+    const bundleLanguage = runtime.getLanguage(entry.languageId);
+    let graph: BindingGraph;
+    if (bundleLanguage?.capabilities.bindings) {
+      graph = bundleLanguage.resolveBindings(tree);
+    } else {
+      const bq = bindingQueryForLang(entry.languageId);
+      if (!bq) return null;
+      queryToFree = runtime.compileQuery(bq);
+      graph = runtime.queryResolveBindings(queryToFree, tree);
+    }
+    const tempEntry = { ...entry, text, lineOffsets: buildLineOffsets(text) };
+    const index = new BindingIndex();
+    index.update(entry.uri, tempEntry, graph);
+    return index;
+  } catch {
+    return null;
+  } finally {
+    if (queryToFree) runtime.freeQuery(queryToFree);
+    runtime.freeTree(tree);
+  }
+}
+
+function rebuildWorkspaceFileForRename(
+  file: WorkspaceFileEntry,
+  text: string,
+): { graph: BindingGraph | null; bindingIndex: BindingIndex | null } | null {
+  if (!runtime.loaded) return null;
+  const entry = createWorkspaceEntry(file.uri, text, file.languageId);
+  ensureParser(entry);
+  if (!runtime.hasParser(entry.languageId)) return null;
+  const tree = runtime.parseFull(entry.languageId, text);
+  try {
+    return buildBindingsForTree(entry, tree);
+  } finally {
+    runtime.freeTree(tree);
+  }
+}
+
+function isWorkspaceFileFreshForRename(file: WorkspaceFileEntry): boolean {
+  if (!file.isOpen) return true;
+  const entry = store.get(file.uri);
+  if (!entry) return false;
+  return workspaceIndex.isOpenEntryFresh(file.uri, entry.text, entry.version) &&
+    !entry.pendingEdit &&
+    !entry.previousText;
+}
+
+function buildLineOffsets(text: string): Uint32Array {
+  const offsets: number[] = [0];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\n") offsets.push(i + 1);
+  }
+  return new Uint32Array(offsets);
+}
+
+function publishDiagnosticsForEntry(
+  entry: DocumentEntry,
+  parseDiags: Diagnostic[] = parseDiagnosticsByUri.get(entry.uri) ?? [],
+): void {
+  const bindingIndex = workspaceIndex.bindingIndex(entry.uri);
+  const bindingDiags = bindingIndex
+    ? bindingDiagnosticsToDiagnostics(
+      entry,
+      bindingDiagnosticsWithWorkspace(entry.uri, bindingIndex, workspaceIndex),
+      config.maxDiagnostics,
+    )
+    : [];
+  const allDiags = [...parseDiags, ...bindingDiags];
+  store.setDiagnostics(entry.uri, allDiags);
+  connection.sendDiagnostics({ uri: entry.uri, diagnostics: allDiags });
+}
+
+function refreshOpenBindingDiagnostics(excludeUri?: string): void {
+  for (const [uri, entry] of store.entries()) {
+    if (uri === excludeUri) continue;
+    publishDiagnosticsForEntry(entry);
+  }
+}
+
+function tableInfoFor(entry: DocumentEntry) {
+  return parseTableInfo(runtime.getParser(entry.languageId)?.tableJson());
+}
+
 connection.onDidOpenTextDocument((params) => {
   if (shutdownReceived) return;
   try {
     const { uri, version, text } = params.textDocument;
 
-    if (!store.isHandled(uri)) {
+    if (!store.isHandled(uri) || !shouldIndexDocument(uri, text.length)) {
       logger.trace(`didOpen 跳过: ${uri} (扩展名未在 enabledExtensions 中)`);
       return;
     }
@@ -366,6 +637,14 @@ connection.onDidChangeTextDocument((params) => {
         ` 变更数=${params.contentChanges.length} 文本=${newText.length}字节`,
     );
 
+    if (!shouldIndexDocument(uri, newText.length)) {
+      workspaceIndex.remove(uri, (tree) => runtime.freeTree(tree));
+      parseDiagnosticsByUri.delete(uri);
+      store.update(uri, newText, params.textDocument.version);
+      connection.sendDiagnostics({ uri, diagnostics: [] });
+      return;
+    }
+
     store.update(uri, newText, params.textDocument.version);
 
     // 防抖解析
@@ -384,11 +663,7 @@ connection.onDidCloseTextDocument((params) => {
     const { uri } = params.textDocument;
 
     // 释放 tree 和 parser
-    const tree = currentTrees.get(uri);
-    if (tree) {
-      runtime.freeTree(tree);
-      currentTrees.delete(uri);
-    }
+    workspaceIndex.markClosed(uri);
     const entry = store.get(uri);
     if (entry) {
       // 仅在没有其他同语言文档打开时释放 language-level 缓存
@@ -400,10 +675,10 @@ connection.onDidCloseTextDocument((params) => {
     }
 
     store.close(uri);
+    parseDiagnosticsByUri.delete(uri);
 
     // 清除符号索引
     symbolIndex.clear();
-    bindingIndexes.delete(uri);
 
     // 推送空诊断清除波浪线
     connection.sendDiagnostics({ uri, diagnostics: [] });
@@ -421,7 +696,7 @@ connection.onRequest("textDocument/semanticTokens/full", (params: { textDocument
   try {
     const { uri } = params.textDocument;
     const entry = store.get(uri);
-    const tree = currentTrees.get(uri);
+    const tree = workspaceIndex.tree(uri);
     if (!entry || !tree) return { data: [] };
 
     const data = tokensManager.generateTokens(entry, tree);
@@ -442,14 +717,54 @@ connection.onRequest("textDocument/documentSymbol", (params: { textDocument: { u
   try {
     const { uri } = params.textDocument;
     const entry = store.get(uri);
-    const tree = currentTrees.get(uri);
+    const tree = workspaceIndex.tree(uri);
     if (!entry || !tree) return [];
 
-    const symbols = extractDocumentSymbols(entry, tree);
+    const symbols = extractDocumentSymbols(entry, tree, workspaceIndex.bindingIndex(uri));
     logger.trace(`documentSymbol: ${uri} → ${symbols.length} symbols`);
     return symbols;
   } catch (err) {
     logger.error(`documentSymbol 异常: ${safeErrorMessage(err)}`);
+    return [];
+  }
+});
+
+connection.onRequest("textDocument/documentHighlight", (params: PositionParams) => {
+  if (shutdownReceived) return [];
+  try {
+    const { uri } = params.textDocument;
+    const entry = store.get(uri);
+    if (!entry) return [];
+
+    const highlights = getDocumentHighlights(
+      entry,
+      workspaceIndex.bindingIndex(uri),
+      params.position.line,
+      params.position.character,
+    );
+    logger.trace(`documentHighlight: ${uri} → ${highlights.length} ranges`);
+    return highlights;
+  } catch (err) {
+    logger.error(`documentHighlight 异常: ${safeErrorMessage(err)}`);
+    return [];
+  }
+});
+
+connection.onRequest("textDocument/foldingRange", (params: { textDocument: { uri: string } }) => {
+  if (shutdownReceived) return [];
+  try {
+    const { uri } = params.textDocument;
+    const entry = store.get(uri);
+    const tree = workspaceIndex.tree(uri);
+    if (!entry || !tree) return [];
+
+    const language = runtime.getLanguage(entry.languageId);
+    if (!language?.capabilities.folding) return [];
+    const ranges = foldingRangesFromCaptures(entry, language.fold(tree));
+    logger.trace(`foldingRange: ${uri} → ${ranges.length} ranges`);
+    return ranges;
+  } catch (err) {
+    logger.error(`foldingRange 异常: ${safeErrorMessage(err)}`);
     return [];
   }
 });
@@ -466,7 +781,7 @@ connection.onRequest("textDocument/hover", (params: HoverParams) => {
   try {
     const { uri } = params.textDocument;
     const entry = store.get(uri);
-    const tree = currentTrees.get(uri);
+    const tree = workspaceIndex.tree(uri);
     if (!entry || !tree) return null;
 
     const hover = getHover(entry, tree, params.position.line, params.position.character);
@@ -482,7 +797,7 @@ connection.onRequest("textDocument/hover", (params: HoverParams) => {
   }
 });
 
-// ── definition / references（Grammar DSL） ──
+// -- definition / references via BindingIndex --
 
 interface PositionParams {
   textDocument: { uri: string };
@@ -496,47 +811,15 @@ connection.onRequest("textDocument/definition", (params: PositionParams) => {
     const entry = store.get(uri);
     if (!entry) return null;
 
-    // 优先用新 bindingIndex（scope/edge 精确匹配）
-    const bi = bindingIndexes.get(uri);
-    const sym = bi?.getSymbolAt(
+    const location = getWorkspaceDefinitionLocation(
       entry,
+      workspaceIndex.bindingIndex(uri),
+      workspaceIndex,
       params.position.line,
       params.position.character,
     );
-    if (sym && bi) {
-      let targetDef = sym.kind === "definition"
-        ? bi.getDefinition(sym.id)
-        : bi.findDefinition(sym.id);
-
-      if (targetDef) {
-        const lspPos = store.byteToPosition(entry, targetDef.start_byte);
-        logger.trace(
-          `definition(binding): ${sym.name} → [${lspPos.line}:${lspPos.character}]`,
-        );
-        return {
-          uri,
-          range: { start: lspPos, end: store.byteToPosition(entry, targetDef.end_byte) },
-        };
-      }
-    }
-
-    // 回退旧 symbolIndex
-    const hit = symbolIndex.getNameAt(
-      entry,
-      params.position.line,
-      params.position.character,
-    );
-    if (hit) {
-      const def = symbolIndex.findDefinition(hit.name);
-      if (def) {
-        logger.trace(
-          `definition: ${hit.name} → [${def.range.start.line}:${def.range.start.character}]`,
-        );
-        return { uri: def.uri, range: def.range };
-      }
-    }
-
-    return null;
+    if (location) logger.trace(`definition(binding): ${uri}`);
+    return location;
   } catch (err) {
     logger.error(`definition 异常: ${safeErrorMessage(err)}`);
     return null;
@@ -554,66 +837,16 @@ connection.onRequest("textDocument/references", (params: ReferencesParams) => {
     const entry = store.get(uri);
     if (!entry) return [];
 
-    // 优先用新 bindingIndex
-    const bi = bindingIndexes.get(uri);
-    const sym = bi?.getSymbolAt(
+    const locations = getWorkspaceReferenceLocations(
       entry,
+      workspaceIndex.bindingIndex(uri),
+      workspaceIndex,
       params.position.line,
       params.position.character,
+      params.context?.includeDeclaration !== false,
     );
-    if (sym && bi) {
-      // 找到该符号对应的"权威定义 ID"
-      const defId = sym.kind === "definition"
-        ? sym.id
-        : bi.findDefinition(sym.id)?.id;
-
-      if (defId !== undefined) {
-        const refs = bi.findReferences(defId);
-        const results = [];
-        // 包含声明本身
-        if (params.context?.includeDeclaration !== false) {
-          const def = bi.getDefinition(defId);
-          if (def) {
-            results.push({
-              uri,
-              range: {
-                start: store.byteToPosition(entry, def.start_byte),
-                end: store.byteToPosition(entry, def.end_byte),
-              },
-            });
-          }
-        }
-        for (const r of refs) {
-          results.push({
-            uri,
-            range: {
-              start: store.byteToPosition(entry, r.start_byte),
-              end: store.byteToPosition(entry, r.end_byte),
-            },
-          });
-        }
-        logger.trace(
-          `references(binding): ${sym.name} → ${results.length} locations`,
-        );
-        return results;
-      }
-    }
-
-    // 回退旧 symbolIndex
-    const hit = symbolIndex.getNameAt(
-      entry,
-      params.position.line,
-      params.position.character,
-    );
-    if (hit) {
-      const refs = symbolIndex.findReferences(hit.name);
-      logger.trace(
-        `references: ${hit.name} → ${refs.length} locations`,
-      );
-      return refs.map((r) => ({ uri: r.uri, range: r.range }));
-    }
-
-    return [];
+    logger.trace(`references(binding): ${uri} -> ${locations.length} locations`);
+    return locations;
   } catch (err) {
     logger.error(`references 异常: ${safeErrorMessage(err)}`);
     return [];
@@ -621,6 +854,73 @@ connection.onRequest("textDocument/references", (params: ReferencesParams) => {
 });
 
 // ── completion — 代码补全 ──
+
+connection.onRequest("textDocument/prepareRename", (params: PositionParams) => {
+  if (shutdownReceived) return null;
+  try {
+    const { uri } = params.textDocument;
+    const entry = store.get(uri);
+    if (!entry) return null;
+    const workspaceResult = prepareWorkspaceRename(
+      entry,
+      workspaceIndex.bindingIndex(uri),
+      workspaceIndex,
+      tableInfoFor(entry),
+      params.position.line,
+      params.position.character,
+    );
+    if (workspaceResult.applies) return workspaceResult.result;
+    return prepareRename(
+      entry,
+      workspaceIndex.bindingIndex(uri),
+      tableInfoFor(entry),
+      params.position.line,
+      params.position.character,
+    );
+  } catch (err) {
+    logger.error(`prepareRename 异常: ${safeErrorMessage(err)}`);
+    return null;
+  }
+});
+
+interface RenameParams extends PositionParams {
+  newName: string;
+}
+
+connection.onRequest("textDocument/rename", (params: RenameParams) => {
+  if (shutdownReceived) return null;
+  try {
+    const { uri } = params.textDocument;
+    const entry = store.get(uri);
+    if (!entry) return null;
+    const workspaceResult = renameWorkspaceSymbol(
+      entry,
+      workspaceIndex.bindingIndex(uri),
+      workspaceIndex,
+      tableInfoFor(entry),
+      params.position.line,
+      params.position.character,
+      params.newName,
+      {
+        rebuildFile: rebuildWorkspaceFileForRename,
+        isOpenFileFresh: isWorkspaceFileFreshForRename,
+      },
+    );
+    if (workspaceResult.applies) return workspaceResult.edit;
+    return renameSymbol(
+      entry,
+      workspaceIndex.bindingIndex(uri),
+      tableInfoFor(entry),
+      params.position.line,
+      params.position.character,
+      params.newName,
+      (text) => buildBindingIndexForText(entry, text),
+    );
+  } catch (err) {
+    logger.error(`rename 异常: ${safeErrorMessage(err)}`);
+    return null;
+  }
+});
 
 interface CompletionParams extends PositionParams {
   context?: { triggerKind: number; triggerCharacter?: string };
@@ -631,13 +931,14 @@ connection.onRequest("textDocument/completion", (params: CompletionParams) => {
   try {
     const { uri } = params.textDocument;
     const entry = store.get(uri);
-    const tree = currentTrees.get(uri);
+    const tree = workspaceIndex.tree(uri);
     if (!entry || !tree) return null;
 
     const items = getCompletions(
       entry,
       tree,
-      symbolIndex,
+      workspaceIndex.bindingIndex(uri),
+      tableInfoFor(entry),
       params.position.line,
       params.position.character,
     );
@@ -736,7 +1037,7 @@ connection.onRequest("textDocument/semanticTokens/range", (params: SemanticToken
   try {
     const { uri } = params.textDocument;
     const entry = store.get(uri);
-    const tree = currentTrees.get(uri);
+    const tree = workspaceIndex.tree(uri);
     if (!entry || !tree) return { data: [] };
 
     // LSP range → 字节范围

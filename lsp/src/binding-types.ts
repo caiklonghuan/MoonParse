@@ -25,9 +25,17 @@ export interface Scope {
 // 定义/引用的符号种类
 export type SymbolKind =
   | "variable"
+  | "constant"
   | "function"
+  | "method"
   | "type"
+  | "struct"
+  | "enum"
+  | "trait"
+  | "field"
+  | "enum_member"
   | "parameter"
+  | "type_parameter"
   | "rule"        // Grammar DSL rule
   | "token";      // Grammar DSL token
 
@@ -35,6 +43,7 @@ export type SymbolKind =
 export type Namespace =
   | "value"       // 变量/函数
   | "type"        // 类型/类/接口
+  | "member"
   | "rule";       // Grammar DSL rule name
 
 // 一个符号定义（声明处）

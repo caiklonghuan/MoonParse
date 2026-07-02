@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.js";
+import {
+  TOKEN_TYPES,
+  TOKEN_MODIFIERS,
+  captureTokenTypeIndex,
+} from "./semantic-tokens.js";
 
 describe("TOKEN_TYPES", () => {
   it("包含 8 个标准 token type", () => {
@@ -29,5 +33,19 @@ describe("TOKEN_TYPES", () => {
 describe("TOKEN_MODIFIERS", () => {
   it("当前列表为空", () => {
     expect(TOKEN_MODIFIERS).toEqual([]);
+  });
+});
+
+describe("highlight capture mapping", () => {
+  it("maps dotted captures by their first segment", () => {
+    expect(captureTokenTypeIndex("keyword.control")).toBe(2);
+    expect(captureTokenTypeIndex("string.special")).toBe(3);
+    expect(captureTokenTypeIndex("variable.parameter.local")).toBe(1);
+  });
+
+  it("keeps aliases and ignores unknown captures", () => {
+    expect(captureTokenTypeIndex("constructor")).toBe(0);
+    expect(captureTokenTypeIndex("punctuation.bracket")).toBe(7);
+    expect(captureTokenTypeIndex("unknown.capture")).toBeUndefined();
   });
 });

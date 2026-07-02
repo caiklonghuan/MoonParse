@@ -20,9 +20,14 @@ export function createServerCapabilities(): ServerCapabilities {
       range: true,
     },
     documentSymbolProvider: true,
+    documentHighlightProvider: true,
+    foldingRangeProvider: true,
     hoverProvider: true,
     definitionProvider: true,
     referencesProvider: true,
+    renameProvider: {
+      prepareProvider: true,
+    },
     completionProvider: {
       triggerCharacters: [".", "@"],
     },
@@ -31,4 +36,3 @@ export function createServerCapabilities(): ServerCapabilities {
     codeActionProvider: true,
   };
 }
-

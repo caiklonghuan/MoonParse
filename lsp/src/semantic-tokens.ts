@@ -40,18 +40,31 @@ export const TOKEN_TYPES = [
 const CAPTURE_TO_TYPE: Record<string, number> = {
   "function": 0,
   "method": 0,
+  "constructor": 0,
   "variable": 1,
   "parameter": 1,
+  "property": 1,
+  "constant": 1,
+  "label": 1,
   "keyword": 2,
   "string": 3,
+  "escape": 3,
+  "embedded": 3,
   "number": 4,
   "comment": 5,
   "type": 6,
   "enum": 6,
   "struct": 6,
+  "module": 6,
+  "attribute": 6,
+  "tag": 6,
   "operator": 7,
   "punctuation": 7,
 };
+
+export function captureTokenTypeIndex(capture: string): number | undefined {
+  return CAPTURE_TO_TYPE[capture.split(".", 1)[0]];
+}
 
 // 暂不使用 modifiers
 export const TOKEN_MODIFIERS: string[] = [];
@@ -247,7 +260,7 @@ export class SemanticTokensManager {
     highlights: HighlightRange[],
   ): number[] {
     const sorted = highlights.filter(
-      (h) => h.highlight in CAPTURE_TO_TYPE,
+      (h) => captureTokenTypeIndex(h.highlight) !== undefined,
     ).sort((a, b) => {
       if (a.start_byte !== b.start_byte) return a.start_byte - b.start_byte;
       return a.end_byte - b.end_byte;
@@ -272,7 +285,7 @@ export class SemanticTokensManager {
       const deltaLine = line - prevLine;
       const deltaChar = deltaLine === 0 ? char - prevChar : char;
 
-      data.push(deltaLine, deltaChar, len, CAPTURE_TO_TYPE[h.highlight], 0);
+      data.push(deltaLine, deltaChar, len, captureTokenTypeIndex(h.highlight)!, 0);
 
       prevLine = line;
       prevChar = char;

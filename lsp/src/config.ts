@@ -24,9 +24,17 @@ export interface ServerConfig {
 
   // 启动时加载的 LanguageBundle；配置扩展名优先于 Bundle 元数据。
   languageBundles: Array<{ path: string; extensions?: string[] }>;
+
+  workspaceIndex: WorkspaceIndexConfig;
 }
 
 export type ServerTraceLevel = "off" | "messages" | "verbose";
+
+export interface WorkspaceIndexConfig {
+  enabled: boolean;
+  maxFileBytes: number;
+  maxFiles: number;
+}
 
 export const defaultConfig: ServerConfig = {
   trace: "off",
@@ -45,6 +53,11 @@ export const defaultConfig: ServerConfig = {
   wasmPath: "./moonparse.wasm",
   debounceMs: 100,
   languageBundles: [],
+  workspaceIndex: {
+    enabled: true,
+    maxFileBytes: 1_000_000,
+    maxFiles: 2000,
+  },
 };
 
 // 将用户部分配置合并到默认值
@@ -64,5 +77,11 @@ export function mergeConfig(
     wasmPath: value.wasmPath ?? defaults.wasmPath,
     debounceMs: value.debounceMs ?? defaults.debounceMs,
     languageBundles: [...(value.languageBundles ?? defaults.languageBundles)],
+    workspaceIndex: {
+      enabled: value.workspaceIndex?.enabled ?? defaults.workspaceIndex.enabled,
+      maxFileBytes:
+        value.workspaceIndex?.maxFileBytes ?? defaults.workspaceIndex.maxFileBytes,
+      maxFiles: value.workspaceIndex?.maxFiles ?? defaults.workspaceIndex.maxFiles,
+    },
   };
 }
