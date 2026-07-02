@@ -61,6 +61,8 @@ pub(all) struct QueryResources {
   highlights : String?
   locals : String?
   bindings : String?
+  folding : String?
+  modules : String?
 } derive(Debug)
 
 ///|
@@ -151,6 +153,8 @@ pub(all) struct LanguagePack {
   highlights_query : String?
   locals_query : String?
   bindings_query : String?
+  folding_query : String?
+  modules_query : String?
   scanner : ScannerDescriptor?
   corpus : Array[CorpusCase]
 } derive(Debug)
@@ -160,6 +164,8 @@ pub(all) struct BundleCapabilities {
   highlights : Bool
   locals : Bool
   bindings : Bool
+  folding : Bool
+  modules : Bool
   scanner : Bool
 } derive(Debug, Eq)
 
@@ -168,6 +174,8 @@ pub(all) enum BundleQueryKind {
   Highlights
   Locals
   Bindings
+  Folding
+  Modules
 } derive(Debug, Eq)
 
 ///|
@@ -198,9 +206,13 @@ pub(all) struct LanguageBundle {
   highlights_source : String?
   locals_source : String?
   bindings_source : String?
+  folding_source : String?
+  modules_source : String?
   highlights_query : @query.CompiledQuery?
   locals_query : @query.CompiledQuery?
   bindings_query : @query.CompiledQuery?
+  folding_query : @query.CompiledQuery?
+  modules_query : @query.CompiledQuery?
   scanner : ScannerDescriptor?
   capabilities : BundleCapabilities
 }

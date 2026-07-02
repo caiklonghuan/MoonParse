@@ -143,9 +143,18 @@ fn parse_manifest_value(
         highlights: mf_optional_string(value, "highlights"),
         locals: mf_optional_string(value, "locals"),
         bindings: mf_optional_string(value, "bindings"),
+        folding: mf_optional_string(value, "folding"),
+        modules: mf_optional_string(value, "modules"),
       }
     }
-    None => { highlights: None, locals: None, bindings: None }
+    None =>
+      {
+        highlights: None,
+        locals: None,
+        bindings: None,
+        folding: None,
+        modules: None,
+      }
   }
   let scanner = match object.get("scanner") {
     Some(value) => {
@@ -337,6 +346,8 @@ fn validate_manifest(manifest : LanguagePackManifest) -> Array[PackDiagnostic] {
     ("highlights", manifest.queries.highlights),
     ("locals", manifest.queries.locals),
     ("bindings", manifest.queries.bindings),
+    ("folding", manifest.queries.folding),
+    ("modules", manifest.queries.modules),
     ("corpus", Some(manifest.corpus.directory)),
   ]
   match manifest.scanner {

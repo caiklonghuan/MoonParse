@@ -40,7 +40,9 @@
       "properties": {
         "highlights": { "$ref": "#/$defs/packPath" },
         "locals": { "$ref": "#/$defs/packPath" },
-        "bindings": { "$ref": "#/$defs/packPath" }
+        "bindings": { "$ref": "#/$defs/packPath" },
+        "folding": { "$ref": "#/$defs/packPath" },
+        "modules": { "$ref": "#/$defs/packPath" }
       }
     },
     "scanner": {

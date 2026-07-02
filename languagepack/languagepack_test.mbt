@@ -110,6 +110,70 @@ test "build_bundle/parse and queries" {
 }
 
 ///|
+test "build_bundle/folding query executes and round trips" {
+  let manifest = test_manifest().replace(
+    old="\"queries\":{\"highlights\":\"queries/highlights.scm\"}",
+    new="\"queries\":{\"highlights\":\"queries/highlights.scm\",\"folding\":\"queries/folding.scm\"}",
+  )
+  let source = test_source(manifest~)
+  source.files["queries/folding.scm"] = @utf8.encode("(document) @fold")
+  let bundle = build_bundle(source, PackBuildOptions::default()).unwrap()
+  assert_true(bundle.capabilities.folding)
+  let restored = bundle_from_json(bundle_to_json(bundle)).unwrap()
+  assert_true(restored.capabilities.folding)
+  let root = parse_bundle(restored, "42").unwrap()
+  let captures = exec_bundle_query(restored, Folding, root, "42").unwrap()
+  assert_eq(captures.length(), 1)
+  assert_eq(captures[0].capture_name, "fold")
+}
+
+///|
+test "build_bundle/modules query executes and round trips" {
+  let manifest = test_manifest().replace(
+    old="\"queries\":{\"highlights\":\"queries/highlights.scm\"}",
+    new="\"queries\":{\"highlights\":\"queries/highlights.scm\",\"modules\":\"queries/modules.scm\"}",
+  )
+  let source = test_source(manifest~)
+  source.files["queries/modules.scm"] = @utf8.encode("(document) @module.name")
+  let bundle = build_bundle(source, PackBuildOptions::default()).unwrap()
+  assert_true(bundle.capabilities.modules)
+  let restored = bundle_from_json(bundle_to_json(bundle)).unwrap()
+  assert_true(restored.capabilities.modules)
+  let root = parse_bundle(restored, "42").unwrap()
+  let captures = exec_bundle_query(restored, Modules, root, "42").unwrap()
+  assert_eq(captures.length(), 1)
+  assert_eq(captures[0].capture_name, "module.name")
+}
+
+///|
+test "load_pack/rejects missing declared folding query" {
+  let manifest = test_manifest().replace(
+    old="\"queries\":{\"highlights\":\"queries/highlights.scm\"}",
+    new="\"queries\":{\"highlights\":\"queries/highlights.scm\",\"folding\":\"queries/folding.scm\"}",
+  )
+  let errors = load_pack(test_source(manifest~)).unwrap_err()
+  assert_true(
+    errors.any(fn(error) {
+      error.code == "PACK203" && error.path == "queries/folding.scm"
+    }),
+  )
+}
+
+///|
+test "load_pack/rejects missing declared modules query" {
+  let manifest = test_manifest().replace(
+    old="\"queries\":{\"highlights\":\"queries/highlights.scm\"}",
+    new="\"queries\":{\"highlights\":\"queries/highlights.scm\",\"modules\":\"queries/modules.scm\"}",
+  )
+  let errors = load_pack(test_source(manifest~)).unwrap_err()
+  assert_true(
+    errors.any(fn(error) {
+      error.code == "PACK203" && error.path == "queries/modules.scm"
+    }),
+  )
+}
+
+///|
 test "build_bundle/missing entry rule is explicit" {
   let source = test_source(manifest=test_manifest(entry="missing"))
   let errors = build_bundle(source, PackBuildOptions::default()).unwrap_err()
@@ -126,6 +190,7 @@ test "build_bundle/absent optional queries disable capability" {
   source.files.remove("queries/highlights.scm")
   let bundle = build_bundle(source, PackBuildOptions::default()).unwrap()
   assert_false(bundle.capabilities.highlights)
+  assert_false(bundle.capabilities.modules)
   assert_true(bundle.highlights_query is None)
 }
 
@@ -152,6 +217,21 @@ test "bundle/old v1 metadata remains loadable" {
   assert_eq(restored.pack_name, "test-lang")
   assert_eq(restored.pack_maturity, "experimental")
   assert_true(restored.pack_extensions.is_empty())
+}
+
+///|
+test "bundle/old v1 without folding fields remains loadable" {
+  let bundle = build_bundle(test_source(), PackBuildOptions::default()).unwrap()
+  let old = bundle_to_json(bundle)
+    .replace(old=",\"folding\":null", new="")
+    .replace(old=",\"folding\":false", new="")
+    .replace(old=",\"modules\":null", new="")
+    .replace(old=",\"modules\":false", new="")
+  let restored = bundle_from_json(old).unwrap()
+  assert_false(restored.capabilities.folding)
+  assert_false(restored.capabilities.modules)
+  assert_true(restored.folding_query is None)
+  assert_true(restored.modules_query is None)
 }
 
 ///|

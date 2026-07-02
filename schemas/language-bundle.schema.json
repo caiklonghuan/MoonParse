@@ -18,7 +18,7 @@
       "type": "object",
       "required": ["schemaVersion", "json", "binaryBase64"],
       "properties": {
-        "schemaVersion": { "const": 3 },
+        "schemaVersion": { "enum": [3, 4] },
         "json": { "type": "string" },
         "binaryBase64": { "type": "string", "contentEncoding": "base64" }
       }
@@ -29,7 +29,9 @@
       "properties": {
         "highlights": { "type": ["string", "null"] },
         "locals": { "type": ["string", "null"] },
-        "bindings": { "type": ["string", "null"] }
+        "bindings": { "type": ["string", "null"] },
+        "folding": { "type": ["string", "null"] },
+        "modules": { "type": ["string", "null"] }
       }
     },
     "scanner": {
@@ -53,6 +55,8 @@
         "highlights": { "type": "boolean" },
         "locals": { "type": "boolean" },
         "bindings": { "type": "boolean" },
+        "folding": { "type": "boolean" },
+        "modules": { "type": "boolean" },
         "scanner": { "type": "boolean" }
       }
     }

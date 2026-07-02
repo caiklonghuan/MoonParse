@@ -280,6 +280,16 @@ fn build_bundle_internal(
     pack.bindings_query,
     diagnostics,
   )
+  let folding = compile_query_resource(
+    "folding",
+    pack.folding_query,
+    diagnostics,
+  )
+  let modules = compile_query_resource(
+    "modules",
+    pack.modules_query,
+    diagnostics,
+  )
   match pack.scanner {
     Some(scanner) if !scanner_is_known(scanner, options) =>
       diagnostics.push(
@@ -316,14 +326,20 @@ fn build_bundle_internal(
     highlights_source: pack.highlights_query,
     locals_source: pack.locals_query,
     bindings_source: pack.bindings_query,
+    folding_source: pack.folding_query,
+    modules_source: pack.modules_query,
     highlights_query: highlights,
     locals_query: locals,
     bindings_query: bindings,
+    folding_query: folding,
+    modules_query: modules,
     scanner: pack.scanner,
     capabilities: {
       highlights: highlights is Some(_),
       locals: locals is Some(_),
       bindings: bindings is Some(_),
+      folding: folding is Some(_),
+      modules: modules is Some(_),
       scanner: pack.scanner is Some(_),
     },
   }
@@ -398,6 +414,10 @@ pub fn bundle_to_json(bundle : LanguageBundle) -> String {
   lp_json_optional(bundle.locals_source) +
   ",\"bindings\":" +
   lp_json_optional(bundle.bindings_source) +
+  ",\"folding\":" +
+  lp_json_optional(bundle.folding_source) +
+  ",\"modules\":" +
+  lp_json_optional(bundle.modules_source) +
   "}," +
   "\"scanner\":" +
   scanner +
@@ -408,6 +428,10 @@ pub fn bundle_to_json(bundle : LanguageBundle) -> String {
   bundle.capabilities.locals.to_string() +
   ",\"bindings\":" +
   bundle.capabilities.bindings.to_string() +
+  ",\"folding\":" +
+  bundle.capabilities.folding.to_string() +
+  ",\"modules\":" +
+  bundle.capabilities.modules.to_string() +
   ",\"scanner\":" +
   bundle.capabilities.scanner.to_string() +
   "}}"
@@ -433,6 +457,18 @@ fn bundle_optional_string_field(
 ) -> String raise ManifestDecodeError {
   match object.get(field) {
     Some(value) => mf_string(value)
+    None => fallback
+  }
+}
+
+///|
+fn bundle_optional_bool_field(
+  object : Map[String, Json],
+  field : String,
+  fallback : Bool,
+) -> Bool raise ManifestDecodeError {
+  match object.get(field) {
+    Some(value) => mf_bool(value)
     None => fallback
   }
 }
@@ -561,6 +597,8 @@ pub fn bundle_from_json(
     let highlights_source = bundle_optional_string(queries, "highlights")
     let locals_source = bundle_optional_string(queries, "locals")
     let bindings_source = bundle_optional_string(queries, "bindings")
+    let folding_source = bundle_optional_string(queries, "folding")
+    let modules_source = bundle_optional_string(queries, "modules")
     let highlights_query = compile_query_resource(
       "highlights", highlights_source, diagnostics,
     )
@@ -569,6 +607,12 @@ pub fn bundle_from_json(
     )
     let bindings_query = compile_query_resource(
       "bindings", bindings_source, diagnostics,
+    )
+    let folding_query = compile_query_resource(
+      "folding", folding_source, diagnostics,
+    )
+    let modules_query = compile_query_resource(
+      "modules", modules_source, diagnostics,
     )
     let scanner = match object.get("scanner") {
       Some(Object(value)) =>
@@ -605,6 +649,8 @@ pub fn bundle_from_json(
       highlights: highlights_query is Some(_),
       locals: locals_query is Some(_),
       bindings: bindings_query is Some(_),
+      folding: folding_query is Some(_),
+      modules: modules_query is Some(_),
       scanner: scanner is Some(_),
     }
     let capability_data = mf_object(mf_field(object, "capabilities"))
@@ -612,6 +658,8 @@ pub fn bundle_from_json(
       highlights: mf_bool(mf_field(capability_data, "highlights")),
       locals: mf_bool(mf_field(capability_data, "locals")),
       bindings: mf_bool(mf_field(capability_data, "bindings")),
+      folding: bundle_optional_bool_field(capability_data, "folding", false),
+      modules: bundle_optional_bool_field(capability_data, "modules", false),
       scanner: mf_bool(mf_field(capability_data, "scanner")),
     }
     if declared_capabilities != derived_capabilities {
@@ -645,9 +693,13 @@ pub fn bundle_from_json(
       highlights_source,
       locals_source,
       bindings_source,
+      folding_source,
+      modules_source,
       highlights_query,
       locals_query,
       bindings_query,
+      folding_query,
+      modules_query,
       scanner,
       capabilities: derived_capabilities,
     })
@@ -740,6 +792,8 @@ pub fn exec_bundle_query(
     Highlights => bundle.highlights_query
     Locals => bundle.locals_query
     Bindings => bundle.bindings_query
+    Folding => bundle.folding_query
+    Modules => bundle.modules_query
   }
   match query {
     Some(query) => Ok(@query.exec(query, root, source, bundle.table))

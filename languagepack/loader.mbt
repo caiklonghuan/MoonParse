@@ -96,11 +96,23 @@ pub fn load_pack(
     manifest.queries.bindings,
     "queries/bindings.scm",
   )
+  let (folding_path, folding_query) = resolve_optional_query(
+    source,
+    manifest.queries.folding,
+    "queries/folding.scm",
+  )
+  let (modules_path, modules_query) = resolve_optional_query(
+    source,
+    manifest.queries.modules,
+    "queries/modules.scm",
+  )
   for
     item in [
       ("highlights", highlights_path, highlights_query),
       ("locals", locals_path, locals_query),
       ("bindings", bindings_path, bindings_query),
+      ("folding", folding_path, folding_query),
+      ("modules", modules_path, modules_query),
     ] {
     let (label, path, text) = item
     match (path, text) {
@@ -151,6 +163,8 @@ pub fn load_pack(
       highlights_query,
       locals_query,
       bindings_query,
+      folding_query,
+      modules_query,
       scanner,
       corpus,
     })
