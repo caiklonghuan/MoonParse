@@ -159,6 +159,10 @@ pub fn cmd_query(args : QueryArgs) -> Int {
     Some(value) if args.pattern == "locals" => value.locals_source.unwrap_or("")
     Some(value) if args.pattern == "bindings" =>
       value.bindings_source.unwrap_or("")
+    Some(value) if args.pattern == "folding" =>
+      value.folding_source.unwrap_or("")
+    Some(value) if args.pattern == "modules" =>
+      value.modules_source.unwrap_or("")
     _ => args.pattern
   }
   if pattern.is_empty() {

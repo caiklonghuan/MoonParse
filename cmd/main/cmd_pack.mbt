@@ -672,6 +672,8 @@ fn source_query_name(relative : String) -> String? {
     "queries/highlights.scm" => Some("highlights")
     "queries/locals.scm" => Some("locals")
     "queries/tags.scm" => Some("tags")
+    "queries/folding.scm" => Some("folding")
+    "queries/modules.scm" => Some("modules")
     _ => None
   }
 }
@@ -1392,9 +1394,16 @@ fn pack_generated_lsp_config(bundle : @languagepack.LanguageBundle) -> String {
       #|  wasmPath: string;
       #|  debounceMs: number;
       #|  languageBundles: Array<{ path: string; extensions?: string[] }>;
+      #|  workspaceIndex: WorkspaceIndexConfig;
       #|}
       #|
       #|export type ServerTraceLevel = "off" | "messages" | "verbose";
+      #|
+      #|export interface WorkspaceIndexConfig {
+      #|  enabled: boolean;
+      #|  maxFileBytes: number;
+      #|  maxFiles: number;
+      #|}
       #|
       #|export const defaultConfig: ServerConfig = {
       #|  trace: "off",
@@ -1421,6 +1430,11 @@ fn pack_generated_lsp_config(bundle : @languagepack.LanguageBundle) -> String {
     pack_json_string_array(extensions),
     (
       #| }],
+      #|  workspaceIndex: {
+      #|    enabled: true,
+      #|    maxFileBytes: 1000000,
+      #|    maxFiles: 2000,
+      #|  },
       #|};
       #|
       #|export function mergeConfig(
@@ -1437,11 +1451,23 @@ fn pack_generated_lsp_config(bundle : @languagepack.LanguageBundle) -> String {
       #|    wasmPath: value.wasmPath ?? defaults.wasmPath,
       #|    debounceMs: value.debounceMs ?? defaults.debounceMs,
       #|    languageBundles: [...(value.languageBundles ?? defaults.languageBundles)],
+      #|    workspaceIndex: {
+      #|      enabled: value.workspaceIndex?.enabled ?? defaults.workspaceIndex.enabled,
+      #|      maxFileBytes: value.workspaceIndex?.maxFileBytes ?? defaults.workspaceIndex.maxFileBytes,
+      #|      maxFiles: value.workspaceIndex?.maxFiles ?? defaults.workspaceIndex.maxFiles,
+      #|    },
       #|  };
       #|}
       #|
     ),
   ])
+}
+
+///|
+fn pack_should_copy_lsp_source(relative : String) -> Bool {
+  relative.has_suffix(".ts") &&
+  !relative.has_suffix(".test.ts") &&
+  !relative.has_suffix(".spec.ts")
 }
 
 ///|
@@ -1479,10 +1505,10 @@ fn pack_generate_lsp_at(
     Err(error) => return Err(("lsp/src", error))
     Ok(paths) =>
       for source in paths {
-        if !source.has_suffix(".ts") {
+        let relative = pack_relative_from_list_root("lsp/src", source)
+        if !pack_should_copy_lsp_source(relative) {
           continue
         }
-        let relative = pack_relative_from_list_root("lsp/src", source)
         let output = pack_join(pack_join(directory, "src"), relative)
         let text = if relative == "config.ts" {
           pack_generated_lsp_config(bundle)

@@ -188,6 +188,14 @@ test "parse_args/build_command_with_conflict_detail" {
 }
 
 ///|
+test "pack_generate_lsp/skips_test_sources" {
+  assert_eq(pack_should_copy_lsp_source("server.ts"), true)
+  assert_eq(pack_should_copy_lsp_source("document-highlight.test.ts"), false)
+  assert_eq(pack_should_copy_lsp_source("rename.spec.ts"), false)
+  assert_eq(pack_should_copy_lsp_source("README.md"), false)
+}
+
+///|
 fn must_make_table(dsl : String) -> @tablegen.ParseTable {
   let grammar = match @grammar.parse_grammar(dsl) {
     Success(g) => g

@@ -1245,7 +1245,7 @@ fn query_usage() -> String {
     #|Options:
     #|  -g, --grammar <file>  Grammar file (.grammar)
     #|  -t, --table   <file>  Parse table file (.parse_table)
-    #|  -b, --bundle  <file>  LanguageBundle JSON; pattern may be highlights/locals/bindings
+    #|  -b, --bundle  <file>  LanguageBundle JSON; pattern may be highlights/locals/bindings/folding/modules
     #|  --json                Output JSON format
     #|  --count               Only print match count
     #|  -h, --help            Show this help
