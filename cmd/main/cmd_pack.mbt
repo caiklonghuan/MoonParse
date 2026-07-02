@@ -1040,6 +1040,18 @@ fn pack_textmate_grammar(
 }
 
 ///|
+fn pack_vscode_file_watch_glob(extensions : Array[String]) -> String {
+  let normalized = extensions.map(pack_extension_name)
+  if normalized.is_empty() {
+    "**/*"
+  } else if normalized.length() == 1 {
+    "**/*." + normalized[0]
+  } else {
+    "**/*.{" + normalized.join(",") + "}"
+  }
+}
+
+///|
 fn pack_build_target_name(target : PackBuildTarget) -> String {
   match target {
     Bundle => "bundle"
@@ -1403,6 +1415,8 @@ fn pack_generated_lsp_config(bundle : @languagepack.LanguageBundle) -> String {
       #|  enabled: boolean;
       #|  maxFileBytes: number;
       #|  maxFiles: number;
+      #|  parseTimeoutMs: number;
+      #|  idleEvictMs: number;
       #|}
       #|
       #|export const defaultConfig: ServerConfig = {
@@ -1434,6 +1448,8 @@ fn pack_generated_lsp_config(bundle : @languagepack.LanguageBundle) -> String {
       #|    enabled: true,
       #|    maxFileBytes: 1000000,
       #|    maxFiles: 2000,
+      #|    parseTimeoutMs: 5000,
+      #|    idleEvictMs: 300000,
       #|  },
       #|};
       #|
@@ -1455,6 +1471,8 @@ fn pack_generated_lsp_config(bundle : @languagepack.LanguageBundle) -> String {
       #|      enabled: value.workspaceIndex?.enabled ?? defaults.workspaceIndex.enabled,
       #|      maxFileBytes: value.workspaceIndex?.maxFileBytes ?? defaults.workspaceIndex.maxFileBytes,
       #|      maxFiles: value.workspaceIndex?.maxFiles ?? defaults.workspaceIndex.maxFiles,
+      #|      parseTimeoutMs: value.workspaceIndex?.parseTimeoutMs ?? defaults.workspaceIndex.parseTimeoutMs,
+      #|      idleEvictMs: value.workspaceIndex?.idleEvictMs ?? defaults.workspaceIndex.idleEvictMs,
       #|    },
       #|  };
       #|}
@@ -1672,12 +1690,19 @@ fn pack_vscode_extension_ts(bundle : @languagepack.LanguageBundle) -> String {
       #|    run: { module: serverModule, transport: TransportKind.ipc, options: { cwd: serverDir } },
       #|    debug: { module: serverModule, transport: TransportKind.ipc, options: { cwd: serverDir } },
       #|  };
+      #|  const fileWatcher = vscode.workspace.createFileSystemWatcher("
+    ),
+    json_escape(pack_vscode_file_watch_glob(bundle.pack_extensions)),
+    (
+      #|");
+      #|  context.subscriptions.push(fileWatcher);
       #|  const clientOptions: LanguageClientOptions = {
       #|    documentSelector: [{ scheme: "file", language: "
     ),
     json_escape(bundle.pack_id),
     (
       #|" }],
+      #|    synchronize: { fileEvents: fileWatcher },
       #|    initializationOptions: {
       #|      wasmPath: path.join(serverDir, "moonparse.wasm"),
       #|      languageBundles: [{
