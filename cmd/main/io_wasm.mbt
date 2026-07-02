@@ -10,7 +10,19 @@ priv type XStringCreateHandle
 
 ///|
 #external
+priv type XStringReadHandle
+
+///|
+#external
 priv type XExternString
+
+///|
+#external
+priv type XStringArrayReadHandle
+
+///|
+#external
+priv type XExternStringArray
 
 ///|
 #external
@@ -34,6 +46,30 @@ fn wasm_string_append_char(handle : XStringCreateHandle, ch : Char) = "__moonbit
 
 ///|
 fn wasm_finish_create_string(handle : XStringCreateHandle) -> XExternString = "__moonbit_fs_unstable" "finish_create_string"
+
+///|
+fn wasm_begin_read_string(s : XExternString) -> XStringReadHandle = "__moonbit_fs_unstable" "begin_read_string"
+
+///|
+fn wasm_string_read_char(handle : XStringReadHandle) -> Int = "__moonbit_fs_unstable" "string_read_char"
+
+///|
+fn wasm_finish_read_string(handle : XStringReadHandle) = "__moonbit_fs_unstable" "finish_read_string"
+
+// --- 瀛楃涓叉暟缁勮鍙?FFI ---
+
+///|
+fn wasm_begin_read_string_array(
+  arr : XExternStringArray,
+) -> XStringArrayReadHandle = "__moonbit_fs_unstable" "begin_read_string_array"
+
+///|
+fn wasm_string_array_read_string(
+  handle : XStringArrayReadHandle,
+) -> XExternString = "__moonbit_fs_unstable" "string_array_read_string"
+
+///|
+fn wasm_finish_read_string_array(handle : XStringArrayReadHandle) = "__moonbit_fs_unstable" "finish_read_string_array"
 
 // --- 字节数组读取 FFI ---
 
@@ -86,6 +122,21 @@ fn wasm_create_dir_all(path : XExternString) -> Int = "__moonbit_fs_unstable" "c
 // 返回 0 = 成功，1 = 失败
 fn wasm_remove_dir_all(path : XExternString) -> Int = "__moonbit_fs_unstable" "remove_dir_all"
 
+///|
+fn wasm_atomic_write_string_to_file(
+  path : XExternString,
+  content : XExternString,
+) -> Int = "__moonbit_fs_unstable" "atomic_write_string_to_file"
+
+///|
+fn wasm_list_files(path : XExternString) -> XExternStringArray = "__moonbit_fs_unstable" "list_files"
+
+///|
+fn wasm_run_command(
+  cwd : XExternString,
+  command : XExternString,
+) -> XExternString = "__moonbit_fs_unstable" "run_command"
+
 // --- stdin 读取 FFI ---
 
 ///|
@@ -105,6 +156,36 @@ fn string_to_extern_ffi(s : String) -> XExternString {
     wasm_string_append_char(handle, s.code_unit_at(i).unsafe_to_char())
   }
   wasm_finish_create_string(handle)
+}
+
+///|
+fn extern_string_to_string(s : XExternString) -> String {
+  let buf = StringBuilder::new()
+  let handle = wasm_begin_read_string(s)
+  while true {
+    let ch = wasm_string_read_char(handle)
+    if ch == -1 {
+      break
+    }
+    buf.write_char(ch.unsafe_to_char())
+  }
+  wasm_finish_read_string(handle)
+  buf.to_string()
+}
+
+///|
+fn extern_string_array_to_array(arr : XExternStringArray) -> Array[String] {
+  let values : Array[String] = []
+  let handle = wasm_begin_read_string_array(arr)
+  while true {
+    let value = extern_string_to_string(wasm_string_array_read_string(handle))
+    if value == "ffi_end_of_/string_array" {
+      break
+    }
+    values.push(value)
+  }
+  wasm_finish_read_string_array(handle)
+  values
 }
 
 // --- 辅助：XExternByteArray → Bytes ---
@@ -179,7 +260,14 @@ fn read_line_impl() -> String? {
 
 ///|
 fn list_files_impl(path : String) -> Result[Array[String], String] {
-  Err("Pack CLI directory access is unavailable on WASM: " + path)
+  let files = extern_string_array_to_array(
+    wasm_list_files(string_to_extern_ffi(path)),
+  )
+  if !files.is_empty() && files[0].has_prefix("ffi_error:") {
+    Err("cannot list directory: " + path + ": " + files[0][10:].to_string())
+  } else {
+    Ok(files)
+  }
 }
 
 ///|
@@ -187,8 +275,15 @@ fn atomic_write_file_impl(
   path : String,
   content : String,
 ) -> Result[Unit, String] {
-  let _ = content
-  Err("Pack CLI atomic writes are unavailable on WASM: " + path)
+  let r = wasm_atomic_write_string_to_file(
+    string_to_extern_ffi(path),
+    string_to_extern_ffi(content),
+  )
+  if r == 0 {
+    Ok(())
+  } else {
+    Err("cannot atomically write file: \{path}")
+  }
 }
 
 ///|
@@ -249,5 +344,17 @@ fn remove_dir_all_impl(path : String) -> Result[Unit, String] {
     Ok(())
   } else {
     Err("cannot remove directory: \{path}")
+  }
+}
+
+///|
+fn run_command_impl(cwd : String, command : String) -> Result[Unit, String] {
+  let error = extern_string_to_string(
+    wasm_run_command(string_to_extern_ffi(cwd), string_to_extern_ffi(command)),
+  )
+  if error.is_empty() {
+    Ok(())
+  } else {
+    Err(error)
   }
 }

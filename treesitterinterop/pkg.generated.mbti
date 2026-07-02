@@ -20,6 +20,8 @@ pub fn import_tree_sitter_grammar(String, String, TreeSitterImportOptions) -> Tr
 
 pub fn import_tree_sitter_project(TreeSitterProjectSource, TreeSitterImportOptions) -> TreeSitterImportResult
 
+pub fn sha256_bytes_hex(Bytes) -> String
+
 pub fn source_manifest_to_json(TreeSitterProjectSource) -> String
 
 pub fn tree_sitter_export_report_to_json(TreeSitterExportReport) -> String

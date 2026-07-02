@@ -194,6 +194,9 @@ pub(all) enum PackBuildTarget {
   Moonbit
   Wasm
   Npm
+  Lsp
+  Vscode
+  Web
 } derive(Debug, Eq)
 
 ///|
@@ -712,6 +715,9 @@ fn parse_pack_build(
           Ok("moonbit") => targets.push(Moonbit)
           Ok("wasm") => targets.push(Wasm)
           Ok("npm") => targets.push(Npm)
+          Ok("lsp") => targets.push(Lsp)
+          Ok("vscode") => targets.push(Vscode)
+          Ok("web") => targets.push(Web)
           Ok(v) => return Err("pack build: unknown target '" + v + "'")
           Err(e) => return Err(e)
         }
@@ -1140,7 +1146,8 @@ fn pack_usage() -> String {
     #|  --maturity <value> --dir <path>
     #|
     #|Build options:
-    #|  --target bundle|moonbit|wasm|npm  Repeatable; default is Bundle only
+    #|  --target bundle|moonbit|wasm|npm|lsp|vscode|web
+    #|                                  Repeatable; default is Bundle only
     #|  --out-dir <dir>                   Distribution root (default: dist/<id>)
     #|  --package-name <name>             Override NPM package name
     #|  -o, --output <file>               Single Bundle output only

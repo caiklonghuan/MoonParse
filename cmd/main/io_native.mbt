@@ -352,3 +352,25 @@ fn remove_dir_all_impl(path : String) -> Result[Unit, String] {
     Ok(())
   }
 }
+
+///|
+fn run_command_impl(cwd : String, command : String) -> Result[Unit, String] {
+  let full = if cwd.is_empty() || cwd == "." {
+    command
+  } else {
+    "cd " + shell_quote(cwd) + " && " + command
+  }
+  let code = c_system(str_to_cstr(full))
+  if code == 0 {
+    Ok(())
+  } else {
+    Err(
+      "command failed with status " +
+      code.to_string() +
+      " in " +
+      cwd +
+      ": " +
+      command,
+    )
+  }
+}

@@ -69,3 +69,8 @@ pub fn make_dir(path : String) -> Result[Unit, String] {
 pub fn remove_dir_all(path : String) -> Result[Unit, String] {
   remove_dir_all_impl(path)
 }
+
+///|
+pub fn run_command(cwd : String, command : String) -> Result[Unit, String] {
+  run_command_impl(cwd, command)
+}

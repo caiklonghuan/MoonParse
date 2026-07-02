@@ -1,68 +1,111 @@
 #!/usr/bin/env node
-// run.js — MoonParse CLI runner for the wasm-gc target
+// MoonParse CLI runner for the wasm-gc target.
 //
 // Usage:
 //   node run.js <command> [args...]
 //
-// Examples:
-//   node run.js help
-//   node run.js check test.grammar
-//   node run.js parse test.grammar < source.txt
-//   node run.js generate test.grammar -o ./out
-//
 // Build the wasm binary first:
-//   moon build --target wasm-gc
+//   moon build --target wasm-gc --release
 
-'use strict';
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const fs   = require('fs');
-const path = require('path');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const WASM_PATH = path.join(
+  __dirname,
+  "_build/wasm-gc/release/build/cmd/main/main.wasm",
+);
 
-const WASM_PATH = path.join(__dirname, '_build/wasm-gc/debug/build/cmd/main/main.wasm');
+function normalizePath(value) {
+  return value.split(path.sep).join("/");
+}
 
-// ─── __moonbit_fs_unstable ────────────────────────────────────────────────────
-// Mirrors the string/byte helpers built into moonrun, and ADDS file I/O.
+function listFiles(pathStr) {
+  const root = path.resolve(pathStr);
+  const outputRoot = path.isAbsolute(pathStr) ? root : pathStr;
+  const files = [];
+
+  function walk(current) {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        const relative = path.relative(root, full);
+        files.push(normalizePath(path.join(outputRoot, relative)));
+      }
+    }
+  }
+
+  walk(root);
+  files.sort();
+  return files;
+}
+
+function atomicWriteString(pathStr, contentStr) {
+  const resolved = path.resolve(pathStr);
+  const dir = path.dirname(resolved);
+  const temp = path.join(dir, `.${path.basename(pathStr)}.${process.pid}.tmp`);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(temp, contentStr, "utf8");
+  fs.renameSync(temp, resolved);
+}
+
+function runCommand(cwd, command) {
+  const result = spawnSync(command, {
+    cwd: cwd && cwd.length > 0 ? cwd : process.cwd(),
+    shell: true,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (result.error) {
+    return result.error.message;
+  }
+  if (result.status === 0) {
+    return "";
+  }
+  return `command exited with status ${result.status}: ${command}`;
+}
 
 const __moonbit_fs_unstable = {
-  // String creation
-  begin_create_string:  ()        => ({ s: '' }),
-  string_append_char:   (h, ch)   => { h.s += String.fromCharCode(ch); },
-  finish_create_string: (h)       => h.s,
+  begin_create_string: () => ({ s: "" }),
+  string_append_char: (h, ch) => {
+    h.s += String.fromCharCode(ch);
+  },
+  finish_create_string: (h) => h.s,
 
-  // String reading
-  begin_read_string:    (s)       => ({ s, i: 0 }),
-  string_read_char:     (h)       => h.i >= h.s.length ? -1 : h.s.charCodeAt(h.i++),
-  finish_read_string:   (_h)      => undefined,
+  begin_read_string: (s) => ({ s, i: 0 }),
+  string_read_char: (h) =>
+    h.i >= h.s.length ? -1 : h.s.charCodeAt(h.i++),
+  finish_read_string: (_h) => undefined,
 
-  // Byte array reading
-  begin_read_byte_array:  (arr)   => ({ arr, i: 0 }),
-  byte_array_read_byte:   (h)     => h.i >= h.arr.length ? -1 : h.arr[h.i++],
-  finish_read_byte_array: (_h)    => undefined,
+  begin_read_byte_array: (arr) => ({ arr, i: 0 }),
+  byte_array_read_byte: (h) =>
+    h.i >= h.arr.length ? -1 : h.arr[h.i++],
+  finish_read_byte_array: (_h) => undefined,
 
-  // Byte array creation
-  begin_create_byte_array:  ()        => ({ arr: [] }),
-  byte_array_append_byte:   (h, b)    => { h.arr.push(b & 0xff); },
-  finish_create_byte_array: (h)       => new Uint8Array(h.arr),
+  begin_create_byte_array: () => ({ arr: [] }),
+  byte_array_append_byte: (h, b) => {
+    h.arr.push(b & 0xff);
+  },
+  finish_create_byte_array: (h) => new Uint8Array(h.arr),
 
-  // String array reading  (used by @env.args())
-  begin_read_string_array:  (arr)  => ({ arr, i: 0 }),
-  string_array_read_string: (h)    => {
-    if (h.i >= h.arr.length) return 'ffi_end_of_/string_array';
+  begin_read_string_array: (arr) => ({ arr, i: 0 }),
+  string_array_read_string: (h) => {
+    if (h.i >= h.arr.length) return "ffi_end_of_/string_array";
     return h.arr[h.i++];
   },
-  finish_read_string_array: (_h)   => undefined,
+  finish_read_string_array: (_h) => undefined,
 
-  // Misc
-  array_len:       (arr)     => arr.length,
-  array_get:       (arr, i)  => arr[i],
-  jsvalue_is_string:(v)      => typeof v === 'string' ? 1 : 0,
+  array_len: (arr) => arr.length,
+  array_get: (arr, i) => arr[i],
+  jsvalue_is_string: (v) => (typeof v === "string" ? 1 : 0),
 
-  // Env / args
-  env_get_var: (key) => process.env[key] || '',
-  // Return argv[0] as "moonparse" so the MoonBit main can skip it with all_args[1:]
-  args_get:    ()    => ['moonparse', ...process.argv.slice(2)],
-
-  // ── FILE I/O (added by run.js; not provided by moonrun) ──────────────────
+  env_get_var: (key) => process.env[key] || "",
+  args_get: () => ["moonparse", ...process.argv.slice(2)],
 
   read_file_to_bytes: (pathStr) => {
     try {
@@ -72,11 +115,19 @@ const __moonbit_fs_unstable = {
     }
   },
 
-  // Returns 0 on success, 1 on error
   write_string_to_file: (pathStr, contentStr) => {
     try {
       fs.mkdirSync(path.dirname(path.resolve(pathStr)), { recursive: true });
-      fs.writeFileSync(pathStr, contentStr, 'utf8');
+      fs.writeFileSync(pathStr, contentStr, "utf8");
+      return 0;
+    } catch (_e) {
+      return 1;
+    }
+  },
+
+  atomic_write_string_to_file: (pathStr, contentStr) => {
+    try {
+      atomicWriteString(pathStr, contentStr);
       return 0;
     } catch (_e) {
       return 1;
@@ -93,66 +144,79 @@ const __moonbit_fs_unstable = {
     }
   },
 
+  list_files: (pathStr) => {
+    try {
+      return listFiles(pathStr);
+    } catch (e) {
+      return [`ffi_error:${e?.message || String(e)}`];
+    }
+  },
+
+  run_command: (cwd, command) => runCommand(cwd, command),
+
   create_dir_all: (pathStr) => {
-    try { fs.mkdirSync(pathStr, { recursive: true }); return 0; }
-    catch (_e) { return 1; }
+    try {
+      fs.mkdirSync(pathStr, { recursive: true });
+      return 0;
+    } catch (_e) {
+      return 1;
+    }
   },
 
   remove_dir_all: (pathStr) => {
-    try { fs.rmSync(pathStr, { recursive: true, force: true }); return 0; }
-    catch (_e) { return 1; }
+    try {
+      fs.rmSync(pathStr, { recursive: true, force: true });
+      return 0;
+    } catch (_e) {
+      return 1;
+    }
   },
 };
 
-// ─── __moonbit_io_unstable ────────────────────────────────────────────────────
+let stdinBuf = null;
+let stdinPos = 0;
 
-let _stdinBuf = null;
-let _stdinPos = 0;
-
-function _readStdin() {
-  if (_stdinBuf !== null) return;
+function readStdin() {
+  if (stdinBuf !== null) return;
   if (process.stdin.isTTY) {
-    _stdinBuf = new Uint8Array(0);
+    stdinBuf = new Uint8Array(0);
     return;
   }
-  try { _stdinBuf = new Uint8Array(fs.readFileSync(0)); }
-  catch (_e) { _stdinBuf = new Uint8Array(0); }
+  try {
+    stdinBuf = new Uint8Array(fs.readFileSync(0));
+  } catch (_e) {
+    stdinBuf = new Uint8Array(0);
+  }
 }
 
 const __moonbit_io_unstable = {
   read_char: () => {
-    _readStdin();
-    if (_stdinPos >= _stdinBuf.length) return -1;
-    return _stdinBuf[_stdinPos++];
+    readStdin();
+    if (stdinPos >= stdinBuf.length) return -1;
+    return stdinBuf[stdinPos++];
   },
   read_bytes_from_stdin: () => {
-    _readStdin();
-    const rest = _stdinBuf.slice(_stdinPos);
-    _stdinPos = _stdinBuf.length;
+    readStdin();
+    const rest = stdinBuf.slice(stdinPos);
+    stdinPos = stdinBuf.length;
     return rest;
   },
   write_char: (ch) => process.stdout.write(String.fromCharCode(ch)),
-  flush:      ()   => { /* stdout auto-flushes in Node.js */ },
+  flush: () => undefined,
 };
-
-// ─── wasi_snapshot_preview1 ──────────────────────────────────────────────────
 
 const wasi_snapshot_preview1 = {
   proc_exit: (code) => process.exit(code),
 };
 
-// ─── spectest (MoonBit uses this for print output) ───────────────────────────
-
 const spectest = {
   print_char: (ch) => process.stdout.write(String.fromCharCode(ch)),
 };
 
-// ─── Load and run ─────────────────────────────────────────────────────────────
-
 async function main() {
   if (!fs.existsSync(WASM_PATH)) {
     process.stderr.write(
-      `Error: wasm binary not found at:\n  ${WASM_PATH}\nRun: moon build --target wasm-gc\n`
+      `Error: wasm binary not found at:\n  ${WASM_PATH}\nRun: moon build --target wasm-gc --release\n`,
     );
     process.exit(1);
   }
@@ -168,17 +232,13 @@ async function main() {
   try {
     const { instance } = await WebAssembly.instantiate(wasmBytes, importObject);
     const start = instance.exports._start;
-    if (typeof start !== 'function') {
-      process.stderr.write('Error: no _start export found in wasm binary\n');
+    if (typeof start !== "function") {
+      process.stderr.write("Error: no _start export found in wasm binary\n");
       process.exit(1);
     }
     start();
   } catch (e) {
-    // proc_exit(0) causes process.exit(0) before reaching here.
-    // Non-zero exits are already handled inside proc_exit.
-    // Any other error is unexpected.
-    if (e && e.message && e.message.includes('unreachable')) {
-      // Wasm trap from panic() — already printed stack trace via moonrun demangler
+    if (e && e.message && e.message.includes("unreachable")) {
       process.exit(1);
     }
     process.stderr.write(`Error: ${e.message || e}\n`);

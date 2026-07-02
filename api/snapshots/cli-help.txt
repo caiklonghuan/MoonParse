@@ -166,7 +166,8 @@ Init options:
   --maturity <value> --dir <path>
 
 Build options:
-  --target bundle|moonbit|wasm|npm  Repeatable; default is Bundle only
+  --target bundle|moonbit|wasm|npm|lsp|vscode|web
+                                  Repeatable; default is Bundle only
   --out-dir <dir>                   Distribution root (default: dist/<id>)
   --package-name <name>             Override NPM package name
   -o, --output <file>               Single Bundle output only

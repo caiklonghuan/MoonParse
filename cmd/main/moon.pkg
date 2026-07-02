@@ -14,9 +14,17 @@ import {
 options(
   "is-main": true,
   targets: {
-    "cmd_pack.mbt": [ "native", "llvm" ],
-    "cmd_pack_wasm.mbt": [ "wasm", "wasm-gc" ],
+    "cmd_pack.mbt": [ "native", "llvm", "wasm", "wasm-gc" ],
     "io_native.mbt": [ "native", "llvm" ],
-    "io_wasm.mbt": [ "wasm", "wasm-gc" ],
+    "io_wasm.mbt": [
+      "or",
+      [ "and", "wasm", "release" ],
+      [ "and", "wasm-gc", "release" ],
+    ],
+    "io_wasm_stub.mbt": [
+      "or",
+      [ "and", "wasm", "debug" ],
+      [ "and", "wasm-gc", "debug" ],
+    ],
   },
 )

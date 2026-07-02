@@ -65,7 +65,7 @@ fn sha256_hex8(value : UInt) -> String {
 }
 
 ///|
-fn sha256_bytes_hex(data : Bytes) -> String {
+pub fn sha256_bytes_hex(data : Bytes) -> String {
   let msg = data.to_array()
   msg.push((0x80).to_byte())
   while msg.length() % 64 != 56 {

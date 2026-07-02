@@ -280,6 +280,86 @@ test "parse_args/pack build distribution targets" {
 }
 
 ///|
+test "parse_args/pack build tool targets" {
+  match
+    parse_args([
+      "pack", "build", "sample", "--target", "lsp", "--target", "vscode", "--target",
+      "web", "--out-dir", "dist/sample",
+    ]) {
+    Ok(Pack(Build(args))) => {
+      assert_eq(args.targets.length(), 3)
+      assert_true(args.targets[0] == PackBuildTarget::Lsp)
+      assert_true(args.targets[1] == PackBuildTarget::Vscode)
+      assert_true(args.targets[2] == PackBuildTarget::Web)
+      assert_eq(args.out_dir, Some("dist/sample"))
+    }
+    other => abort("unexpected result: \{other}")
+  }
+  assert_true(
+    parse_args([
+      "pack", "build", "sample", "--target", "vscode", "--package-name", "@example/sample",
+    ])
+    is Err(_),
+  )
+}
+
+///|
+fn test_tool_bundle() -> @languagepack.LanguageBundle {
+  let files : Map[String, Bytes] = Map::new()
+  files["grammar/main.grammar"] = @utf8.encode(
+    "start document\nrule document: number\nrule number: /[0-9]+/",
+  )
+  files["queries/highlights.scm"] = @utf8.encode("(number) @number")
+  let manifest = "{" +
+    "\"schemaVersion\":1," +
+    "\"id\":\"test-lang\"," +
+    "\"name\":\"Test Language\"," +
+    "\"version\":\"0.1.0\"," +
+    "\"maturity\":\"experimental\"," +
+    "\"entryRule\":\"document\"," +
+    "\"extensions\":[\".test\"]," +
+    "\"grammar\":{\"path\":\"grammar/main.grammar\",\"format\":\"dsl\"}," +
+    "\"compatibility\":{\"minimumMoonParseVersion\":\"0.1.0\",\"maximumMoonParseVersionExclusive\":\"0.2.0\"}," +
+    "\"queries\":{\"highlights\":\"queries/highlights.scm\"}," +
+    "\"build\":{\"allowAmbiguousConflicts\":false}" +
+    "}"
+  match
+    @languagepack.build_bundle(
+      @languagepack.LanguagePackSource::new(manifest, files),
+      pack_options(),
+    ) {
+    Ok(bundle) => bundle
+    Err(errors) => abort("failed to build test bundle: \{errors}")
+  }
+}
+
+///|
+test "pack toolgen/vscode name is normalized" {
+  assert_eq(
+    pack_vscode_extension_name("JSON_Lang.V1"),
+    "moonparse-json-lang-v1",
+  )
+  assert_eq(pack_vscode_extension_name("---"), "moonparse-language")
+}
+
+///|
+test "pack toolgen/textmate grammar is skeleton" {
+  assert_eq(
+    pack_textmate_grammar("test-lang", [".test"]),
+    "{\"scopeName\":\"source.test-lang\",\"fileTypes\":[\"test\"],\"patterns\":[]}",
+  )
+}
+
+///|
+test "pack toolgen/vscode package includes generated icon and normalized name" {
+  let package_json = pack_vscode_package_json(test_tool_bundle())
+  assert_true(package_json.contains("\"name\": \"moonparse-test-lang\""))
+  assert_true(package_json.contains("\"icon\": \"resources/icon.png\""))
+  assert_true(package_json.contains("\"scopeName\": \"source.test-lang\""))
+  assert_true(package_json.contains("\"extensions\": [\".test\"]"))
+}
+
+///|
 test "parse_args/bundle input and source exclusivity" {
   match parse_args(["parse", "--bundle", "json.bundle.json", "input.json"]) {
     Ok(Parse(args)) => assert_eq(args.bundle_file, Some("json.bundle.json"))
