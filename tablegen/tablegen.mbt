@@ -23,7 +23,11 @@ pub fn generate_parse_table(
   // 从 aug.terminals（名称→ID）反转得到 terminal_names（ID→名称）
   let terminal_names : Map[TerminalId, String] = Map::new()
   for name, tid in aug.terminals {
-    terminal_names.set(tid, name)
+    match terminal_names.get(tid) {
+      Some(old) if !is_internal_terminal_name(old) &&
+        is_internal_terminal_name(name) => ()
+      _ => terminal_names.set(tid, name)
+    }
   }
   // 构建 keyword_map：所有 Literal 终结符的文本 → TerminalId 映射（O(1) 关键字查表）
   let keyword_map : Map[String, TerminalId] = Map::new()
@@ -50,4 +54,12 @@ pub fn generate_parse_table(
     keyword_map,
   }
   Ok((final_table, reports))
+}
+
+///|
+fn is_internal_terminal_name(name : String) -> Bool {
+  name.has_prefix("lit:") ||
+  name.has_prefix("re:") ||
+  name.has_prefix("ext:") ||
+  name == "·"
 }

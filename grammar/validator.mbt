@@ -218,8 +218,8 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
     Some(start_name) =>
       if grammar.rules.contains(start_name) {
         let reachable = reachable_from(grammar, start_name)
-        for name, _ in grammar.rules {
-          if !reachable.contains(name) {
+        for name, rule in grammar.rules {
+          if !rule.is_token && !reachable.contains(name) {
             errors.push({
               rule: name,
               kind: ValidationErrorKind::UnreachableRule(name),

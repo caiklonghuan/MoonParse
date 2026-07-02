@@ -433,6 +433,13 @@ fn get_validator_word_and_token_cases() -> Array[ValidationCase] {
       absent_kinds: ["TokenRuleContainsRef:digit"],
       expected_count: Some(0),
     },
+    {
+      name: "start grammar ignores unreachable token rule",
+      dsl: "start root\nrule root: /[a-z]+/\ntoken rule comment: /\\/\\/[^\\n]*/",
+      expected_kinds: [],
+      absent_kinds: ["Unreachable:comment"],
+      expected_count: Some(0),
+    },
   ]
 }
 

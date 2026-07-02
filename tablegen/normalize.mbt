@@ -791,6 +791,7 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
         for body in prod.body {
           match body.symbol {
             Terminal(tid) => {
+              ctx.terminals.set(name, tid)
               let old = ctx.term_metadata
                 .get(tid)
                 .unwrap_or(TerminalMetadata::default())
