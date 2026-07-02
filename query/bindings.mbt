@@ -32,9 +32,17 @@ pub(all) struct BindingScope {
 /// 定义/引用的符号种类
 pub(all) enum SymbolKind {
   Variable
+  Constant
   Function
+  Method
   Type
+  Struct
+  Enum
+  Trait
+  Field
+  EnumMember
   Parameter
+  TypeParameter
   Rule // Grammar DSL rule
   Token // Grammar DSL token
 } derive(Debug, Eq)
@@ -44,6 +52,7 @@ pub(all) enum SymbolKind {
 pub(all) enum NameSpace {
   Value // 变量 / 函数
   Type // 类型 / 类 / 接口
+  Member // member field namespace
   Rule // Grammar DSL rule name
 } derive(Debug, Eq)
 
@@ -57,6 +66,8 @@ pub(all) struct BindingDefinition {
   scope_id : Int // 定义所在的作用域
   start_byte : Int
   end_byte : Int
+  declaration_start_byte : Int
+  declaration_end_byte : Int
 } derive(Debug)
 
 ///|
@@ -69,6 +80,7 @@ pub(all) struct BindingReference {
   scope_id : Int // 引用所在的作用域
   start_byte : Int
   end_byte : Int
+  diagnose_unresolved : Bool
 } derive(Debug)
 
 ///|
@@ -127,6 +139,8 @@ pub fn empty_binding_graph(uri : String) -> BindingGraph {
 //   @scope / @scope.function / @scope.block / @scope.class / @scope.loop
 //   @definition.variable / @definition.function / @definition.type / @definition.parameter
 //   @reference.variable / @reference.function / @reference.type
+//   @reference.soft.variable / @reference.soft.function / @reference.soft.type
+//   @symbol.variable / @symbol.function / @symbol.type
 //
 // 旧的 capture 约定（兼容 locals.mbt）:
 //   local.scope              → scope
@@ -139,7 +153,8 @@ pub fn empty_binding_graph(uri : String) -> BindingGraph {
 pub(all) enum BindingCaptureRole {
   Scope(ScopeKind?) // Scope(Some(kind)) 或 Scope(None) 表示通用 scope
   Definition(SymbolKind?) // Definition(Some(kind)) 或 Definition(None)
-  Reference(SymbolKind?) // Reference(Some(kind)) 或 Reference(None)
+  Reference(SymbolKind?, Bool) // 第二项表示未解析时是否生成诊断
+  Symbol(SymbolKind?) // 声明完整范围，与同 match_id 的 definition 配对
   Unknown // 不参与绑定的 capture（如 @highlight, @fold 等）
 } derive(Debug, Eq)
 
@@ -150,8 +165,12 @@ pub impl Show for BindingCaptureRole with output(self, logger) {
     Scope(None) => logger.write_string("Scope(None)")
     Definition(Some(k)) => logger.write_string("Definition(Some(\{k}))")
     Definition(None) => logger.write_string("Definition(None)")
-    Reference(Some(k)) => logger.write_string("Reference(Some(\{k}))")
-    Reference(None) => logger.write_string("Reference(None)")
+    Reference(Some(k), diagnose) =>
+      logger.write_string("Reference(Some(\{k}), \{diagnose})")
+    Reference(None, diagnose) =>
+      logger.write_string("Reference(None, \{diagnose})")
+    Symbol(Some(k)) => logger.write_string("Symbol(Some(\{k}))")
+    Symbol(None) => logger.write_string("Symbol(None)")
     Unknown => logger.write_string("Unknown")
   }
 }
@@ -172,9 +191,17 @@ pub impl Show for ScopeKind with output(self, logger) {
 pub impl Show for SymbolKind with output(self, logger) {
   match self {
     Variable => logger.write_string("Variable")
+    Constant => logger.write_string("Constant")
     Function => logger.write_string("Function")
+    Method => logger.write_string("Method")
     Type => logger.write_string("Type")
+    Struct => logger.write_string("Struct")
+    Enum => logger.write_string("Enum")
+    Trait => logger.write_string("Trait")
+    Field => logger.write_string("Field")
+    EnumMember => logger.write_string("EnumMember")
     Parameter => logger.write_string("Parameter")
+    TypeParameter => logger.write_string("TypeParameter")
     Rule => logger.write_string("Rule")
     Token => logger.write_string("Token")
   }
@@ -185,6 +212,7 @@ pub impl Show for NameSpace with output(self, logger) {
   match self {
     Value => logger.write_string("Value")
     Type => logger.write_string("Type")
+    Member => logger.write_string("Member")
     Rule => logger.write_string("Rule")
   }
 }
@@ -216,12 +244,30 @@ pub fn capture_role(name : String) -> BindingCaptureRole {
 
   // ── 新约定 @reference / @reference.xxx ──
   if name == "reference" {
-    return Reference(None)
+    return Reference(None, true)
+  }
+  if name == "reference.soft" {
+    return Reference(None, false)
+  }
+  if str_starts_with(name, "reference.soft.") {
+    let sub = name[15:].to_string()
+    let k = symbol_kind_from_str(sub)
+    return Reference(k, false)
   }
   if str_starts_with(name, "reference.") {
     let sub = name[10:].to_string()
     let k = symbol_kind_from_str(sub)
-    return Reference(k)
+    return Reference(k, true)
+  }
+
+  // ── 声明完整范围 @symbol / @symbol.xxx ──
+  if name == "symbol" {
+    return Symbol(None)
+  }
+  if str_starts_with(name, "symbol.") {
+    let sub = name[7:].to_string()
+    let k = symbol_kind_from_str(sub)
+    return Symbol(k)
   }
 
   // ── 旧约定兼容 ──
@@ -237,7 +283,7 @@ pub fn capture_role(name : String) -> BindingCaptureRole {
     return Definition(k)
   }
   if name == "local.reference" {
-    return Reference(Some(Variable))
+    return Reference(Some(Variable), true)
   }
 
   Unknown
@@ -248,9 +294,17 @@ pub fn capture_role(name : String) -> BindingCaptureRole {
 pub fn symbol_kind_from_str(s : String) -> SymbolKind? {
   match s {
     "variable" => Some(Variable)
+    "constant" => Some(Constant)
     "function" => Some(Function)
+    "method" => Some(Method)
     "type" => Some(Type)
+    "struct" => Some(Struct)
+    "enum" => Some(Enum)
+    "trait" => Some(Trait)
+    "field" => Some(Field)
+    "enum_member" => Some(EnumMember)
     "parameter" => Some(Parameter)
+    "type_parameter" => Some(TypeParameter)
     "rule" => Some(Rule)
     "token" => Some(Token)
     _ => None
@@ -275,8 +329,9 @@ fn scope_kind_from_str(s : String) -> ScopeKind? {
 /// SymbolKind → NameSpace
 pub fn ns_from_kind(kind : SymbolKind) -> NameSpace {
   match kind {
-    Variable | Function | Parameter => Value
-    Type => Type
+    Variable | Constant | Function | Method | Parameter | EnumMember => Value
+    Type | Struct | Enum | Trait | TypeParameter => Type
+    Field => Member
     Rule | Token => Rule
   }
 }
@@ -312,7 +367,17 @@ fn _make_definition(
   start_byte : Int,
   end_byte : Int,
 ) -> BindingDefinition {
-  { id: -1, name, kind, ns, scope_id, start_byte, end_byte }
+  {
+    id: -1,
+    name,
+    kind,
+    ns,
+    scope_id,
+    start_byte,
+    end_byte,
+    declaration_start_byte: start_byte,
+    declaration_end_byte: end_byte,
+  }
 }
 
 ///|
@@ -324,7 +389,16 @@ fn _make_reference(
   start_byte : Int,
   end_byte : Int,
 ) -> BindingReference {
-  { id: -1, name, kind, ns, scope_id, start_byte, end_byte }
+  {
+    id: -1,
+    name,
+    kind,
+    ns,
+    scope_id,
+    start_byte,
+    end_byte,
+    diagnose_unresolved: true,
+  }
 }
 
 ///|
@@ -372,6 +446,24 @@ pub fn build_binding_graph(
   let defs_raw : Array[BindingDefinition] = []
   let refs_raw : Array[BindingReference] = []
 
+  // @symbol.* 通常是顶层 capture，执行顺序晚于其子 definition capture，
+  // 因此先独立收集，再构造 definition。
+  let symbol_ranges : Map[Int, (SymbolKind, Int, Int)] = Map::new()
+  for c in captures {
+    match capture_role(c.capture_name) {
+      Symbol(kind_opt) => {
+        let kind = match kind_opt {
+          Some(value) => value
+          None => guess_symbol_kind(c.node, table)
+        }
+        if !symbol_ranges.contains(c.match_id) {
+          symbol_ranges[c.match_id] = (kind, c.node.start_byte, c.node.end_byte)
+        }
+      }
+      _ => ()
+    }
+  }
+
   for c in captures {
     let role = capture_role(c.capture_name)
     match role {
@@ -395,6 +487,11 @@ pub fn build_binding_graph(
             Some(k) => k
             None => guess_symbol_kind(c.node, table)
           }
+          let declaration = match symbol_ranges.get(c.match_id) {
+            Some((symbol_kind, start_byte, end_byte)) if symbol_kind == kind =>
+              (start_byte, end_byte)
+            _ => (c.node.start_byte, c.node.end_byte)
+          }
           defs_raw.push({
             id: -1,
             name: text,
@@ -403,10 +500,12 @@ pub fn build_binding_graph(
             scope_id: -1,
             start_byte: c.node.start_byte,
             end_byte: c.node.end_byte,
+            declaration_start_byte: declaration.0,
+            declaration_end_byte: declaration.1,
           })
         }
       }
-      Reference(sym_kind_opt) => {
+      Reference(sym_kind_opt, diagnose_unresolved) => {
         let text = node_text(c.node, input)
         if !text.is_empty() {
           let kind = match sym_kind_opt {
@@ -421,10 +520,11 @@ pub fn build_binding_graph(
             scope_id: -1,
             start_byte: c.node.start_byte,
             end_byte: c.node.end_byte,
+            diagnose_unresolved,
           })
         }
       }
-      Unknown => ()
+      Symbol(_) | Unknown => ()
     }
   }
 
@@ -473,7 +573,7 @@ pub fn build_binding_graph(
     // 参数/变量保留在当前 scope
     // 使用 scope parent 链而非 containing[N]，避免同 range duplicate scope 干扰
     let final_scope_id = match d.kind {
-      Function | Type | Rule => {
+      Function | Method | Type | Struct | Enum | Trait | Rule => {
         let p = scope_parent_by_id(scopes, scope_id)
         if p >= 0 {
           p
@@ -503,7 +603,8 @@ pub fn build_binding_graph(
   let edges : Array[BindingEdge] = []
   let diagnostics : Array[BindingDiagnostic] = []
 
-  for node in refs_raw {
+  let refs_merged = merge_reference_captures(refs_raw)
+  for node in refs_merged {
     // 前过滤：definition 节点被 reference query 同时捕获 → 直接跳过
     if is_definition_capture_self_reference(node, definitions) {
       continue
@@ -520,9 +621,10 @@ pub fn build_binding_graph(
       containing[0]
     }
 
-    // 从当前 scope 向上查找同名同 namespace 的可见定义
-    let mut found_def_id = -1
-    for sid in containing {
+    // Resolve against the nearest scope that has matching candidates.
+    let scope_chain = if containing.is_empty() { [0] } else { containing }
+    let candidates : Array[Int] = []
+    for sid in scope_chain {
       let s_idx = scope_index(scopes, sid)
       if s_idx < 0 {
         continue
@@ -530,34 +632,47 @@ pub fn build_binding_graph(
       for def_idx in scope_defs[s_idx] {
         let d = definitions[def_idx]
         if d.name == node.name && d.ns == node.ns {
-          found_def_id = def_idx
-          break
+          candidates.push(def_idx)
         }
       }
-      if found_def_id >= 0 {
+      if !candidates.is_empty() {
         break
       }
     }
 
-    if found_def_id >= 0 {
+    if candidates.length() == 1 {
       // 有关联的可见定义 → push ref + edge
       let ref_with_scope = { ..node, scope_id, id: references.length() }
       references.push(ref_with_scope)
       let ref_idx = ref_with_scope.id
-      edges.push({ reference_id: ref_idx, definition_id: found_def_id })
-    } else {
-      // 无可见定义 → unresolved
+      edges.push({ reference_id: ref_idx, definition_id: candidates[0] })
+    } else if candidates.length() > 1 {
       let ref_with_scope = { ..node, scope_id, id: references.length() }
       references.push(ref_with_scope)
       let ref_idx = ref_with_scope.id
       diagnostics.push({
-        kind: Unresolved,
-        message: "unresolved reference '" + node.name + "'",
+        kind: Ambiguous,
+        message: "ambiguous reference '" + node.name + "'",
         reference_id: ref_idx,
         definition_id: -1,
         start_byte: node.start_byte,
         end_byte: node.end_byte,
       })
+    } else {
+      // 无可见定义 → unresolved
+      let ref_with_scope = { ..node, scope_id, id: references.length() }
+      references.push(ref_with_scope)
+      let ref_idx = ref_with_scope.id
+      if node.diagnose_unresolved {
+        diagnostics.push({
+          kind: Unresolved,
+          message: "unresolved reference '" + node.name + "'",
+          reference_id: ref_idx,
+          definition_id: -1,
+          start_byte: node.start_byte,
+          end_byte: node.end_byte,
+        })
+      }
     }
   }
 
@@ -595,6 +710,58 @@ pub fn build_binding_graph(
 
 ///|
 /// 按 start_byte 升序排列 scope
+fn same_reference_site(a : BindingReference, b : BindingReference) -> Bool {
+  a.name == b.name &&
+  a.ns == b.ns &&
+  a.start_byte == b.start_byte &&
+  a.end_byte == b.end_byte
+}
+
+///|
+fn prefer_reference_kind(old : SymbolKind, fresh : SymbolKind) -> SymbolKind {
+  match old {
+    Variable =>
+      match fresh {
+        Variable => old
+        _ => fresh
+      }
+    Type =>
+      match fresh {
+        Type => old
+        _ => fresh
+      }
+    _ => old
+  }
+}
+
+///|
+fn merge_reference_captures(
+  refs : Array[BindingReference],
+) -> Array[BindingReference] {
+  let merged : Array[BindingReference] = []
+  for r in refs {
+    let mut found = -1
+    for i in 0..<merged.length() {
+      if same_reference_site(merged[i], r) {
+        found = i
+        break
+      }
+    }
+    if found >= 0 {
+      let old = merged[found]
+      merged[found] = {
+        ..old,
+        kind: prefer_reference_kind(old.kind, r.kind),
+        diagnose_unresolved: old.diagnose_unresolved && r.diagnose_unresolved,
+      }
+    } else {
+      merged.push(r)
+    }
+  }
+  merged
+}
+
+///|
 fn sort_scopes_by_start(scopes : Array[BindingScope]) -> Array[BindingScope] {
   let result = scopes
   let n = result.length()

@@ -21,17 +21,44 @@ test "capture_role/new_scope_unknown_suffix" {
 test "capture_role/new_definition" {
   assert_eq(capture_role("definition"), Definition(None))
   assert_eq(capture_role("definition.variable"), Definition(Some(Variable)))
+  assert_eq(capture_role("definition.constant"), Definition(Some(Constant)))
   assert_eq(capture_role("definition.function"), Definition(Some(Function)))
+  assert_eq(capture_role("definition.method"), Definition(Some(Method)))
   assert_eq(capture_role("definition.type"), Definition(Some(Type)))
+  assert_eq(capture_role("definition.struct"), Definition(Some(Struct)))
+  assert_eq(capture_role("definition.enum"), Definition(Some(Enum)))
+  assert_eq(capture_role("definition.trait"), Definition(Some(Trait)))
+  assert_eq(capture_role("definition.field"), Definition(Some(Field)))
+  assert_eq(
+    capture_role("definition.enum_member"),
+    Definition(Some(EnumMember)),
+  )
   assert_eq(capture_role("definition.parameter"), Definition(Some(Parameter)))
+  assert_eq(
+    capture_role("definition.type_parameter"),
+    Definition(Some(TypeParameter)),
+  )
 }
 
 ///|
 test "capture_role/new_reference" {
-  assert_eq(capture_role("reference"), Reference(None))
-  assert_eq(capture_role("reference.variable"), Reference(Some(Variable)))
-  assert_eq(capture_role("reference.function"), Reference(Some(Function)))
-  assert_eq(capture_role("reference.type"), Reference(Some(Type)))
+  assert_eq(capture_role("reference"), Reference(None, true))
+  assert_eq(capture_role("reference.variable"), Reference(Some(Variable), true))
+  assert_eq(capture_role("reference.function"), Reference(Some(Function), true))
+  assert_eq(capture_role("reference.type"), Reference(Some(Type), true))
+  assert_eq(
+    capture_role("reference.soft.variable"),
+    Reference(Some(Variable), false),
+  )
+}
+
+///|
+test "capture_role/symbol" {
+  assert_eq(capture_role("symbol"), Symbol(None))
+  assert_eq(capture_role("symbol.function"), Symbol(Some(Function)))
+  assert_eq(capture_role("symbol.type"), Symbol(Some(Type)))
+  assert_eq(capture_role("symbol.enum_member"), Symbol(Some(EnumMember)))
+  assert_eq(capture_role("symbol.type_parameter"), Symbol(Some(TypeParameter)))
 }
 
 ///|
@@ -42,7 +69,7 @@ test "capture_role/old_local_compat" {
     capture_role("local.definition.function"),
     Definition(Some(Function)),
   )
-  assert_eq(capture_role("local.reference"), Reference(Some(Variable)))
+  assert_eq(capture_role("local.reference"), Reference(Some(Variable), true))
 }
 
 ///|
@@ -56,9 +83,17 @@ test "capture_role/unknown" {
 ///|
 test "symbol_kind_from_str/known" {
   assert_eq(symbol_kind_from_str("variable"), Some(Variable))
+  assert_eq(symbol_kind_from_str("constant"), Some(Constant))
   assert_eq(symbol_kind_from_str("function"), Some(Function))
+  assert_eq(symbol_kind_from_str("method"), Some(Method))
   assert_eq(symbol_kind_from_str("type"), Some(Type))
+  assert_eq(symbol_kind_from_str("struct"), Some(Struct))
+  assert_eq(symbol_kind_from_str("enum"), Some(Enum))
+  assert_eq(symbol_kind_from_str("trait"), Some(Trait))
+  assert_eq(symbol_kind_from_str("field"), Some(Field))
+  assert_eq(symbol_kind_from_str("enum_member"), Some(EnumMember))
   assert_eq(symbol_kind_from_str("parameter"), Some(Parameter))
+  assert_eq(symbol_kind_from_str("type_parameter"), Some(TypeParameter))
   assert_eq(symbol_kind_from_str("rule"), Some(Rule))
   assert_eq(symbol_kind_from_str("token"), Some(Token))
 }
@@ -72,9 +107,17 @@ test "symbol_kind_from_str/unknown" {
 ///|
 test "ns_from_kind/mapping" {
   assert_eq(ns_from_kind(Variable), Value)
+  assert_eq(ns_from_kind(Constant), Value)
   assert_eq(ns_from_kind(Function), Value)
+  assert_eq(ns_from_kind(Method), Value)
   assert_eq(ns_from_kind(Parameter), Value)
+  assert_eq(ns_from_kind(EnumMember), Value)
   assert_eq(ns_from_kind(Type), Type)
+  assert_eq(ns_from_kind(Struct), Type)
+  assert_eq(ns_from_kind(Enum), Type)
+  assert_eq(ns_from_kind(Trait), Type)
+  assert_eq(ns_from_kind(TypeParameter), Type)
+  assert_eq(ns_from_kind(Field), Member)
   assert_eq(ns_from_kind(Rule), Rule)
   assert_eq(ns_from_kind(Token), Rule)
 }
@@ -244,16 +287,14 @@ test "build_binding_graph/definition_self_capture_skipped" {
   }
   assert_eq(unresolved_count, 0)
   // 每个 ref 都有 edge
-  for r in graph.references {
-    let mut has_edge = false
-    for e in graph.edges {
-      if e.reference_id == r.id {
-        has_edge = true
-        break
-      }
+  assert_eq(graph.edges.length(), 0)
+  let mut ambiguous_count = 0
+  for d in graph.diagnostics {
+    if d.kind == Ambiguous {
+      ambiguous_count = ambiguous_count + 1
     }
-    assert_true(has_edge)
   }
+  assert_true(ambiguous_count > 0)
 }
 
 ///|
@@ -284,4 +325,118 @@ test "build_binding_graph/single_definition_no_self_ref" {
     }
   }
   assert_eq(unresolved_count, 0)
+}
+
+///|
+test "build_binding_graph/soft_reference_suppresses_only_unresolved_diagnostic" {
+  let dsl =
+    #|start prog
+    #|rule prog: ident
+    #|rule ident: /[a-z]+/
+  let (root, table) = make_table_and_parse(dsl, "missing")
+  let query = @query.compile("(ident) @reference.soft.variable").unwrap()
+  let graph = build_binding_graph(root, "missing", table, query)
+  assert_eq(graph.references.length(), 1)
+  assert_false(graph.references[0].diagnose_unresolved)
+  assert_eq(graph.edges.length(), 0)
+  assert_eq(graph.diagnostics.length(), 0)
+}
+
+///|
+test "build_binding_graph/strict_reference_reports_unresolved" {
+  let dsl =
+    #|start prog
+    #|rule prog: ident
+    #|rule ident: /[a-z]+/
+  let (root, table) = make_table_and_parse(dsl, "missing")
+  let query = @query.compile("(ident) @reference.variable").unwrap()
+  let graph = build_binding_graph(root, "missing", table, query)
+  assert_eq(graph.references.length(), 1)
+  assert_true(graph.references[0].diagnose_unresolved)
+  assert_eq(graph.edges.length(), 0)
+  assert_eq(graph.diagnostics.length(), 1)
+  assert_true(graph.diagnostics[0].kind == Unresolved)
+}
+
+///|
+test "build_binding_graph/reference_merge_soft_overrides_strict" {
+  let dsl =
+    #|start prog
+    #|rule prog: ident
+    #|rule ident: /[a-z]+/
+  let (root, table) = make_table_and_parse(dsl, "external")
+  let query_source =
+    #|(ident) @reference.variable
+    #|(ident) @reference.soft.function
+  let query = @query.compile(query_source).unwrap()
+  let graph = build_binding_graph(root, "external", table, query)
+  assert_eq(graph.references.length(), 1)
+  assert_false(graph.references[0].diagnose_unresolved)
+  assert_eq(graph.edges.length(), 0)
+  assert_eq(graph.diagnostics.length(), 0)
+}
+
+///|
+test "build_binding_graph/duplicate_same_scope_same_namespace" {
+  let dsl =
+    #|start prog
+    #|extras [/[ \t]+/]
+    #|rule prog: decl*
+    #|rule decl: "let" ident
+    #|rule ident: /[a-z]+/
+  let input = "let x let x"
+  let (root, table) = make_table_and_parse(dsl, input)
+  let query = @query.compile("(decl (ident) @definition.variable)").unwrap()
+  let graph = build_binding_graph(root, input, table, query)
+  assert_eq(graph.definitions.length(), 2)
+  let mut duplicate_count = 0
+  for d in graph.diagnostics {
+    if d.kind == Duplicate {
+      duplicate_count = duplicate_count + 1
+    }
+  }
+  assert_eq(duplicate_count, 1)
+}
+
+///|
+test "build_binding_graph/symbol_range_pairs_by_match_id_and_kind" {
+  let dsl =
+    #|start prog
+    #|extras [/[ \t]+/]
+    #|rule prog: decl ref
+    #|rule decl: "let" ident
+    #|rule ref: ident
+    #|rule ident: /[a-z]+/
+  let input = "let value value"
+  let (root, table) = make_table_and_parse(dsl, input)
+  let query_source =
+    #|(decl (ident) @definition.variable) @symbol.variable
+    #|(ref (ident) @reference.variable)
+  let query = @query.compile(query_source).unwrap()
+  let graph = build_binding_graph(root, input, table, query)
+  assert_eq(graph.definitions.length(), 1)
+  let definition = graph.definitions[0]
+  assert_eq(definition.start_byte, 4)
+  assert_eq(definition.end_byte, 9)
+  assert_eq(definition.declaration_start_byte, 0)
+  assert_eq(definition.declaration_end_byte, 9)
+  assert_eq(graph.references.length(), 1)
+  assert_eq(graph.edges.length(), 1)
+}
+
+///|
+test "build_binding_graph/mismatched_symbol_kind_falls_back_to_name_range" {
+  let dsl =
+    #|start prog
+    #|extras [/[ \t]+/]
+    #|rule prog: decl
+    #|rule decl: "let" ident
+    #|rule ident: /[a-z]+/
+  let input = "let value"
+  let (root, table) = make_table_and_parse(dsl, input)
+  let query = @query.compile("(decl (ident) @definition.variable) @symbol.type").unwrap()
+  let graph = build_binding_graph(root, input, table, query)
+  let definition = graph.definitions[0]
+  assert_eq(definition.declaration_start_byte, definition.start_byte)
+  assert_eq(definition.declaration_end_byte, definition.end_byte)
 }

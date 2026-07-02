@@ -74,6 +74,7 @@ captures / highlight ranges / local resolution
 | 查询执行     | `exec`                                                                                                             | 在 CST 上执行查询，返回`Array[CaptureResult]`                      |
 | 高亮         | `apply_highlights`、`apply_highlights_with_locals`、`highlight_names`                                              | 基于查询结果生成高亮区间                                           |
 | 局部变量解析 | `resolve_locals`                                                                                                   | 解析`@local.scope` / `@local.definition` / `@local.reference` 关系 |
+| 名称绑定     | `build_binding_graph`                                                                                              | 解析 scope、definition、reference、symbol 及 soft reference        |
 | 节点工具     | `node_type_name`、`node_text`                                                                                      | 获取节点显示类型名与原始文本                                       |
 | 核心类型     | `CompiledQuery`、`QueryPattern`、`PatternChild`、`Predicate`、`CaptureResult`、`HighlightRange`、`LocalResolution` | 查询系统的核心数据模型                                             |
 
@@ -94,6 +95,18 @@ captures / highlight ranges / local resolution
 - 字面量匹配依赖节点原文；
 - `#eq?` / `#not-eq?` / `#match?` / `#not-match?` / `#any-of?` 谓词依赖捕获节点文本；
 - 高亮与 locals 解析也需要原始文本辅助判断。
+
+### Binding capture 约定
+
+- `@scope.<kind>` 声明词法作用域。
+- `@definition.<kind>` 与 `@reference.<kind>` 声明名称定义和严格引用。
+- `@reference.soft.<kind>` 仍参与解析，但未命中定义时不产生 unresolved。
+- `@symbol.<kind>` 与同一次匹配中的同 kind definition 配对，提供声明完整范围。
+- 旧的 `@local.scope`、`@local.definition.*`、`@local.reference` 保持兼容。
+
+Folding Query 使用 `@fold`、`@fold.region`、`@fold.comment` 或
+`@fold.imports`。Highlight 的 dotted capture 保留完整名称，编辑器适配层按
+首段选择语义 token 类型。
 
 ### 5.2 最基础的用法：编译并执行查询
 

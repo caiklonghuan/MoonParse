@@ -42,7 +42,8 @@ pub fn symbol_kind_from_str(String) -> SymbolKind?
 pub(all) enum BindingCaptureRole {
   Scope(ScopeKind?)
   Definition(SymbolKind?)
-  Reference(SymbolKind?)
+  Reference(SymbolKind?, Bool)
+  Symbol(SymbolKind?)
   Unknown
 } derive(Eq, @debug.Debug)
 pub impl Show for BindingCaptureRole
@@ -55,6 +56,8 @@ pub(all) struct BindingDefinition {
   scope_id : Int
   start_byte : Int
   end_byte : Int
+  declaration_start_byte : Int
+  declaration_end_byte : Int
 } derive(@debug.Debug)
 
 pub(all) enum BindingDiagKind {
@@ -94,6 +97,7 @@ pub(all) struct BindingReference {
   scope_id : Int
   start_byte : Int
   end_byte : Int
+  diagnose_unresolved : Bool
 } derive(@debug.Debug)
 
 pub(all) struct BindingScope {
@@ -131,6 +135,7 @@ pub fn LocalResolution::is_local_ref(Self, Int) -> Bool
 pub(all) enum NameSpace {
   Value
   Type
+  Member
   Rule
 } derive(Eq, @debug.Debug)
 pub impl Show for NameSpace
@@ -184,9 +189,17 @@ pub impl Show for ScopeKind
 
 pub(all) enum SymbolKind {
   Variable
+  Constant
   Function
+  Method
   Type
+  Struct
+  Enum
+  Trait
+  Field
+  EnumMember
   Parameter
+  TypeParameter
   Rule
   Token
 } derive(Eq, @debug.Debug)
