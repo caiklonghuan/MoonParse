@@ -99,6 +99,9 @@ async function main() {
     "navigation.ts",
     "parse-table-info.ts",
     "rename.ts",
+    "workspace-bindings.ts",
+    "workspace-index.ts",
+    "workspace-rename.ts",
   ]) {
     assert.equal(existsSync(resolve(lspSrc, file)), true, `generated LSP missing ${file}`);
   }
@@ -108,6 +111,9 @@ async function main() {
     false,
     "generated LSP must not include tests",
   );
+  const generatedConfig = await readFile(resolve(lspSrc, "config.ts"), "utf8");
+  assert.match(generatedConfig, /parseTimeoutMs:\s*5000/, "generated LSP config missing parseTimeoutMs");
+  assert.match(generatedConfig, /idleEvictMs:\s*300000/, "generated LSP config missing idleEvictMs");
 
   const vscodeRoot = resolve(work, "vscode-target");
   run(process.execPath, [
@@ -122,6 +128,10 @@ async function main() {
   ]);
 
   const extensionRoot = resolve(vscodeRoot, "vscode");
+  const extensionTs = await readFile(resolve(extensionRoot, "src/extension.ts"), "utf8");
+  assert.match(extensionTs, /createFileSystemWatcher\("\*\*\/\*\.json"\)/);
+  assert.match(extensionTs, /synchronize:\s*\{\s*fileEvents:\s*fileWatcher\s*\}/);
+
   const vsixFiles = (await readdir(extensionRoot)).filter((file) => file.endsWith(".vsix"));
   assert.equal(vsixFiles.length, 1, "expected one generated VSIX");
   const vsixPath = resolve(extensionRoot, vsixFiles[0]);
