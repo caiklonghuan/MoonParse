@@ -24,3 +24,4 @@ todo/
 website/public/moonparse.js
 website/public/moonparse.wasm
 website/src/data/precompiledTables.js
+.tmp/
