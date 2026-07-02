@@ -156,6 +156,18 @@ fn parse_manifest_value(
         modules: None,
       }
   }
+  let lint = match object.get("lint") {
+    Some(value) => {
+      let value = mf_object(value)
+      {
+        rule_sets: match value.get("ruleSets") {
+          Some(paths) => mf_string_array(paths)
+          None => []
+        },
+      }
+    }
+    None => { rule_sets: [] }
+  }
   let scanner = match object.get("scanner") {
     Some(value) => {
       let value = mf_object(value)
@@ -207,6 +219,7 @@ fn parse_manifest_value(
     compatibility,
     grammar,
     queries,
+    lint,
     scanner,
     corpus,
     build,
@@ -350,6 +363,9 @@ fn validate_manifest(manifest : LanguagePackManifest) -> Array[PackDiagnostic] {
     ("modules", manifest.queries.modules),
     ("corpus", Some(manifest.corpus.directory)),
   ]
+  for path in manifest.lint.rule_sets {
+    paths.push(("lint ruleset", Some(path)))
+  }
   match manifest.scanner {
     Some(scanner) => paths.push(("scanner config", scanner.config_path))
     None => ()

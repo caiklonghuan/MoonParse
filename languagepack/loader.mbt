@@ -152,6 +152,8 @@ pub fn load_pack(
     }
     None => None
   }
+  let (lint_rule_sets, lint_diagnostics) = load_lint_rule_sets(source, manifest)
+  diagnostics.push_iter(lint_diagnostics.iter())
   let (corpus, corpus_diagnostics) = load_corpus_from_source(source, manifest)
   diagnostics.push_iter(corpus_diagnostics.iter())
   if has_pack_errors(diagnostics) {
@@ -165,6 +167,7 @@ pub fn load_pack(
       bindings_query,
       folding_query,
       modules_query,
+      lint_rule_sets,
       scanner,
       corpus,
     })

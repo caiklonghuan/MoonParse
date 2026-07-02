@@ -21,6 +21,8 @@ pub fn exec_bundle_query(LanguageBundle, BundleQueryKind, @runtime.CstNode, Stri
 
 pub fn has_pack_errors(Array[PackDiagnostic]) -> Bool
 
+pub fn lint_bundle(LanguageBundle, @runtime.CstNode, String, options? : LintOptions) -> Array[LintDiagnostic]
+
 pub fn load_corpus(LanguagePack) -> Array[CorpusCase]
 
 pub fn load_manifest(String) -> Result[LanguagePackManifest, Array[PackDiagnostic]]
@@ -47,6 +49,8 @@ pub(all) struct BundleCapabilities {
   bindings : Bool
   folding : Bool
   modules : Bool
+  lint : Bool
+  rewrite : Bool
   scanner : Bool
 } derive(Eq, @debug.Debug)
 
@@ -124,6 +128,7 @@ pub(all) struct LanguageBundle {
   bindings_query : @query.CompiledQuery?
   folding_query : @query.CompiledQuery?
   modules_query : @query.CompiledQuery?
+  lint_rule_sets : Array[LintRuleSet]
   scanner : ScannerDescriptor?
   capabilities : BundleCapabilities
 }
@@ -136,6 +141,7 @@ pub(all) struct LanguagePack {
   bindings_query : String?
   folding_query : String?
   modules_query : String?
+  lint_rule_sets : Array[LintRuleSet]
   scanner : ScannerDescriptor?
   corpus : Array[CorpusCase]
 } derive(@debug.Debug)
@@ -151,6 +157,7 @@ pub(all) struct LanguagePackManifest {
   compatibility : PackCompatibility
   grammar : GrammarResource
   queries : QueryResources
+  lint : LintResources
   scanner : ScannerDescriptor?
   corpus : CorpusResource
   build : PackBuildPolicy
@@ -161,6 +168,82 @@ pub(all) struct LanguagePackSource {
   files : Map[String, Bytes]
 }
 pub fn LanguagePackSource::new(String, Map[String, Bytes]) -> Self
+
+pub(all) struct LintDiagnostic {
+  rule_id : String
+  message : String
+  severity : LintSeverity
+  start_byte : Int
+  end_byte : Int
+  fix : LintFix?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct LintFix {
+  title : String
+  edit : LintTextEdit
+} derive(Eq, @debug.Debug)
+
+pub(all) enum LintFixOperation {
+  Replace
+  Delete
+  InsertBefore
+  InsertAfter
+} derive(Eq, @debug.Debug)
+
+pub(all) struct LintFixTemplate {
+  title : String
+  operation : LintFixOperation
+  target_capture : String
+  template : String
+} derive(@debug.Debug)
+
+pub(all) struct LintOptions {
+  enabled : Bool
+  rule_sets : Map[String, Bool]
+  rules : Map[String, LintRuleSetting]
+} derive(@debug.Debug)
+pub fn LintOptions::default() -> Self
+
+pub(all) struct LintResources {
+  rule_sets : Array[String]
+} derive(@debug.Debug)
+
+pub(all) struct LintRule {
+  id : String
+  global_id : String
+  query_path : String?
+  query_source : String
+  compiled_query : @query.CompiledQuery?
+  enabled_by_default : Bool
+  severity : LintSeverity
+  message : String
+  diagnostic_capture : String
+  fix : LintFixTemplate?
+} derive(@debug.Debug)
+
+pub(all) struct LintRuleSet {
+  id : String
+  enabled_by_default : Bool
+  rules : Array[LintRule]
+} derive(@debug.Debug)
+
+pub(all) enum LintRuleSetting {
+  LintOff
+  LintLevel(LintSeverity)
+} derive(Eq, @debug.Debug)
+
+pub(all) enum LintSeverity {
+  LintHint
+  LintInformation
+  LintWarning
+  LintError
+} derive(Eq, @debug.Debug)
+
+pub(all) struct LintTextEdit {
+  start_byte : Int
+  end_byte : Int
+  replacement : String
+} derive(Eq, @debug.Debug)
 
 pub(all) struct PackBuildOptions {
   software_version : String

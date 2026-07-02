@@ -45,6 +45,17 @@
         "modules": { "$ref": "#/$defs/packPath" }
       }
     },
+    "lint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ruleSets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/packPath" }
+        }
+      }
+    },
     "scanner": {
       "type": "object",
       "additionalProperties": false,

@@ -34,6 +34,29 @@
         "modules": { "type": ["string", "null"] }
       }
     },
+    "lint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleSets"],
+      "properties": {
+        "ruleSets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "enabledByDefault", "rules"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "enabledByDefault": { "type": "boolean" },
+              "rules": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/bundledLintRule" }
+              }
+            }
+          }
+        }
+      }
+    },
     "scanner": {
       "oneOf": [
         { "type": "null" },
@@ -57,7 +80,49 @@
         "bindings": { "type": "boolean" },
         "folding": { "type": "boolean" },
         "modules": { "type": "boolean" },
+        "lint": { "type": "boolean" },
+        "rewrite": { "type": "boolean" },
         "scanner": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "capture": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    },
+    "lintFix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "operation", "targetCapture", "template"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "operation": { "enum": ["replace", "delete", "insertBefore", "insertAfter"] },
+        "targetCapture": { "$ref": "#/$defs/capture" },
+        "template": { "type": "string" }
+      }
+    },
+    "bundledLintRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "enabledByDefault", "severity", "message", "diagnosticCapture", "querySource", "fix"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "enabledByDefault": { "type": "boolean" },
+        "severity": { "enum": ["hint", "information", "warning", "error"] },
+        "message": { "type": "string", "minLength": 1 },
+        "diagnosticCapture": { "$ref": "#/$defs/capture" },
+        "querySource": { "type": "string" },
+        "fix": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/lintFix" }
+          ]
+        }
       }
     }
   }

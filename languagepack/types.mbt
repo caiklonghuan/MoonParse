@@ -66,6 +66,99 @@ pub(all) struct QueryResources {
 } derive(Debug)
 
 ///|
+pub(all) struct LintResources {
+  rule_sets : Array[String]
+} derive(Debug)
+
+///|
+pub(all) enum LintSeverity {
+  LintHint
+  LintInformation
+  LintWarning
+  LintError
+} derive(Debug, Eq)
+
+///|
+pub(all) enum LintFixOperation {
+  Replace
+  Delete
+  InsertBefore
+  InsertAfter
+} derive(Debug, Eq)
+
+///|
+pub(all) enum LintRuleSetting {
+  LintOff
+  LintLevel(LintSeverity)
+} derive(Debug, Eq)
+
+///|
+pub(all) struct LintOptions {
+  enabled : Bool
+  rule_sets : Map[String, Bool]
+  rules : Map[String, LintRuleSetting]
+} derive(Debug)
+
+///|
+pub fn LintOptions::default() -> LintOptions {
+  { enabled: true, rule_sets: {}, rules: {} }
+}
+
+///|
+pub(all) struct LintFixTemplate {
+  title : String
+  operation : LintFixOperation
+  target_capture : String
+  template : String
+} derive(Debug)
+
+///|
+/// A self-contained lint rule. Pack paths are retained only while loading a
+/// source pack and are omitted from serialized Language Bundles.
+pub(all) struct LintRule {
+  id : String
+  global_id : String
+  query_path : String?
+  query_source : String
+  compiled_query : @query.CompiledQuery?
+  enabled_by_default : Bool
+  severity : LintSeverity
+  message : String
+  diagnostic_capture : String
+  fix : LintFixTemplate?
+} derive(Debug)
+
+///|
+pub(all) struct LintRuleSet {
+  id : String
+  enabled_by_default : Bool
+  rules : Array[LintRule]
+} derive(Debug)
+
+///|
+pub(all) struct LintTextEdit {
+  start_byte : Int
+  end_byte : Int
+  replacement : String
+} derive(Debug, Eq)
+
+///|
+pub(all) struct LintFix {
+  title : String
+  edit : LintTextEdit
+} derive(Debug, Eq)
+
+///|
+pub(all) struct LintDiagnostic {
+  rule_id : String
+  message : String
+  severity : LintSeverity
+  start_byte : Int
+  end_byte : Int
+  fix : LintFix?
+} derive(Debug, Eq)
+
+///|
 pub(all) struct ScannerDescriptor {
   id : String
   api_version : Int
@@ -96,6 +189,7 @@ pub(all) struct LanguagePackManifest {
   compatibility : PackCompatibility
   grammar : GrammarResource
   queries : QueryResources
+  lint : LintResources
   scanner : ScannerDescriptor?
   corpus : CorpusResource
   build : PackBuildPolicy
@@ -155,6 +249,7 @@ pub(all) struct LanguagePack {
   bindings_query : String?
   folding_query : String?
   modules_query : String?
+  lint_rule_sets : Array[LintRuleSet]
   scanner : ScannerDescriptor?
   corpus : Array[CorpusCase]
 } derive(Debug)
@@ -166,6 +261,8 @@ pub(all) struct BundleCapabilities {
   bindings : Bool
   folding : Bool
   modules : Bool
+  lint : Bool
+  rewrite : Bool
   scanner : Bool
 } derive(Debug, Eq)
 
@@ -213,6 +310,7 @@ pub(all) struct LanguageBundle {
   bindings_query : @query.CompiledQuery?
   folding_query : @query.CompiledQuery?
   modules_query : @query.CompiledQuery?
+  lint_rule_sets : Array[LintRuleSet]
   scanner : ScannerDescriptor?
   capabilities : BundleCapabilities
 }

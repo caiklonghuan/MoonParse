@@ -53,11 +53,73 @@ fn test_source(
 }
 
 ///|
+fn test_lint_ruleset(
+  id? : String = "recommended",
+  rule_id? : String = "normalize-negative-zero",
+  severity? : String = "warning",
+  diagnostic_capture? : String = "value",
+  query_path? : String = "queries/lint/normalize.scm",
+  duplicate_rule? : Bool = false,
+  fix? : String = ",\"fix\":{\"title\":\"Replace with 0\",\"operation\":\"replace\",\"targetCapture\":\"value\",\"template\":\"0\"}",
+) -> String {
+  let rule = "{" +
+    "\"id\":\"" +
+    rule_id +
+    "\"," +
+    "\"query\":\"" +
+    query_path +
+    "\"," +
+    "\"enabledByDefault\":true," +
+    "\"severity\":\"" +
+    severity +
+    "\"," +
+    "\"message\":\"Use 0 instead of -0\"," +
+    "\"diagnosticCapture\":\"" +
+    diagnostic_capture +
+    "\"" +
+    fix +
+    "}"
+  let duplicate = if duplicate_rule { "," + rule } else { "" }
+  "{" +
+  "\"schemaVersion\":1," +
+  "\"id\":\"" +
+  id +
+  "\"," +
+  "\"enabledByDefault\":true," +
+  "\"rules\":[" +
+  rule +
+  duplicate +
+  "]}"
+}
+
+///|
+fn test_lint_source(
+  ruleset? : String = test_lint_ruleset(),
+  lint_query? : String = "(number) @value",
+) -> LanguagePackSource {
+  let manifest = test_manifest().replace(
+    old="\"build\":{",
+    new="\"lint\":{\"ruleSets\":[\"lint/recommended.json\"]},\"build\":{",
+  )
+  let source = test_source(manifest~)
+  source.files["lint/recommended.json"] = @utf8.encode(ruleset)
+  source.files["queries/lint/normalize.scm"] = @utf8.encode(lint_query)
+  source
+}
+
+///|
 test "manifest/default resources and schema" {
   let manifest = load_manifest(test_manifest()).unwrap()
   assert_eq(manifest.schema_version, 1)
   assert_eq(manifest.grammar.path, "grammar/main.grammar")
   assert_eq(manifest.corpus.format, "moonparse-corpus-v1")
+  assert_true(manifest.lint.rule_sets.is_empty())
+}
+
+///|
+test "manifest/lint ruleset resources" {
+  let manifest = load_manifest(test_lint_source().manifest).unwrap()
+  assert_eq(manifest.lint.rule_sets, ["lint/recommended.json"])
 }
 
 ///|
@@ -97,6 +159,66 @@ test "load_pack/rejects missing declared query" {
   source.files.remove("queries/highlights.scm")
   let errors = load_pack(source).unwrap_err()
   assert_true(errors.any(fn(error) { error.code == "PACK203" }))
+}
+
+///|
+test "load_pack/loads lint ruleset and query source" {
+  let pack = load_pack(test_lint_source()).unwrap()
+  assert_eq(pack.lint_rule_sets.length(), 1)
+  assert_eq(pack.lint_rule_sets[0].id, "recommended")
+  assert_eq(
+    pack.lint_rule_sets[0].rules[0].global_id,
+    "test-lang/recommended/normalize-negative-zero",
+  )
+  assert_eq(pack.lint_rule_sets[0].rules[0].query_source, "(number) @value")
+  assert_true(pack.lint_rule_sets[0].rules[0].compiled_query is None)
+}
+
+///|
+test "load_pack/rejects missing lint ruleset and query" {
+  let missing_ruleset = test_lint_source()
+  missing_ruleset.files.remove("lint/recommended.json")
+  let ruleset_errors = load_pack(missing_ruleset).unwrap_err()
+  assert_true(ruleset_errors.any(fn(error) { error.code == "PACK205" }))
+  let missing_query = test_lint_source()
+  missing_query.files.remove("queries/lint/normalize.scm")
+  let query_errors = load_pack(missing_query).unwrap_err()
+  assert_true(
+    query_errors.any(fn(error) {
+      error.code == "PACK203" && error.path == "queries/lint/normalize.scm"
+    }),
+  )
+}
+
+///|
+test "load_pack/rejects invalid lint metadata" {
+  let errors = load_pack(
+    test_lint_source(
+      ruleset=test_lint_ruleset(severity="fatal", diagnostic_capture="@bad"),
+    ),
+  ).unwrap_err()
+  assert_true(errors.any(fn(error) { error.code == "PACK108" }))
+  let id_errors = load_pack(
+    test_lint_source(ruleset=test_lint_ruleset(rule_id="bad--id")),
+  ).unwrap_err()
+  assert_true(id_errors.any(fn(error) { error.code == "PACK108" }))
+  let duplicate_rule_errors = load_pack(
+    test_lint_source(ruleset=test_lint_ruleset(duplicate_rule=true)),
+  ).unwrap_err()
+  assert_true(duplicate_rule_errors.any(fn(error) { error.code == "PACK108" }))
+}
+
+///|
+test "load_pack/rejects duplicate lint ruleset ids" {
+  let base = test_lint_source()
+  let manifest = base.manifest.replace(
+    old="[\"lint/recommended.json\"]",
+    new="[\"lint/recommended.json\",\"lint/duplicate.json\"]",
+  )
+  base.files["lint/duplicate.json"] = @utf8.encode(test_lint_ruleset())
+  let source = LanguagePackSource::new(manifest, base.files)
+  let errors = load_pack(source).unwrap_err()
+  assert_true(errors.any(fn(error) { error.code == "PACK109" }))
 }
 
 ///|
@@ -143,6 +265,51 @@ test "build_bundle/modules query executes and round trips" {
   let captures = exec_bundle_query(restored, Modules, root, "42").unwrap()
   assert_eq(captures.length(), 1)
   assert_eq(captures[0].capture_name, "module.name")
+}
+
+///|
+test "build_bundle/lint rules compile and round trip" {
+  let bundle = build_bundle(test_lint_source(), PackBuildOptions::default()).unwrap()
+  assert_true(bundle.capabilities.lint)
+  assert_true(bundle.capabilities.rewrite)
+  assert_eq(bundle.lint_rule_sets.length(), 1)
+  assert_true(bundle.lint_rule_sets[0].rules[0].compiled_query is Some(_))
+  let json = bundle_to_json(bundle)
+  assert_true(json.contains("\"querySource\":\"(number) @value\""))
+  assert_false(json.contains("queries/lint/normalize.scm"))
+  let restored = bundle_from_json(json).unwrap()
+  assert_true(restored.capabilities.lint)
+  assert_true(restored.capabilities.rewrite)
+  assert_true(restored.lint_rule_sets[0].rules[0].compiled_query is Some(_))
+  assert_eq(restored.lint_rule_sets[0].rules[0].query_path, None)
+}
+
+///|
+test "build_bundle/lint without fix disables rewrite" {
+  let bundle = build_bundle(
+    test_lint_source(ruleset=test_lint_ruleset(fix="")),
+    PackBuildOptions::default(),
+  ).unwrap()
+  assert_true(bundle.capabilities.lint)
+  assert_false(bundle.capabilities.rewrite)
+  let restored = bundle_from_json(bundle_to_json(bundle)).unwrap()
+  assert_true(restored.capabilities.lint)
+  assert_false(restored.capabilities.rewrite)
+  assert_true(restored.lint_rule_sets[0].rules[0].fix is None)
+}
+
+///|
+test "build_bundle/rejects invalid lint query and missing capture" {
+  let compile_errors = build_bundle(
+    test_lint_source(lint_query="(missing"),
+    PackBuildOptions::default(),
+  ).unwrap_err()
+  assert_true(compile_errors.any(fn(error) { error.code == "PACK401" }))
+  let capture_errors = build_bundle(
+    test_lint_source(lint_query="(number) @other"),
+    PackBuildOptions::default(),
+  ).unwrap_err()
+  assert_true(capture_errors.any(fn(error) { error.code == "PACK403" }))
 }
 
 ///|
@@ -232,6 +399,19 @@ test "bundle/old v1 without folding fields remains loadable" {
   assert_false(restored.capabilities.modules)
   assert_true(restored.folding_query is None)
   assert_true(restored.modules_query is None)
+}
+
+///|
+test "bundle/old v1 without lint fields remains loadable" {
+  let bundle = build_bundle(test_source(), PackBuildOptions::default()).unwrap()
+  let old = bundle_to_json(bundle)
+    .replace(old="\"lint\":{\"ruleSets\":[]},", new="")
+    .replace(old=",\"lint\":false", new="")
+    .replace(old=",\"rewrite\":false", new="")
+  let restored = bundle_from_json(old).unwrap()
+  assert_false(restored.capabilities.lint)
+  assert_false(restored.capabilities.rewrite)
+  assert_true(restored.lint_rule_sets.is_empty())
 }
 
 ///|

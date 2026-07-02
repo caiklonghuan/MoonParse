@@ -290,6 +290,7 @@ fn build_bundle_internal(
     pack.modules_query,
     diagnostics,
   )
+  let lint_rule_sets = compile_lint_rule_sets(pack.lint_rule_sets, diagnostics)
   match pack.scanner {
     Some(scanner) if !scanner_is_known(scanner, options) =>
       diagnostics.push(
@@ -333,6 +334,7 @@ fn build_bundle_internal(
     bindings_query: bindings,
     folding_query: folding,
     modules_query: modules,
+    lint_rule_sets,
     scanner: pack.scanner,
     capabilities: {
       highlights: highlights is Some(_),
@@ -340,6 +342,8 @@ fn build_bundle_internal(
       bindings: bindings is Some(_),
       folding: folding is Some(_),
       modules: modules is Some(_),
+      lint: lint_has_rules(lint_rule_sets),
+      rewrite: lint_has_rewrites(lint_rule_sets),
       scanner: pack.scanner is Some(_),
     },
   }
@@ -419,6 +423,9 @@ pub fn bundle_to_json(bundle : LanguageBundle) -> String {
   ",\"modules\":" +
   lp_json_optional(bundle.modules_source) +
   "}," +
+  "\"lint\":" +
+  lint_rule_sets_to_json(bundle.lint_rule_sets) +
+  "," +
   "\"scanner\":" +
   scanner +
   "," +
@@ -432,6 +439,10 @@ pub fn bundle_to_json(bundle : LanguageBundle) -> String {
   bundle.capabilities.folding.to_string() +
   ",\"modules\":" +
   bundle.capabilities.modules.to_string() +
+  ",\"lint\":" +
+  bundle.capabilities.lint.to_string() +
+  ",\"rewrite\":" +
+  bundle.capabilities.rewrite.to_string() +
   ",\"scanner\":" +
   bundle.capabilities.scanner.to_string() +
   "}}"
@@ -614,6 +625,11 @@ pub fn bundle_from_json(
     let modules_query = compile_query_resource(
       "modules", modules_source, diagnostics,
     )
+    let lint_rule_sets = decode_bundle_lint_rule_sets(
+      object.get("lint"),
+      mf_string(mf_field(pack, "id")),
+      diagnostics,
+    )
     let scanner = match object.get("scanner") {
       Some(Object(value)) =>
         Some({
@@ -651,6 +667,8 @@ pub fn bundle_from_json(
       bindings: bindings_query is Some(_),
       folding: folding_query is Some(_),
       modules: modules_query is Some(_),
+      lint: lint_has_rules(lint_rule_sets),
+      rewrite: lint_has_rewrites(lint_rule_sets),
       scanner: scanner is Some(_),
     }
     let capability_data = mf_object(mf_field(object, "capabilities"))
@@ -660,6 +678,8 @@ pub fn bundle_from_json(
       bindings: mf_bool(mf_field(capability_data, "bindings")),
       folding: bundle_optional_bool_field(capability_data, "folding", false),
       modules: bundle_optional_bool_field(capability_data, "modules", false),
+      lint: bundle_optional_bool_field(capability_data, "lint", false),
+      rewrite: bundle_optional_bool_field(capability_data, "rewrite", false),
       scanner: mf_bool(mf_field(capability_data, "scanner")),
     }
     if declared_capabilities != derived_capabilities {
@@ -700,6 +720,7 @@ pub fn bundle_from_json(
       bindings_query,
       folding_query,
       modules_query,
+      lint_rule_sets,
       scanner,
       capabilities: derived_capabilities,
     })
