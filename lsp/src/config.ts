@@ -34,6 +34,8 @@ export interface WorkspaceIndexConfig {
   enabled: boolean;
   maxFileBytes: number;
   maxFiles: number;
+  parseTimeoutMs: number;
+  idleEvictMs: number;
 }
 
 export const defaultConfig: ServerConfig = {
@@ -57,6 +59,8 @@ export const defaultConfig: ServerConfig = {
     enabled: true,
     maxFileBytes: 1_000_000,
     maxFiles: 2000,
+    parseTimeoutMs: 5000,
+    idleEvictMs: 300000,
   },
 };
 
@@ -82,6 +86,10 @@ export function mergeConfig(
       maxFileBytes:
         value.workspaceIndex?.maxFileBytes ?? defaults.workspaceIndex.maxFileBytes,
       maxFiles: value.workspaceIndex?.maxFiles ?? defaults.workspaceIndex.maxFiles,
+      parseTimeoutMs:
+        value.workspaceIndex?.parseTimeoutMs ?? defaults.workspaceIndex.parseTimeoutMs,
+      idleEvictMs:
+        value.workspaceIndex?.idleEvictMs ?? defaults.workspaceIndex.idleEvictMs,
     },
   };
 }

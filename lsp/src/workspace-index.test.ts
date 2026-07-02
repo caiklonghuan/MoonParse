@@ -11,7 +11,13 @@ import {
 import type { DocumentEntry } from "./document-manager.js";
 import type { BindingGraph, ParseTree } from "../../wasm/moonparse.js";
 
-const config = { enabled: true, maxFileBytes: 1024, maxFiles: 2 };
+const config = {
+  enabled: true,
+  maxFileBytes: 1024,
+  maxFiles: 2,
+  parseTimeoutMs: 5000,
+  idleEvictMs: 300000,
+};
 
 function makeEntry(uri: string, text: string): DocumentEntry {
   return {
@@ -127,6 +133,89 @@ describe("WorkspaceIndex", () => {
     expect(index.bindingIndex(uri)).toBe(bindingIndex);
     expect(index.module(uri)?.exportedDefinitions.map((item) => item.name))
       .toEqual(["main"]);
+  });
+
+  it("tracks generation tokens and stale parse results", () => {
+    const uri = "file:///workspace/main.mbt";
+    const index = new WorkspaceIndex(config);
+
+    const first = index.beginUpdate(uri, 10);
+    const second = index.beginUpdate(uri, 20);
+
+    expect(first).toBe(1);
+    expect(second).toBe(2);
+    expect(index.isCurrentGeneration(uri, first)).toBe(false);
+    expect(index.isCurrentGeneration(uri, second)).toBe(true);
+    expect(index.currentGeneration(uri)).toBe(2);
+  });
+
+  it("evicts closed entries by least recent access before open entries", () => {
+    const index = new WorkspaceIndex(config);
+    const treeA = { id: "a" } as unknown as ParseTree;
+    const treeB = { id: "b" } as unknown as ParseTree;
+    const freed: ParseTree[] = [];
+
+    index.upsertParsedDocument({
+      uri: "file:///workspace/a.mbt",
+      text: "",
+      lineOffsets: new Uint32Array([0]),
+      languageId: "moonbit",
+      sizeBytes: 1,
+      isOpen: false,
+      indexedAtMs: 10,
+      tree: treeA,
+    });
+    index.upsertParsedDocument({
+      uri: "file:///workspace/b.mbt",
+      text: "",
+      lineOffsets: new Uint32Array([0]),
+      languageId: "moonbit",
+      sizeBytes: 1,
+      isOpen: true,
+      indexedAtMs: 20,
+      tree: treeB,
+    });
+
+    expect(index.ensureCapacityFor("file:///workspace/c.mbt", (tree) => freed.push(tree), 30))
+      .toBe(true);
+    expect(freed).toEqual([treeA]);
+    expect(index.get("file:///workspace/a.mbt")).toBeUndefined();
+    expect(index.get("file:///workspace/b.mbt")).toBeDefined();
+
+    expect(index.ensureCapacityFor("file:///workspace/d.mbt", (tree) => freed.push(tree), 40))
+      .toBe(true);
+  });
+
+  it("evicts idle closed entries and leaves recent/open entries indexed", () => {
+    const index = new WorkspaceIndex({ ...config, maxFiles: 10, idleEvictMs: 50 });
+    const oldTree = { id: "old" } as unknown as ParseTree;
+    const recentTree = { id: "recent" } as unknown as ParseTree;
+    const openTree = { id: "open" } as unknown as ParseTree;
+    const freed: ParseTree[] = [];
+
+    for (const [uri, tree, isOpen, indexedAtMs] of [
+      ["file:///workspace/old.mbt", oldTree, false, 10],
+      ["file:///workspace/recent.mbt", recentTree, false, 80],
+      ["file:///workspace/open.mbt", openTree, true, 1],
+    ] as const) {
+      index.upsertParsedDocument({
+        uri,
+        text: "",
+        lineOffsets: new Uint32Array([0]),
+        languageId: "moonbit",
+        sizeBytes: 1,
+        isOpen,
+        indexedAtMs,
+        tree,
+      });
+    }
+
+    expect(index.evictIdleClosed(100, (tree) => freed.push(tree)))
+      .toEqual(["file:///workspace/old.mbt"]);
+    expect(freed).toEqual([oldTree]);
+    expect(index.get("file:///workspace/old.mbt")).toBeUndefined();
+    expect(index.get("file:///workspace/recent.mbt")).toBeDefined();
+    expect(index.get("file:///workspace/open.mbt")).toBeDefined();
   });
 
   it("queries and clears module exports with workspace entries", () => {

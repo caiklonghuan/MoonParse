@@ -11,6 +11,8 @@ export interface WorkspaceIndexConfig {
   enabled: boolean;
   maxFileBytes: number;
   maxFiles: number;
+  parseTimeoutMs?: number;
+  idleEvictMs?: number;
 }
 
 export interface WorkspaceFileEntry {
@@ -22,6 +24,10 @@ export interface WorkspaceFileEntry {
   mtimeMs?: number;
   sizeBytes: number;
   isOpen: boolean;
+  generation: number;
+  lastAccessMs: number;
+  lastIndexedAtMs: number;
+  skipReason?: string;
   packageId: string;
   moduleId: string;
   imports: ModuleImport[];
@@ -40,6 +46,8 @@ export interface ParsedWorkspaceDocument {
   mtimeMs?: number;
   sizeBytes: number;
   isOpen: boolean;
+  generation?: number;
+  indexedAtMs?: number;
   tree: ParseTree;
   graph?: BindingGraph | null;
   bindingIndex?: BindingIndex | null;
@@ -78,6 +86,7 @@ export function parseGlobalSymbolId(value: string): GlobalSymbolId | null {
 export class WorkspaceIndex {
   private roots: string[] = [];
   private files = new Map<string, WorkspaceFileEntry>();
+  private generations = new Map<string, number>();
   private modules = new ModuleGraph();
 
   constructor(private config: WorkspaceIndexConfig) {}
@@ -107,16 +116,102 @@ export class WorkspaceIndex {
     sizeBytes: number,
     enabledExtensions: string[],
   ): boolean {
-    if (!this.config.enabled) return false;
-    if (sizeBytes > this.config.maxFileBytes) return false;
-    if (!this.isInWorkspace(uri)) return false;
-    if (!enabledExtensions.includes(extensionFromUri(uri))) return false;
-    if (!this.files.has(uri) && this.files.size >= this.config.maxFiles) return false;
-    return true;
+    return this.indexSkipReason(uri, sizeBytes, enabledExtensions) === null;
+  }
+
+  indexSkipReason(
+    uri: string,
+    sizeBytes: number,
+    enabledExtensions: string[],
+  ): string | null {
+    if (!this.config.enabled) return "disabled";
+    if (sizeBytes > this.config.maxFileBytes) return "maxFileBytes";
+    if (!this.isInWorkspace(uri)) return "outsideWorkspace";
+    if (!enabledExtensions.includes(extensionFromUri(uri))) return "extension";
+    if (!this.files.has(uri) && this.files.size >= this.config.maxFiles) {
+      return "maxFiles";
+    }
+    return null;
+  }
+
+  beginUpdate(uri: string, nowMs: number = Date.now()): number {
+    const next = this.currentGeneration(uri) + 1;
+    this.generations.set(uri, next);
+    const entry = this.files.get(uri);
+    if (entry) {
+      entry.generation = next;
+      entry.lastAccessMs = nowMs;
+      entry.skipReason = undefined;
+    }
+    return next;
+  }
+
+  currentGeneration(uri: string): number {
+    return this.generations.get(uri) ?? this.files.get(uri)?.generation ?? 0;
+  }
+
+  isCurrentGeneration(uri: string, generation: number): boolean {
+    return this.currentGeneration(uri) === generation;
+  }
+
+  markSkipped(uri: string, reason: string, nowMs: number = Date.now()): void {
+    const entry = this.files.get(uri);
+    if (!entry) return;
+    entry.skipReason = reason;
+    entry.lastAccessMs = nowMs;
+  }
+
+  touch(uri: string, nowMs: number = Date.now()): void {
+    const entry = this.files.get(uri);
+    if (entry) entry.lastAccessMs = nowMs;
+  }
+
+  ensureCapacityFor(
+    uri: string,
+    freeTree?: (tree: ParseTree) => void,
+    nowMs: number = Date.now(),
+  ): boolean {
+    if (this.files.has(uri)) return true;
+    if (this.config.maxFiles <= 0) return false;
+    if (this.files.size < this.config.maxFiles) return true;
+    this.evictClosedUntilCapacity(freeTree, nowMs);
+    return this.files.size < this.config.maxFiles;
+  }
+
+  evictIdleClosed(
+    nowMs: number = Date.now(),
+    freeTree?: (tree: ParseTree) => void,
+  ): string[] {
+    const idleMs = this.config.idleEvictMs ?? 0;
+    if (idleMs <= 0) return [];
+    const cutoff = nowMs - idleMs;
+    const evicted: string[] = [];
+    for (const entry of this.closedEntriesByAccess()) {
+      if (entry.lastAccessMs > cutoff) continue;
+      this.remove(entry.uri, freeTree);
+      evicted.push(entry.uri);
+    }
+    return evicted;
+  }
+
+  evictClosedUntilCapacity(
+    freeTree?: (tree: ParseTree) => void,
+    _nowMs: number = Date.now(),
+  ): string[] {
+    const evicted: string[] = [];
+    for (const entry of this.closedEntriesByAccess()) {
+      if (this.files.size < this.config.maxFiles) break;
+      this.remove(entry.uri, freeTree);
+      evicted.push(entry.uri);
+    }
+    return evicted;
   }
 
   upsertParsedDocument(document: ParsedWorkspaceDocument): void {
+    const nowMs = document.indexedAtMs ?? Date.now();
+    const generation = document.generation ?? this.currentGeneration(document.uri);
     const moduleEntry = this.modules.upsertFile(document.uri, document.graph ?? null);
+    this.generations.set(document.uri, generation);
     this.files.set(document.uri, {
       uri: document.uri,
       text: document.text,
@@ -126,6 +221,10 @@ export class WorkspaceIndex {
       mtimeMs: document.mtimeMs,
       sizeBytes: document.sizeBytes,
       isOpen: document.isOpen,
+      generation,
+      lastAccessMs: nowMs,
+      lastIndexedAtMs: nowMs,
+      skipReason: undefined,
       packageId: moduleEntry.packageId,
       moduleId: moduleEntry.moduleId,
       imports: moduleEntry.imports,
@@ -138,7 +237,10 @@ export class WorkspaceIndex {
 
   markClosed(uri: string): void {
     const entry = this.files.get(uri);
-    if (entry) entry.isOpen = false;
+    if (entry) {
+      entry.isOpen = false;
+      entry.lastAccessMs = Date.now();
+    }
   }
 
   remove(uri: string, freeTree?: (tree: ParseTree) => void): void {
@@ -219,6 +321,7 @@ export class WorkspaceIndex {
     }
     this.files.clear();
     this.modules.clear();
+    this.generations.clear();
   }
 
   private rebuildModuleEntries(): void {
@@ -230,6 +333,14 @@ export class WorkspaceIndex {
       entry.imports = moduleEntry.imports;
       entry.exportedDefinitions = moduleEntry.exportedDefinitions;
     }
+  }
+
+  private closedEntriesByAccess(): WorkspaceFileEntry[] {
+    return [...this.files.values()]
+      .filter((entry) => !entry.isOpen)
+      .sort((a, b) =>
+        a.lastAccessMs - b.lastAccessMs ||
+        a.uri.localeCompare(b.uri));
   }
 }
 

@@ -1,9 +1,11 @@
 import {
   createConnection,
   ProposedFeatures,
+  FileChangeType,
   type InitializeParams,
   type InitializeResult,
   type Diagnostic,
+  type DidChangeWatchedFilesParams,
 } from "vscode-languageserver/node.js";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
@@ -84,8 +86,40 @@ function workspaceRootsFromInitialize(params: InitializeParams): string[] {
   return [];
 }
 
-function shouldIndexDocument(uri: string, sizeBytes: number): boolean {
-  return workspaceIndex.shouldIndexUri(uri, sizeBytes, config.enabledExtensions);
+function workspaceTrace(event: string, uri: string, detail = ""): void {
+  logger.trace(`[workspace-index] ${event}: ${uri}${detail ? ` ${detail}` : ""}`);
+}
+
+function freeWorkspaceTree(tree: ParseTree): void {
+  runtime.freeTree(tree);
+}
+
+function evictIdleWorkspaceEntries(): void {
+  const evicted = workspaceIndex.evictIdleClosed(Date.now(), freeWorkspaceTree);
+  for (const uri of evicted) workspaceTrace("evict.idle", uri);
+}
+
+function prepareWorkspaceCapacity(uri: string): boolean {
+  evictIdleWorkspaceEntries();
+  const evicted = workspaceIndex.evictClosedUntilCapacity(freeWorkspaceTree);
+  for (const evictedUri of evicted) workspaceTrace("evict.capacity", evictedUri);
+  if (workspaceIndex.ensureCapacityFor(uri, freeWorkspaceTree)) return true;
+  workspaceTrace("skip.maxFiles", uri, `limit=${config.workspaceIndex.maxFiles}`);
+  return false;
+}
+
+function workspaceSkipReason(uri: string, sizeBytes: number): string | null {
+  return workspaceIndex.indexSkipReason(uri, sizeBytes, config.enabledExtensions);
+}
+
+function markWorkspaceSkipped(uri: string, reason: string): void {
+  workspaceIndex.markSkipped(uri, reason);
+  parseDiagnosticsByUri.delete(uri);
+}
+
+function parseTimedOut(startMs: number): boolean {
+  const timeoutMs = config.workspaceIndex.parseTimeoutMs;
+  return timeoutMs > 0 && Date.now() - startMs > timeoutMs;
 }
 
 // ── 生命周期 ──
@@ -161,6 +195,10 @@ connection.onDidChangeConfiguration(async (change) => {
     config = mergeConfig(defaultConfig, raw);
     store.updateConfig(config);
     workspaceIndex.updateConfig(config.workspaceIndex);
+    evictIdleWorkspaceEntries();
+    for (const uri of workspaceIndex.evictClosedUntilCapacity(freeWorkspaceTree)) {
+      workspaceTrace("evict.capacity", uri);
+    }
 
     if (config.trace !== prevTrace) {
       logger.setLevel(config.trace);
@@ -214,6 +252,7 @@ async function syncConfiguredBundles(): Promise<void> {
 async function indexWorkspaceRoots(): Promise<void> {
   if (!runtime.loaded || !config.workspaceIndex.enabled) return;
 
+  evictIdleWorkspaceEntries();
   const roots = workspaceIndex.getRoots();
   if (roots.length === 0) return;
 
@@ -230,8 +269,6 @@ async function indexWorkspaceRoots(): Promise<void> {
 }
 
 async function scanWorkspacePath(filePath: string): Promise<void> {
-  if (workspaceIndex.size >= config.workspaceIndex.maxFiles) return;
-
   const info = await stat(filePath);
   if (info.isDirectory()) {
     await scanWorkspaceDirectory(filePath);
@@ -243,11 +280,8 @@ async function scanWorkspacePath(filePath: string): Promise<void> {
 }
 
 async function scanWorkspaceDirectory(dirPath: string): Promise<void> {
-  if (workspaceIndex.size >= config.workspaceIndex.maxFiles) return;
-
   const entries = await readdir(dirPath, { withFileTypes: true });
   for (const entry of entries) {
-    if (workspaceIndex.size >= config.workspaceIndex.maxFiles) return;
     if (entry.isDirectory()) {
       if (workspaceSkipDirectories.has(entry.name)) continue;
       await scanWorkspaceDirectory(join(dirPath, entry.name));
@@ -265,14 +299,38 @@ async function indexWorkspaceFile(
   mtimeMs: number,
 ): Promise<void> {
   const uri = pathToFileURL(filePath).href;
-  if (store.get(uri)) return;
-  if (!store.isHandled(uri) || !shouldIndexDocument(uri, sizeBytes)) return;
+  if (store.get(uri)) {
+    workspaceTrace("skip.openOverride", uri);
+    return;
+  }
+
+  const generation = workspaceIndex.beginUpdate(uri);
+  const skipReason = workspaceSkipReason(uri, sizeBytes);
+  if (skipReason && skipReason !== "maxFiles") {
+    workspaceTrace(`skip.${skipReason}`, uri, `size=${sizeBytes}`);
+    markWorkspaceSkipped(uri, skipReason);
+    return;
+  }
+  if (!prepareWorkspaceCapacity(uri)) {
+    markWorkspaceSkipped(uri, "maxFiles");
+    return;
+  }
+  const nextSkipReason = workspaceSkipReason(uri, sizeBytes);
+  if (nextSkipReason) {
+    workspaceTrace(`skip.${nextSkipReason}`, uri, `size=${sizeBytes}`);
+    markWorkspaceSkipped(uri, nextSkipReason);
+    return;
+  }
 
   try {
     const text = await readFile(filePath, "utf8");
+    if (!workspaceIndex.isCurrentGeneration(uri, generation)) {
+      workspaceTrace("discard.stale", uri, `generation=${generation}`);
+      return;
+    }
     const languageId = store.languageForUri(uri) ?? "unknown";
     const entry = createWorkspaceEntry(uri, text, languageId);
-    parseWorkspaceFile(entry, sizeBytes, mtimeMs);
+    parseWorkspaceFile(entry, sizeBytes, mtimeMs, generation);
   } catch (err) {
     logger.error(`workspace file index failed (${uri}): ${safeErrorMessage(err)}`);
   }
@@ -299,7 +357,12 @@ function parseWorkspaceFile(
   entry: DocumentEntry,
   sizeBytes: number,
   mtimeMs: number,
+  generation: number,
 ): void {
+  if (!workspaceIndex.isCurrentGeneration(entry.uri, generation)) {
+    workspaceTrace("discard.stale", entry.uri, `generation=${generation}`);
+    return;
+  }
   ensureParser(entry);
   if (!runtime.hasParser(entry.languageId)) return;
 
@@ -309,8 +372,24 @@ function parseWorkspaceFile(
     workspaceIndex.clearRuntime(entry.uri);
   }
 
+  const startMs = Date.now();
   const tree = runtime.parseFull(entry.languageId, entry.text);
   const { graph, bindingIndex } = buildBindingsForTree(entry, tree);
+  if (parseTimedOut(startMs)) {
+    runtime.freeTree(tree);
+    workspaceTrace(
+      "discard.timeout",
+      entry.uri,
+      `elapsedMs=${Date.now() - startMs} timeoutMs=${config.workspaceIndex.parseTimeoutMs}`,
+    );
+    markWorkspaceSkipped(entry.uri, "timeout");
+    return;
+  }
+  if (!workspaceIndex.isCurrentGeneration(entry.uri, generation)) {
+    runtime.freeTree(tree);
+    workspaceTrace("discard.stale", entry.uri, `generation=${generation}`);
+    return;
+  }
   workspaceIndex.upsertParsedDocument({
     uri: entry.uri,
     text: entry.text,
@@ -320,6 +399,8 @@ function parseWorkspaceFile(
     mtimeMs,
     sizeBytes,
     isOpen: false,
+    generation,
+    indexedAtMs: Date.now(),
     tree,
     graph,
     bindingIndex,
@@ -393,13 +474,40 @@ function buildBindingsForTree(
   }
 }
 
-function triggerParse(entry: DocumentEntry): void {
+function triggerParse(entry: DocumentEntry, generation = workspaceIndex.beginUpdate(entry.uri)): void {
   if (!runtime.loaded) return;
 
   ensureParser(entry);
   if (!runtime.hasParser(entry.languageId)) return;
-  if (!shouldIndexDocument(entry.uri, entry.text.length)) {
-    workspaceIndex.remove(entry.uri, (tree) => runtime.freeTree(tree));
+
+  if (!workspaceIndex.isCurrentGeneration(entry.uri, generation)) {
+    workspaceTrace("discard.stale", entry.uri, `generation=${generation}`);
+    return;
+  }
+
+  const skipReason = workspaceSkipReason(entry.uri, entry.text.length);
+  if (skipReason && skipReason !== "maxFiles") {
+    workspaceTrace(`skip.${skipReason}`, entry.uri, `size=${entry.text.length}`);
+    workspaceIndex.remove(entry.uri, freeWorkspaceTree);
+    markWorkspaceSkipped(entry.uri, skipReason);
+    parseDiagnosticsByUri.delete(entry.uri);
+    connection.sendDiagnostics({ uri: entry.uri, diagnostics: [] });
+    return;
+  }
+
+  if (!prepareWorkspaceCapacity(entry.uri)) {
+    workspaceIndex.remove(entry.uri, freeWorkspaceTree);
+    markWorkspaceSkipped(entry.uri, "maxFiles");
+    parseDiagnosticsByUri.delete(entry.uri);
+    connection.sendDiagnostics({ uri: entry.uri, diagnostics: [] });
+    return;
+  }
+
+  const nextSkipReason = workspaceSkipReason(entry.uri, entry.text.length);
+  if (nextSkipReason) {
+    workspaceTrace(`skip.${nextSkipReason}`, entry.uri, `size=${entry.text.length}`);
+    workspaceIndex.remove(entry.uri, freeWorkspaceTree);
+    markWorkspaceSkipped(entry.uri, nextSkipReason);
     parseDiagnosticsByUri.delete(entry.uri);
     connection.sendDiagnostics({ uri: entry.uri, diagnostics: [] });
     return;
@@ -410,6 +518,7 @@ function triggerParse(entry: DocumentEntry): void {
 
     // 尝试增量解析
     let tree: ParseTree;
+    const startMs = Date.now();
     const oldTree = workspaceIndex.tree(entry.uri);
     const edit = entry.pendingEdit;
     const prevText = entry.previousText;
@@ -440,6 +549,25 @@ function triggerParse(entry: DocumentEntry): void {
     }
 
     // 清理增量状态
+    if (parseTimedOut(startMs)) {
+      runtime.freeTree(tree);
+      workspaceTrace(
+        "discard.timeout",
+        entry.uri,
+        `elapsedMs=${Date.now() - startMs} timeoutMs=${config.workspaceIndex.parseTimeoutMs}`,
+      );
+      markWorkspaceSkipped(entry.uri, "timeout");
+      parseDiagnosticsByUri.delete(entry.uri);
+      connection.sendDiagnostics({ uri: entry.uri, diagnostics: [] });
+      return;
+    }
+
+    if (!workspaceIndex.isCurrentGeneration(entry.uri, generation)) {
+      runtime.freeTree(tree);
+      workspaceTrace("discard.stale", entry.uri, `generation=${generation}`);
+      return;
+    }
+
     entry.pendingEdit = undefined;
     entry.previousText = undefined;
 
@@ -463,6 +591,8 @@ function triggerParse(entry: DocumentEntry): void {
       version: entry.version,
       sizeBytes: entry.text.length,
       isOpen: true,
+      generation,
+      indexedAtMs: Date.now(),
       tree,
       graph: bindingGraph,
       bindingIndex,
@@ -575,18 +705,33 @@ connection.onDidOpenTextDocument((params) => {
   try {
     const { uri, version, text } = params.textDocument;
 
-    if (!store.isHandled(uri) || !shouldIndexDocument(uri, text.length)) {
-      logger.trace(`didOpen 跳过: ${uri} (扩展名未在 enabledExtensions 中)`);
+    const generation = workspaceIndex.beginUpdate(uri);
+    if (!store.isHandled(uri)) {
+      workspaceTrace("skip.extension", uri);
+      return;
+    }
+    store.open(uri, text, version);
+    const skipReason = workspaceSkipReason(uri, text.length);
+    if (skipReason && skipReason !== "maxFiles") {
+      workspaceTrace(`skip.${skipReason}`, uri, `size=${text.length}`);
+      workspaceIndex.remove(uri, freeWorkspaceTree);
+      markWorkspaceSkipped(uri, skipReason);
+      connection.sendDiagnostics({ uri, diagnostics: [] });
+      return;
+    }
+    if (!prepareWorkspaceCapacity(uri)) {
+      workspaceIndex.remove(uri, freeWorkspaceTree);
+      markWorkspaceSkipped(uri, "maxFiles");
+      connection.sendDiagnostics({ uri, diagnostics: [] });
       return;
     }
 
-    store.open(uri, text, version);
     const entry = store.get(uri);
     logger.trace(
       `didOpen: ${uri} lang=${entry?.languageId} v${version} (${text.length} 字节)`,
     );
 
-    if (entry) triggerParse(entry);
+    if (entry) triggerParse(entry, generation);
   } catch (err) {
     logger.error(`didOpen 异常: ${safeErrorMessage(err)}`);
   }
@@ -637,10 +782,22 @@ connection.onDidChangeTextDocument((params) => {
         ` 变更数=${params.contentChanges.length} 文本=${newText.length}字节`,
     );
 
-    if (!shouldIndexDocument(uri, newText.length)) {
-      workspaceIndex.remove(uri, (tree) => runtime.freeTree(tree));
+    const generation = workspaceIndex.beginUpdate(uri);
+    const skipReason = workspaceSkipReason(uri, newText.length);
+    if (skipReason && skipReason !== "maxFiles") {
+      workspaceTrace(`skip.${skipReason}`, uri, `size=${newText.length}`);
+      workspaceIndex.remove(uri, freeWorkspaceTree);
       parseDiagnosticsByUri.delete(uri);
       store.update(uri, newText, params.textDocument.version);
+      markWorkspaceSkipped(uri, skipReason);
+      connection.sendDiagnostics({ uri, diagnostics: [] });
+      return;
+    }
+    if (!prepareWorkspaceCapacity(uri)) {
+      workspaceIndex.remove(uri, freeWorkspaceTree);
+      parseDiagnosticsByUri.delete(uri);
+      store.update(uri, newText, params.textDocument.version);
+      markWorkspaceSkipped(uri, "maxFiles");
       connection.sendDiagnostics({ uri, diagnostics: [] });
       return;
     }
@@ -648,7 +805,7 @@ connection.onDidChangeTextDocument((params) => {
     store.update(uri, newText, params.textDocument.version);
 
     // 防抖解析
-    store.scheduleParse(uri, triggerParse);
+    store.scheduleParse(uri, (nextEntry) => triggerParse(nextEntry, generation));
     logger.trace(
       `didChange: ${uri} 已排入防抖队列 (${config.debounceMs}ms)`,
     );
@@ -682,6 +839,7 @@ connection.onDidCloseTextDocument((params) => {
 
     // 推送空诊断清除波浪线
     connection.sendDiagnostics({ uri, diagnostics: [] });
+    evictIdleWorkspaceEntries();
 
     logger.trace(`didClose: ${uri} (剩余打开文档: ${store.count})`);
   } catch (err) {
@@ -690,6 +848,47 @@ connection.onDidCloseTextDocument((params) => {
 });
 
 // ── semanticTokens ──
+
+connection.onDidChangeWatchedFiles((params: DidChangeWatchedFilesParams) => {
+  if (shutdownReceived) return;
+  void handleWatchedFiles(params);
+});
+
+async function handleWatchedFiles(params: DidChangeWatchedFilesParams): Promise<void> {
+  for (const change of params.changes) {
+    await handleWatchedFileChange(change.uri, change.type);
+  }
+  refreshOpenBindingDiagnostics();
+  evictIdleWorkspaceEntries();
+}
+
+async function handleWatchedFileChange(uri: string, type: FileChangeType): Promise<void> {
+  if (!runtime.loaded || !config.workspaceIndex.enabled) return;
+  if (store.get(uri)) {
+    workspaceTrace("watch.openOverride", uri);
+    return;
+  }
+  if (type === FileChangeType.Deleted) {
+    workspaceIndex.remove(uri, freeWorkspaceTree);
+    parseDiagnosticsByUri.delete(uri);
+    workspaceTrace("watch.delete", uri);
+    return;
+  }
+  if (!uri.startsWith("file:")) {
+    workspaceTrace("watch.skip.nonFile", uri);
+    return;
+  }
+  try {
+    const filePath = fileURLToPath(uri);
+    const info = await stat(filePath);
+    if (!info.isFile()) return;
+    await indexWorkspaceFile(filePath, info.size, info.mtimeMs);
+  } catch (err) {
+    workspaceIndex.remove(uri, freeWorkspaceTree);
+    parseDiagnosticsByUri.delete(uri);
+    workspaceTrace("watch.missing", uri, safeErrorMessage(err));
+  }
+}
 
 connection.onRequest("textDocument/semanticTokens/full", (params: { textDocument: { uri: string } }) => {
   if (shutdownReceived) return { data: [] };
