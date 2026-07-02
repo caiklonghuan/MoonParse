@@ -108,6 +108,8 @@ export interface BindingDefinition {
   scope_id: number;
   start_byte: number;
   end_byte: number;
+  declaration_start_byte?: number;
+  declaration_end_byte?: number;
 }
 
 export interface BindingReference {
@@ -118,6 +120,7 @@ export interface BindingReference {
   scope_id: number;
   start_byte: number;
   end_byte: number;
+  diagnose_unresolved?: boolean;
 }
 
 export interface BindingEdge {
@@ -176,6 +179,8 @@ export interface LanguageBundleCapabilities {
   highlights: boolean;
   locals: boolean;
   bindings: boolean;
+  folding: boolean;
+  modules: boolean;
   scanner: boolean;
 }
 
@@ -191,6 +196,7 @@ export declare class MoonLanguage {
   highlight(tree: ParseTree): HighlightRange[];
   resolveLocals(tree: ParseTree): Record<string, boolean>;
   resolveBindings(tree: ParseTree): BindingGraph;
+  fold(tree: ParseTree): CaptureResult[];
   free(): void;
 }
 

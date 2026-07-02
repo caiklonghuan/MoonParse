@@ -13,6 +13,7 @@ languages/<id>/
   queries/highlights.scm
   queries/locals.scm
   queries/bindings.scm
+  queries/folding.scm
   scanner/scanner.json
   corpus/*.txt
 ```
@@ -44,16 +45,58 @@ moonparse pack test my-language
 moonparse pack test my-language --update
 moonparse pack build my-language
 moonparse pack build my-language --target bundle --target moonbit --target wasm --target npm
+moonparse pack build my-language --target lsp --target vscode --target web
 ```
 
 Explicit targets are generated from one in-memory Bundle under `dist/<id>`.
 Use `--out-dir` to change that root and `--package-name` to override the default
 NPM name `@moonparse-language/<id>`. The NPM target is deliberately thin and
 declares `moonparse` as a peer dependency; the WASM target is self-contained.
+The `lsp`, `vscode`, and `web` targets are peers of the distribution targets:
+they copy the canonical runtime files and the same Bundle, but do not implicitly
+create a separate `wasm/` target directory.
+
+The generated LSP target copies the repository's canonical `lsp/src` runtime
+code, excluding tests. The generated VS Code target embeds that LSP target under
+`server/`, packages a VSIX, and obtains document highlight, folding, document
+symbol, definition, references, diagnostics, rename, and completion from the
+same `server/dist` code as the built-in LSP. TextMate grammar generation remains
+a v1 skeleton (`scopeName`, `fileTypes`, empty `patterns`); semantic highlighting
+comes from LSP semantic tokens.
 
 The regular `parse` and `query` commands accept `-b/--bundle`. Bundle parsing
 automatically activates its Scanner, while query patterns named `highlights`,
-`locals`, or `bindings` select the corresponding compiled Pack query.
+`locals`, `bindings`, or `folding` select the corresponding compiled Pack query.
+
+## Query conventions
+
+See also [`query/QUERY_CONTRACT.md`](../query/QUERY_CONTRACT.md) for the
+editor-facing contract shared by LSP, Website, WASM/JS, and generated tools.
+
+Highlight captures use the names exported by the `query` package. Dotted names
+keep their full spelling in the Bundle; semantic-token consumers map them by
+their first segment, so `keyword.control` maps to `keyword` and
+`string.special` maps to `string`. Unknown highlight names are ignored by LSP
+consumers.
+
+Binding queries use `@scope.<kind>`, `@definition.<kind>`, and
+`@reference.<kind>`. A `@reference.soft.<kind>` capture still resolves to a
+visible definition, but does not produce an unresolved diagnostic when no
+definition exists. A declaration node may be captured as `@symbol.<kind>` in
+the same query match as its name's `@definition.<kind>` capture; matching kinds
+attach the declaration's full range to that definition.
+
+Folding queries use `@fold`, `@fold.region`, `@fold.comment`, or
+`@fold.imports`. The query reports structural ranges; editors are responsible
+for removing single-line ranges and duplicate spans.
+
+Binding diagnostics use stable LSP codes: unresolved references are warnings
+with `MP_BIND_UNRESOLVED`; duplicate definitions and ambiguous references are
+errors with `MP_BIND_DUPLICATE` and `MP_BIND_AMBIGUOUS`. Rename is intentionally
+conservative: a server should only rename a single-document binding group when
+the target resolves uniquely, the new name is a valid word token, and a dry-run
+does not introduce duplicates, shadowing, ambiguity, unresolved references, or
+other binding changes.
 
 `pack init` without an id starts a TTY-only, line-oriented wizard. On Windows,
 prefer the non-interactive `--name` option for non-ASCII display names. Pack

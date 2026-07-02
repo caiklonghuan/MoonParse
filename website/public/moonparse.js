@@ -279,17 +279,23 @@ class MoonLanguage {
       this.version = this.bundle.pack.version;
       this.name = this.bundle.pack.name ?? this.id;
       this.extensions = this.bundle.pack.extensions ?? [];
-      this.capabilities = this.bundle.capabilities;
+      this.capabilities = {
+        ...this.bundle.capabilities,
+        folding: this.bundle.capabilities?.folding ?? false,
+        modules: this.bundle.capabilities?.modules ?? false,
+      };
       const parserId = wasm.bundle_parser_id(this.handle);
       if (parserId < 0) throw new Error("bundle parser is unavailable");
       this.parser = new MoonParser(parserId, wasm);
       this.highlightsQuery = this.bundle.queries?.highlights ? new MoonQuery(this.bundle.queries.highlights, wasm) : null;
       this.localsQuery = this.bundle.queries?.locals ? new MoonQuery(this.bundle.queries.locals, wasm) : null;
       this.bindingsQuery = this.bundle.queries?.bindings ? new MoonQuery(this.bundle.queries.bindings, wasm) : null;
+      this.foldingQuery = this.bundle.queries?.folding ? new MoonQuery(this.bundle.queries.folding, wasm) : null;
     } catch (error) {
       this.highlightsQuery?.free();
       this.localsQuery?.free();
       this.bindingsQuery?.free();
+      this.foldingQuery?.free();
       wasm.bundle_free(this.handle);
       if (this.parser) this.parser.handle = -1;
       this.handle = -1;
@@ -309,11 +315,15 @@ class MoonLanguage {
       uri: "", scopes: [], definitions: [], references: [], edges: [], diagnostics: [],
     };
   }
+  fold(tree) {
+    return this.foldingQuery ? this.foldingQuery.exec(tree) : [];
+  }
   free() {
     if (this.handle < 0) return;
     this.highlightsQuery?.free();
     this.localsQuery?.free();
     this.bindingsQuery?.free();
+    this.foldingQuery?.free();
     this._wasm.bundle_free(this.handle);
     this.parser.handle = -1;
     this.handle = -1;

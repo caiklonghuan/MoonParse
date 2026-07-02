@@ -268,6 +268,10 @@ fn definition_to_json(
   write_kvi(buf, "start_byte", d.start_byte)
   buf.write_char(',')
   write_kvi(buf, "end_byte", d.end_byte)
+  buf.write_char(',')
+  write_kvi(buf, "declaration_start_byte", d.declaration_start_byte)
+  buf.write_char(',')
+  write_kvi(buf, "declaration_end_byte", d.declaration_end_byte)
   buf.write_char('}')
 }
 
@@ -287,6 +291,8 @@ fn reference_to_json(buf : StringBuilder, r : @query.BindingReference) -> Unit {
   write_kvi(buf, "start_byte", r.start_byte)
   buf.write_char(',')
   write_kvi(buf, "end_byte", r.end_byte)
+  buf.write_char(',')
+  write_kvb(buf, "diagnose_unresolved", r.diagnose_unresolved)
   buf.write_char('}')
 }
 
@@ -337,9 +343,17 @@ fn scope_kind_str(k : @query.ScopeKind) -> String {
 fn symbol_kind_str(k : @query.SymbolKind) -> String {
   match k {
     Variable => "variable"
+    Constant => "constant"
     Function => "function"
+    Method => "method"
     Type => "type"
+    Struct => "struct"
+    Enum => "enum"
+    Trait => "trait"
+    Field => "field"
+    EnumMember => "enum_member"
     Parameter => "parameter"
+    TypeParameter => "type_parameter"
     Rule => "rule"
     Token => "token"
   }
@@ -350,6 +364,7 @@ fn namespace_str(ns : @query.NameSpace) -> String {
   match ns {
     Value => "value"
     Type => "type"
+    Member => "member"
     Rule => "rule"
   }
 }

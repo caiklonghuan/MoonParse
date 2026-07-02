@@ -51,6 +51,7 @@ for (const id of ids) {
     highlightQuery: manifestValue.queries?.highlights ? resourceMap[manifestValue.queries.highlights] : null,
     localsQuery: manifestValue.queries?.locals ? resourceMap[manifestValue.queries.locals] : null,
     bindingsQuery: manifestValue.queries?.bindings ? resourceMap[manifestValue.queries.bindings] : null,
+    foldingQuery: manifestValue.queries?.folding ? resourceMap[manifestValue.queries.folding] : null,
   };
   lines.push(`///|`, `let embedded_${id}_manifest : String = ${JSON.stringify(manifest)}`, "");
   resources.forEach(([path, text], index) => {

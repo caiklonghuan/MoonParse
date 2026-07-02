@@ -18,6 +18,7 @@
     "check:packs": "node scripts/embed-language-packs.mjs --check",
     "check:version": "node scripts/version.mjs --check",
     "test:scripts": "node --test --experimental-test-isolation=none scripts/*.test.mjs",
-    "test:wasm": "node examples/api_smoke/node-smoke.mjs"
+    "test:wasm": "node examples/api_smoke/node-smoke.mjs",
+    "test:generated-tools": "node scripts/generated-tools-smoke.mjs"
   }
 }

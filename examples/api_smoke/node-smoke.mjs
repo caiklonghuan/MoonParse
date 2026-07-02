@@ -22,6 +22,9 @@ const bindingQuery = api.compileQuery(`
   (identifier) @definition.variable
   (identifier) @reference.variable
 `);
+const softBindingQuery = api.compileQuery(
+  "(identifier) @reference.soft.variable",
+);
 
 try {
   assert.equal(tree.root.type, "document");
@@ -30,7 +33,12 @@ try {
   assert.ok(Array.isArray(graph.scopes));
   assert.ok(Array.isArray(graph.definitions));
   assert.ok(Array.isArray(graph.references));
+  assert.equal(graph.definitions[0].declaration_start_byte, graph.definitions[0].start_byte);
+  const softGraph = softBindingQuery.resolveBindings(tree);
+  assert.equal(softGraph.references[0].diagnose_unresolved, false);
+  assert.equal(softGraph.diagnostics.length, 0);
 } finally {
+  softBindingQuery.free();
   bindingQuery.free();
   query.free();
   tree.free();
@@ -59,6 +67,20 @@ try {
 } finally {
   pythonTree.free();
   pythonLanguage.free();
+}
+
+const moonbitLanguage = api.loadBundle(builtinBundles.moonbit);
+const moonbitTree = moonbitLanguage.parse("fn main() {\n  let value = 1\n}\n");
+try {
+  assert.equal(moonbitLanguage.capabilities.folding, true);
+  const folds = moonbitLanguage.fold(moonbitTree);
+  assert.ok(folds.some((capture) => capture.capture === "fold.region"));
+  const bindings = moonbitLanguage.resolveBindings(moonbitTree);
+  const mainDefinition = bindings.definitions.find((definition) => definition.name === "main");
+  assert.ok(mainDefinition.declaration_end_byte > mainDefinition.end_byte);
+} finally {
+  moonbitTree.free();
+  moonbitLanguage.free();
 }
 
 console.log("MoonParse Node/WASM public API smoke test passed.");
