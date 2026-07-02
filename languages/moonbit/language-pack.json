@@ -19,7 +19,8 @@
   "queries": {
     "highlights": "queries/highlights.scm",
     "locals": "queries/locals.scm",
-    "bindings": "queries/bindings.scm"
+    "bindings": "queries/bindings.scm",
+    "folding": "queries/folding.scm"
   },
   "corpus": {
     "directory": "corpus",

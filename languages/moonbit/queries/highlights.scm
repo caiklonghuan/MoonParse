@@ -1,4 +1,6 @@
 ; 字符串与字符
+(comment) @comment
+
 (string_literal) @string
 (char_literal)   @string.special
 
