@@ -18,7 +18,8 @@ pub fn generate_parse_table(
   let item_sets = build_item_sets(aug)
   let goto_map = build_goto_map(aug, item_sets)
   let table = build_lalr_table(aug, item_sets, goto_map)
-  let (resolved_table, reports) = resolve_conflicts(table, aug)
+  let (resolved_table, raw_reports) = resolve_conflicts(table, aug)
+  let reports = enrich_conflict_reports(raw_reports, item_sets, goto_map)
   let real_dfa = build_lexer_dfa(aug, resolved_table)
   // 从 aug.terminals（名称→ID）反转得到 terminal_names（ID→名称）
   let terminal_names : Map[TerminalId, String] = Map::new()

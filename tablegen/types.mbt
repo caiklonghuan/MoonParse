@@ -280,6 +280,14 @@ pub(all) enum ConflictSeverity {
 } derive(Debug)
 
 ///|
+/// One deterministic LR automaton edge on the shortest route to a conflict.
+pub(all) struct ConflictStatePathStep {
+  from_state : StateId
+  to_state : StateId
+  symbol : Symbol
+} derive(Debug, Eq)
+
+///|
 /// 单条冲突报告（由 tablegen 在构建 LALR 表时生成，每个 (state, terminal) 冲突点一条）
 pub(all) struct ConflictReport {
   /// 发生冲突的 LR 解析器状态编号（StateId）。
@@ -292,6 +300,12 @@ pub(all) struct ConflictReport {
   /// 例如 [Shift(s), Reduce(p)] 表示经典 Shift-Reduce 冲突；
   /// [Reduce(p1), Reduce(p2)] 表示 Reduce-Reduce 冲突。
   actions : Array[Action]
+  /// Conflict resolution 后实际保留在 parse table cell 中的 actions。
+  resolved_actions : Array[Action]
+  /// Conflict state 对应的完整 LR(0) item set snapshot。
+  items : Array[LRItem]
+  /// 从 state 0 到 conflict state 的确定性 BFS 最短路径。
+  state_path : Array[ConflictStatePathStep]
   /// 冲突的严重程度与消解策略，见 ConflictSeverity。
   severity : ConflictSeverity
 } derive(Debug)

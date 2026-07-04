@@ -119,7 +119,18 @@ fn resolve_cell(
         "Reduce-Reduce conflict in state \{state} on terminal \{terminal}",
       )
     }
-    return (actions, Some({ state, terminal, actions, severity }))
+    return (
+      actions,
+      Some({
+        state,
+        terminal,
+        actions,
+        resolved_actions: actions,
+        items: [],
+        state_path: [],
+        severity,
+      }),
+    )
   }
 
   // Shift-Reduce
@@ -151,6 +162,9 @@ fn resolve_cell(
                 state,
                 terminal,
                 actions,
+                resolved_actions: actions,
+                items: [],
+                state_path: [],
                 severity: DynamicConflict(dyn_id),
               }),
             )
@@ -257,9 +271,25 @@ fn resolve_cell(
         "Shift-Reduce conflict (no prec info) in state \{state} on terminal \{terminal}",
       )
     }
-    Some({ state, terminal, actions, severity })
+    Some({
+      state,
+      terminal,
+      actions,
+      resolved_actions: kept,
+      items: [],
+      state_path: [],
+      severity,
+    })
   } else if kept.length() < actions.length() {
-    Some({ state, terminal, actions, severity: Warn(warn_msg) })
+    Some({
+      state,
+      terminal,
+      actions,
+      resolved_actions: kept,
+      items: [],
+      state_path: [],
+      severity: Warn(warn_msg),
+    })
   } else {
     None
   }

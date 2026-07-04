@@ -396,7 +396,13 @@ println("dfa states = " + table.lexer_dfa.states.length().to_string())
 - 冲突出现在第几个 LR 状态；
 - 是由哪个 lookahead 终结符触发；
 - 当前格子里有哪些候选动作；
+- 优先级处理后实际保留了哪些动作；
+- 冲突状态对应的 LR item snapshot；
+- 从状态 0 到冲突状态的确定性最短状态路径；
 - 编译器将其归类为哪种严重级别。
+
+这些调试信息只存在于独立返回的 `ConflictReport`，不会写入 `ParseTable`
+或其 JSON/bytes 序列化结果。
 
 如果场景是 IDE 诊断、命令行编译器或解析表调试工具，应优先消费这一结构，而不是只盯着 `ParseTable.action` 的最终结果。
 

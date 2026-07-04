@@ -79,6 +79,9 @@ pub(all) struct ConflictReport {
   state : Int
   terminal : Int
   actions : Array[Action]
+  resolved_actions : Array[Action]
+  items : Array[LRItem]
+  state_path : Array[ConflictStatePathStep]
   severity : ConflictSeverity
 } derive(@debug.Debug)
 
@@ -88,6 +91,12 @@ pub(all) enum ConflictSeverity {
   DynamicConflict(Int)
   Declared(String)
 } derive(@debug.Debug)
+
+pub(all) struct ConflictStatePathStep {
+  from_state : Int
+  to_state : Int
+  symbol : Symbol
+} derive(Eq, @debug.Debug)
 
 pub(all) struct DfaState {
   id : Int
