@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "recommended",
+  "enabledByDefault": true,
+  "rules": [
+    {
+      "id": "negative-zero",
+      "query": "queries/lint/negative-zero.scm",
+      "enabledByDefault": true,
+      "severity": "warning",
+      "message": "Use 0 instead of -0.",
+      "diagnosticCapture": "diagnostic",
+      "fix": {
+        "title": "Replace -0 with 0",
+        "operation": "replace",
+        "targetCapture": "diagnostic",
+        "template": "0"
+      }
+    },
+    {
+      "id": "todo-comment",
+      "query": "queries/lint/todo-comment.scm",
+      "enabledByDefault": true,
+      "severity": "information",
+      "message": "Resolve this TODO comment.",
+      "diagnosticCapture": "diagnostic"
+    }
+  ]
+}

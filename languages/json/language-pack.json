@@ -19,6 +19,11 @@
   "queries": {
     "highlights": "queries/highlights.scm"
   },
+  "lint": {
+    "ruleSets": [
+      "lint/recommended.json"
+    ]
+  },
   "corpus": {
     "directory": "corpus",
     "format": "moonparse-corpus-v1"

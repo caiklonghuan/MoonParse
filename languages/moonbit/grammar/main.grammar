@@ -8,7 +8,7 @@ rule newline: /(\r\n|\n|\r)[ \t\f]*/
 rule module: (newline | item)*
 rule item: function_decl | let_decl | const_decl | type_alias_decl | struct_decl | enum_decl | trait_decl | impl_decl | test_decl | suberror_decl
 rule visibility: "pub" ("(" ("all" | "readonly" | "open") ")")? | "priv"
-rule function_decl: attribute* visibility? "fn" constrained_type_params? fn_name type_params? parameter_clause return_type? error_type? block
+rule function_decl: visibility? attribute* "fn" constrained_type_params? fn_name type_params? parameter_clause return_type? error_type? block
 rule let_decl: visibility? "let" "mut"? pattern type_annotation? ("=" expression)?
 rule const_decl: visibility? "const" identifier type_annotation? "=" expression
 rule type_alias_decl: visibility? "type" identifier type_params? "=" type_expr

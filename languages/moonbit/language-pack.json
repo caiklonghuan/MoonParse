@@ -20,7 +20,13 @@
     "highlights": "queries/highlights.scm",
     "locals": "queries/locals.scm",
     "bindings": "queries/bindings.scm",
-    "folding": "queries/folding.scm"
+    "folding": "queries/folding.scm",
+    "modules": "queries/modules.scm"
+  },
+  "lint": {
+    "ruleSets": [
+      "lint/recommended.json"
+    ]
   },
   "corpus": {
     "directory": "corpus",
