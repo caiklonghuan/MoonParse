@@ -95,6 +95,7 @@ priv struct GlrEngine {
   old_end_point : Point // 编辑末点（旧坐标，Point 偏移的行列分界线）
   row_delta : Int // new_end_point.row    - old_end_point.row
   col_delta : Int // new_end_point.column - old_end_point.column
+  reuse_trace : Array[IncrementalReuseRange]
 }
 
 ///|
@@ -121,6 +122,24 @@ fn GlrEngine::new(lexer : LexerEngine, config : ParseConfig) -> GlrEngine {
     old_end_point: { row: 0, column: 0 },
     row_delta: 0,
     col_delta: 0,
+    reuse_trace: [],
+  }
+}
+
+///|
+fn GlrEngine::record_reuse(
+  self : GlrEngine,
+  node : CstNode,
+  kind : String,
+) -> Unit {
+  if node.start_byte < node.end_byte {
+    self.reuse_trace.push({
+      start_byte: node.start_byte,
+      end_byte: node.end_byte,
+      start_point: node.start_point,
+      end_point: node.end_point,
+      kind,
+    })
   }
 }
 
@@ -656,7 +675,7 @@ fn GlrEngine::run_shift(
                       }
                       if can_reuse_leaf && expected_new_end == tok.end_byte {
                         // 同跨度复用：仅 post-edit 节点需要字节和行列坐标校正
-                        if search_pos < self.edit_start {
+                        let reused = if search_pos < self.edit_start {
                           old_node
                         } else {
                           shift_node(
@@ -667,6 +686,8 @@ fn GlrEngine::run_shift(
                             self.col_delta,
                           )
                         }
+                        self.record_reuse(reused, "leaf")
+                        reused
                       } else {
                         CstNode::leaf(
                           tok.terminal_id,
@@ -912,6 +933,7 @@ fn GlrEngine::try_reuse_subtrees(
       )
     }
     new_cur_point = shifted.end_point
+    self.record_reuse(shifted, "subtree")
     let link : GssLink = {
       predecessor: top_ref,
       node: Some(shifted),

@@ -72,6 +72,44 @@ pub(all) struct InputEdit {
 } derive(Debug)
 
 ///|
+/// 增量解析 trace 中的源码范围。
+pub(all) struct IncrementalTraceRange {
+  start_byte : Int
+  end_byte : Int
+  start_point : Point
+  end_point : Point
+} derive(Eq, Debug)
+
+///|
+/// 一次真实复用事件。kind 固定为 "leaf" 或 "subtree"。
+pub(all) struct IncrementalReuseRange {
+  start_byte : Int
+  end_byte : Int
+  start_point : Point
+  end_point : Point
+  kind : String
+} derive(Debug)
+
+///|
+/// 增量解析复用 trace。
+pub(all) struct IncrementalTrace {
+  edit_old_range : IncrementalTraceRange
+  edit_new_range : IncrementalTraceRange
+  reparse_range : IncrementalTraceRange
+  reused_ranges : Array[IncrementalReuseRange]
+  reused_node_count : Int
+  reused_byte_count : Int
+  source_byte_length : Int
+} derive(Debug)
+
+///|
+/// 增量解析 trace 结果：新 CST 根节点及本次复用统计。
+pub(all) struct IncrementalTraceResult {
+  root : CstNode
+  trace : IncrementalTrace
+} derive(Debug)
+
+///|
 // CST 节点
 
 ///|

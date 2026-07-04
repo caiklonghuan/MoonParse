@@ -43,6 +43,12 @@ pub fn parse_from_dsl(String, String) -> Result[CstNode, ParseError]
 
 pub fn parse_incremental(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[CstNode, ParseError]
 
+pub fn parse_incremental_trace(@tablegen.ParseTable, String, OldTree?, InputEdit?) -> Result[IncrementalTraceResult, ParseError]
+
+pub fn parse_incremental_trace_with_config(@tablegen.ParseTable, String, OldTree?, InputEdit?, ParseConfig) -> Result[IncrementalTraceResult, ParseError]
+
+pub fn parse_incremental_trace_with_stateful_scanner_and_config(@tablegen.ParseTable, String, OldTree?, InputEdit?, &StatefulScanner, ParseConfig) -> Result[IncrementalTraceResult, ParseError]
+
 pub fn parse_incremental_with_config(@tablegen.ParseTable, String, OldTree?, InputEdit?, ParseConfig) -> Result[CstNode, ParseError]
 
 pub fn parse_incremental_with_external_scanner(@tablegen.ParseTable, String, OldTree?, InputEdit?, (String, Int, Array[Int]) -> (Int, Int)?) -> Result[CstNode, ParseError]
@@ -115,6 +121,36 @@ pub struct ExternalScannerState {
 type GssLink derive(@debug.Debug)
 
 type GssNode derive(@debug.Debug)
+
+pub(all) struct IncrementalReuseRange {
+  start_byte : Int
+  end_byte : Int
+  start_point : Point
+  end_point : Point
+  kind : String
+} derive(@debug.Debug)
+
+pub(all) struct IncrementalTrace {
+  edit_old_range : IncrementalTraceRange
+  edit_new_range : IncrementalTraceRange
+  reparse_range : IncrementalTraceRange
+  reused_ranges : Array[IncrementalReuseRange]
+  reused_node_count : Int
+  reused_byte_count : Int
+  source_byte_length : Int
+} derive(@debug.Debug)
+
+pub(all) struct IncrementalTraceRange {
+  start_byte : Int
+  end_byte : Int
+  start_point : Point
+  end_point : Point
+} derive(Eq, @debug.Debug)
+
+pub(all) struct IncrementalTraceResult {
+  root : CstNode
+  trace : IncrementalTrace
+} derive(@debug.Debug)
 
 pub(all) struct InputEdit {
   start_byte : Int

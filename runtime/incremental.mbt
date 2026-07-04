@@ -202,6 +202,74 @@ fn glr_parse_incremental(
 }
 
 ///|
+fn glr_parse_incremental_trace(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree,
+  edit : InputEdit,
+  config : ParseConfig,
+) -> Result[IncrementalTraceResult, ParseError] {
+  let marked = apply_edit(old_tree, edit)
+  let delta = edit.new_end_byte - edit.old_end_byte
+  let row_delta = edit.new_end_point.row - edit.old_end_point.row
+  let col_delta = edit.new_end_point.column - edit.old_end_point.column
+  let lexer = LexerEngine::new(table.lexer_dfa)
+  let engine = {
+    ..GlrEngine::new(lexer, config),
+    old_tree: Some(marked),
+    byte_delta: delta,
+    edit_start: edit.start_byte,
+    new_end_byte: edit.new_end_byte,
+    old_end_point: edit.old_end_point,
+    row_delta,
+    col_delta,
+  }
+  match engine.run(table, input) {
+    Ok(root) =>
+      Ok({
+        root,
+        trace: build_incremental_trace(input, edit, engine.reuse_trace),
+      })
+    Err(e) => Err(e)
+  }
+}
+
+///|
+fn glr_parse_incremental_trace_with_stateful_scanner(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree,
+  edit : InputEdit,
+  scanner : &StatefulScanner,
+  config : ParseConfig,
+) -> Result[IncrementalTraceResult, ParseError] {
+  let marked = apply_edit(old_tree, edit)
+  let delta = edit.new_end_byte - edit.old_end_byte
+  let row_delta = edit.new_end_point.row - edit.old_end_point.row
+  let col_delta = edit.new_end_point.column - edit.old_end_point.column
+  let lexer = LexerEngine::new_with_stateful(table.lexer_dfa, scanner)
+  let engine = {
+    ..GlrEngine::new(lexer, config),
+    old_tree: Some(marked),
+    byte_delta: delta,
+    edit_start: edit.start_byte,
+    new_end_byte: edit.new_end_byte,
+    old_end_point: edit.old_end_point,
+    row_delta,
+    col_delta,
+  }
+  engine.scanner_states[0] = scanner
+  match engine.run(table, input) {
+    Ok(root) =>
+      Ok({
+        root,
+        trace: build_incremental_trace(input, edit, engine.reuse_trace),
+      })
+    Err(e) => Err(e)
+  }
+}
+
+///|
 /// 增量版解析入口
 ///
 /// 提供旧树和编辑描述时，先 apply_edit 标记 has_changes，
@@ -216,6 +284,56 @@ pub fn parse_incremental(
     (Some(ot), Some(edit)) =>
       glr_parse_incremental(table, input, ot, edit, ParseConfig::default())
     _ => glr_parse(table, input)
+  }
+}
+
+///|
+pub fn parse_incremental_trace(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree?,
+  edit : InputEdit?,
+) -> Result[IncrementalTraceResult, ParseError] {
+  parse_incremental_trace_with_config(
+    table,
+    input,
+    old_tree,
+    edit,
+    ParseConfig::default(),
+  )
+}
+
+///|
+pub fn parse_incremental_trace_with_config(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree?,
+  edit : InputEdit?,
+  config : ParseConfig,
+) -> Result[IncrementalTraceResult, ParseError] {
+  match (old_tree, edit) {
+    (Some(ot), Some(e)) =>
+      glr_parse_incremental_trace(table, input, ot, e, config)
+    _ =>
+      match glr_parse_with_config(table, input, config) {
+        Ok(root) =>
+          Ok({
+            root,
+            trace: build_incremental_trace(
+              input,
+              {
+                start_byte: 0,
+                old_end_byte: 0,
+                new_end_byte: 0,
+                start_point: { row: 0, column: 0 },
+                old_end_point: { row: 0, column: 0 },
+                new_end_point: { row: 0, column: 0 },
+              },
+              [],
+            ),
+          })
+        Err(e) => Err(e)
+      }
   }
 }
 
@@ -283,6 +401,46 @@ pub fn parse_incremental_with_stateful_scanner(
     scanner,
     ParseConfig::default(),
   )
+}
+
+///|
+pub fn parse_incremental_trace_with_stateful_scanner_and_config(
+  table : @tablegen.ParseTable,
+  input : String,
+  old_tree : OldTree?,
+  edit : InputEdit?,
+  scanner : &StatefulScanner,
+  config : ParseConfig,
+) -> Result[IncrementalTraceResult, ParseError] {
+  match (old_tree, edit) {
+    (Some(ot), Some(e)) =>
+      glr_parse_incremental_trace_with_stateful_scanner(
+        table, input, ot, e, scanner, config,
+      )
+    _ =>
+      match
+        glr_parse_with_stateful_scanner_and_config(
+          table, input, scanner, config,
+        ) {
+        Ok(root) =>
+          Ok({
+            root,
+            trace: build_incremental_trace(
+              input,
+              {
+                start_byte: 0,
+                old_end_byte: 0,
+                new_end_byte: 0,
+                start_point: { row: 0, column: 0 },
+                old_end_point: { row: 0, column: 0 },
+                new_end_point: { row: 0, column: 0 },
+              },
+              [],
+            ),
+          })
+        Err(e) => Err(e)
+      }
+  }
 }
 
 ///|
