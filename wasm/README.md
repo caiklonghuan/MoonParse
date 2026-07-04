@@ -76,7 +76,7 @@ Grammar DSL / Grammar JSON / ParseTable JSON / ParseTable Bytes
 | 解析器生命周期       | `parser_create_from_dsl`、`parser_create_from_json`、`parser_create_from_bytes`、`parser_create_from_base64`、`parser_create_from_grammar_json`、`parser_free`     | 创建或释放解析器句柄                                              |
 | 解析器元信息         | `parser_get_dsl`、`parser_diagnostics_json`、`parser_dsl_error_last`、`parser_table_to_json`、`parser_table_to_bytes`、`parser_table_to_base64`                    | 获取 DSL、编译诊断与序列化表                                      |
 | 解析配置与运行时错误 | `parse_error_last`、`parse_config_set`、`parse_config_reset`                                                                                                       | 查询最近一次运行时 parse 失败原因，或调节 / 重置 GLR 错误恢复参数 |
-| 语法树生命周期       | `parse_full`、`parse_incremental`、`tree_to_json`、`tree_root_sexp`、`tree_error_summary`、`tree_free`                                                             | 以句柄方式管理语法树                                              |
+| 语法树生命周期       | `parse_full`、`parse_incremental`、`parse_incremental_trace`、`tree_to_json`、`tree_root_sexp`、`tree_error_summary`、`tree_free`                                  | 以句柄方式管理语法树，并可按需获取增量复用 trace                  |
 | 游标 API             | `cursor_new`、`cursor_goto_first_child`、`cursor_goto_next_sibling`、`cursor_goto_parent` 及各类 `cursor_node_*`                                                   | 在宿主侧逐步遍历语法树                                            |
 | 查询 API             | `query_compile`、`query_compile_error_last`、`query_exec`、`query_free`                                                                                            | 编译并执行结构化查询                                              |
 | 高亮 API             | `highlight_exec`、`highlight_exec_with_locals`、`highlight_names_json`                                                                                             | 在语法树上执行高亮和局部变量解析                                  |
@@ -185,6 +185,12 @@ if (parserId < 0) {
 }
 ```
 
+每条冲突记录继续保留兼容字段 `severity/state/terminal`，并追加 `message`、
+`terminalName`、`actions`、`items`、`statePath`、`branches` 与 `resolution`。
+其中 `statePath` 是从状态 0 到冲突状态的确定性最短路径，`resolution` 描述
+编译期消解、声明式 GLR、未声明歧义或动态优先级结果。从预编译 ParseTable
+或 bytes 创建的 parser 不保留构表期 LR item set，因此诊断数组仍为空。
+
 ### 5.4 若只需要 JSON 结果，可以使用 `wasm_*` 便捷接口
 
 若仅需“直接拿到 JSON 结果”，而不需要长期持有树句柄，则可使用以下封装：
@@ -254,6 +260,7 @@ api.tree_free(treeId)
 本模块提供两层增量接口：
 
 - 低层接口 `parse_incremental(...)`：显式传入 `12` 个位置参数；
+- trace 接口 `parse_incremental_trace(...)`：同样传入 `12` 个位置参数，返回 `{ ok, treeId, trace }` JSON；
 - 便捷接口 `wasm_parse_incremental(parserId, source, oldTreeId, changesJson)`：将编辑信息打包为 JSON 字符串。
 
 对大多数宿主调用方，建议优先使用 `wasm_parse_incremental()`，因为它更接近浏览器或编辑器侧常见的“变更对象”传递方式。
@@ -300,6 +307,8 @@ if (!newTreeJson) {
 - `wasm_parse_incremental()` 返回的是 JSON 字符串，并且会在内部消费旧树句柄与新树句柄，不再把新树继续留给宿主侧复用。
 
 若编辑器集成希望在多次增量更新之间反复复用最新树，应优先使用低层 `parse_incremental()`，而不是一次性 `wasm_parse_incremental()`。
+
+需要可视化增量复用时，使用 `parse_incremental_trace()`。成功时它会注册新树并返回新的 `treeId`，同时在 `trace` 中包含 edit old/new range、reparse range、真实 reused ranges、复用节点数、复用字节数和源码字节长度。该接口不会释放旧树；JS 高层 `MoonParser.parseIncrementalTrace()` 会在成功后按 `parseIncremental()` 的语义释放并失效旧 `ParseTree`，并额外测量增量耗时、同输入全量基准耗时和 speedup。
 
 ### 5.7 如何调节 GLR 错误恢复参数
 

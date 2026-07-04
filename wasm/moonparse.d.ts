@@ -33,6 +33,40 @@ export interface InputEdit {
   new_end_col: number;
 }
 
+export interface IncrementalTraceRange {
+  startByte: number;
+  endByte: number;
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+}
+
+export interface IncrementalReuseRange extends IncrementalTraceRange {
+  kind: "leaf" | "subtree" | string;
+}
+
+export interface IncrementalTrace {
+  edit: {
+    oldRange: IncrementalTraceRange;
+    newRange: IncrementalTraceRange;
+  };
+  reparseRange: IncrementalTraceRange;
+  reusedRanges: IncrementalReuseRange[];
+  reusedNodeCount: number;
+  reusedByteCount: number;
+  sourceByteLength: number;
+  incrementalElapsedMs: number;
+  fullBaselineElapsedMs: number | null;
+  speedup: number | null;
+  baselineError?: string;
+}
+
+export interface IncrementalTraceResult {
+  tree: ParseTree;
+  trace: IncrementalTrace;
+}
+
 
 export interface CaptureResult {
   match_id: number;
@@ -167,6 +201,7 @@ export declare class ParseTree {
 export declare class MoonParser {
   parse(source: string): ParseTree;
   parseIncremental(source: string, oldTree: ParseTree, edit: InputEdit): ParseTree;
+  parseIncrementalTrace(source: string, oldTree: ParseTree, edit: InputEdit): IncrementalTraceResult;
   readonly dsl: string;
   tableJson(): string;
   /** 导出二进制解析表（由 build 命令或 serialize_table 生成的 MPT 格式）。 */
@@ -181,7 +216,103 @@ export interface LanguageBundleCapabilities {
   bindings: boolean;
   folding: boolean;
   modules: boolean;
+  lint: boolean;
+  rewrite: boolean;
   scanner: boolean;
+}
+
+export type LintSeverity = "hint" | "information" | "warning" | "error";
+
+export type LintRuleSetting = "off" | LintSeverity;
+
+export interface LintOptions {
+  enabled?: boolean;
+  ruleSets?: Record<string, boolean>;
+  rules?: Record<string, LintRuleSetting>;
+}
+
+export interface LintTextEdit {
+  startByte: number;
+  endByte: number;
+  replacement: string;
+}
+
+export interface LintFix {
+  title: string;
+  edit: LintTextEdit;
+}
+
+export interface LintDiagnostic {
+  ruleId: string;
+  message: string;
+  severity: LintSeverity;
+  startByte: number;
+  endByte: number;
+  fix: LintFix | null;
+}
+
+export type PackFiles = Record<string, string>;
+
+export type PackDiagnosticSeverity = "info" | "warning" | "error";
+
+export interface PackDiagnostic {
+  code: string;
+  severity: PackDiagnosticSeverity;
+  message: string;
+  path: string;
+  line: number;
+  column: number;
+  hint: string | null;
+}
+
+export interface PackCheckResult {
+  ok: boolean;
+  diagnostics: PackDiagnostic[];
+}
+
+export type CorpusFailureKind = "error" | "sexp" | "contains" | "notContains" | "parse";
+
+export interface CorpusFailure {
+  kind: CorpusFailureKind;
+  expected: string;
+  actual: string;
+  message: string;
+}
+
+export interface CorpusTestCaseResult {
+  path: string;
+  caseIndex: number;
+  name: string;
+  sourceLine: number;
+  actualError: string;
+  actualSexp: string;
+  failures: CorpusFailure[];
+  passed: boolean;
+}
+
+export interface PackTestResult {
+  ok: boolean;
+  diagnostics: PackDiagnostic[];
+  cases: CorpusTestCaseResult[];
+}
+
+export interface CorpusSnapshotUpdate {
+  caseIndex: number;
+  caseName: string;
+  sexp: string;
+}
+
+export interface SnapshotRewriteRequest {
+  path: string;
+  text: string;
+  format: "moonparse-corpus-v1" | "moonparse-corpus-v2";
+  updates: CorpusSnapshotUpdate[];
+}
+
+export interface SnapshotRewriteResult {
+  ok: boolean;
+  diagnostics: PackDiagnostic[];
+  updatedText: string | null;
 }
 
 export declare class MoonLanguage {
@@ -197,10 +328,24 @@ export declare class MoonLanguage {
   resolveLocals(tree: ParseTree): Record<string, boolean>;
   resolveBindings(tree: ParseTree): BindingGraph;
   fold(tree: ParseTree): CaptureResult[];
+  /** Run the Language Pack modules query. Returns [] when the capability is absent. */
+  modules(tree: ParseTree): CaptureResult[];
+  lint(tree: ParseTree, options?: LintOptions): LintDiagnostic[];
   free(): void;
 }
 
+export interface PackBuildResult {
+  ok: boolean;
+  diagnostics: PackDiagnostic[];
+  bundleJson: string | null;
+  language: MoonLanguage | null;
+}
+
 export interface MoonParseInstance {
+  checkPack(files: PackFiles): PackCheckResult;
+  buildPack(files: PackFiles): PackBuildResult;
+  runCorpus(files: PackFiles): PackTestResult;
+  rewriteCorpusSnapshots(request: SnapshotRewriteRequest): SnapshotRewriteResult;
   loadBundle(bundleJson: string): MoonLanguage;
   createParser(dsl: string): MoonParser;
   createParserFromJson(tableJson: string, builtinId?: string | null): MoonParser;

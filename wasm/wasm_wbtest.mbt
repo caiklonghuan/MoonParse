@@ -30,6 +30,122 @@ test "parser_diagnostics_json/no_conflicts" {
 }
 
 ///|
+fn pack_api_project(source : @languagepack.LanguagePackSource) -> String {
+  let output = StringBuilder::new()
+  output.write_string("{\"files\":{\"language-pack.json\":")
+  write_jstr(output, source.manifest)
+  source.files.each(fn(path, bytes) {
+    output.write_char(',')
+    write_jstr(output, path)
+    output.write_char(':')
+    write_jstr(output, @utf8.decode_lossy(bytes))
+  })
+  output.write_string("}}")
+  output.to_string()
+}
+
+///|
+test "pack API/check build and test envelopes" {
+  let project = pack_api_project(@grammars.embedded_json_pack_source())
+  let checked = pack_check(project)
+  assert_true(checked.has_prefix("{\"ok\":true,\"diagnostics\":"))
+  assert_true(@json.parse(checked) is Object(_))
+  let built = pack_build(project)
+  assert_true(built.contains("\"ok\":true"))
+  assert_true(built.contains("\"bundle\":{\"schemaVersion\":1"))
+  assert_true(@json.parse(built) is Object(_))
+  let tested = pack_test(project)
+  assert_true(tested.contains("\"ok\":true"))
+  assert_true(tested.contains("\"cases\":[{"))
+  assert_true(tested.contains("\"passed\":true"))
+  assert_true(@json.parse(tested) is Object(_))
+  let python_tested = pack_test(
+    pack_api_project(@grammars.embedded_python_pack_source()),
+  )
+  assert_true(python_tested.contains("\"ok\":true"))
+  assert_false(python_tested.contains("\"kind\":\"parse\""))
+}
+
+///|
+test "pack API/project validation returns stable envelopes" {
+  let invalid_json = pack_check("{")
+  assert_true(invalid_json.contains("\"ok\":false"))
+  assert_true(invalid_json.contains("PACK800"))
+  let missing = pack_build("{\"files\":{}}")
+  assert_true(missing.contains("language-pack.json"))
+  assert_true(missing.contains("\"bundle\":null"))
+  let invalid_path = pack_test(
+    "{\"files\":{\"language-pack.json\":\"{}\",\"../bad\":\"x\"}}",
+  )
+  assert_true(invalid_path.contains("invalid project path"))
+  assert_true(invalid_path.contains("\"cases\":[]"))
+  let non_string = pack_check(
+    "{\"files\":{\"language-pack.json\":{},\"grammar/main.grammar\":1}}",
+  )
+  assert_true(non_string.contains("must contain UTF-8 text"))
+  assert_eq(pack_check("{\"files\":{}}"), pack_check("{\"files\":{}}"))
+}
+
+///|
+test "pack API/rewrite corpus snapshots" {
+  let request = "{\"path\":\"corpus/basic.txt\",\"text\":\"====\\nexample\\n====\\n42\\n----\\nerror: ok\\nsexp:\\n  (old)\\n\",\"format\":\"moonparse-corpus-v2\",\"updates\":[{\"caseIndex\":0,\"caseName\":\"example\",\"sexp\":\"(document (number))\"}]}"
+  let result = corpus_rewrite_snapshots(request)
+  assert_true(result.contains("\"ok\":true"))
+  assert_true(result.contains("(document (number))"))
+  assert_true(@json.parse(result) is Object(_))
+  let rejected = corpus_rewrite_snapshots(
+    request.replace(old="moonparse-corpus-v2", new="moonparse-corpus-v1"),
+  )
+  assert_true(rejected.contains("\"ok\":false"))
+  assert_true(rejected.contains("PACK607"))
+}
+
+///|
+test "bundle_lint/options handles and parser ownership" {
+  let report = @languagepack.build_bundle_report(
+    @grammars.embedded_json_pack_source(),
+    pack_build_options(),
+  )
+  let bundle = report.bundle.unwrap()
+  let bundle_id = bundle_register(@languagepack.bundle_to_json(bundle))
+  assert_true(bundle_id >= 1)
+  let parser_id = bundle_parser_id(bundle_id)
+  let tree_id = parse_full(parser_id, "{\"\": -0}")
+  assert_true(tree_id >= 1)
+  let default_result = bundle_lint(bundle_id, tree_id, "{}")
+  assert_true(default_result.contains("\"ok\":true"))
+  assert_true(default_result.contains("json/recommended/negative-zero"))
+  assert_true(default_result.contains("json/recommended/empty-object-key"))
+  assert_true(default_result.contains("\"replacement\":\"0\""))
+  let configured = bundle_lint(
+    bundle_id, tree_id, "{\"rules\":{\"json/recommended/negative-zero\":\"off\",\"json/recommended/empty-object-key\":\"error\"}}",
+  )
+  assert_false(configured.contains("negative-zero"))
+  assert_true(configured.contains("\"severity\":\"error\""))
+  assert_true(
+    bundle_lint(bundle_id, tree_id, "{\"enabled\":\"yes\"}").contains(
+      "\"ok\":false",
+    ),
+  )
+  assert_true(bundle_lint(999999, tree_id, "{}").contains("invalid bundle id"))
+  let foreign_parser = parser_create_from_dsl("start root\nrule root: \"x\"")
+  let foreign_tree = parse_full(foreign_parser, "x")
+  assert_true(
+    bundle_lint(bundle_id, foreign_tree, "{}").contains(
+      "not created by this Language Bundle",
+    ),
+  )
+  tree_free(foreign_tree)
+  parser_free(foreign_parser)
+  tree_free(tree_id)
+  assert_true(bundle_lint(bundle_id, tree_id, "{}").contains("invalid tree id"))
+  bundle_free(bundle_id)
+  assert_true(
+    bundle_lint(bundle_id, 999999, "{}").contains("invalid bundle id"),
+  )
+}
+
+///|
 test "parser_diagnostics_json/ambiguous_grammar" {
   // 有 reduce/reduce 冲突的文法 → diagnostics 非空
   let dsl =
@@ -45,7 +161,51 @@ test "parser_diagnostics_json/ambiguous_grammar" {
   assert_true(diag.contains("\"severity\""))
   assert_true(diag.contains("\"state\""))
   assert_true(diag.contains("\"terminal\""))
+  assert_true(diag.contains("\"message\""))
+  assert_true(diag.contains("\"terminalName\""))
+  assert_true(diag.contains("\"actions\""))
+  assert_true(diag.contains("\"items\""))
+  assert_true(diag.contains("\"statePath\""))
+  assert_true(diag.contains("\"branches\""))
+  assert_true(diag.contains("\"resolution\""))
+  assert_true(diag.contains("\"kind\":\"shift\""))
+  assert_true(diag.contains("\"kind\":\"reduce\""))
+  assert_true(diag.contains("\"productionId\""))
+  assert_true(diag.contains("\"ruleName\""))
+  assert_true(diag.contains("\"display\""))
+  assert_true(diag.contains("•"))
+  assert_true(diag.contains("\"kind\":\"ambiguous-glr\""))
   parser_free(pid)
+}
+
+///|
+test "parser_diagnostics_json/resolution kinds and branch outcomes" {
+  let warn_id = parser_create_from_dsl(
+    "start e\nrule e: prec.left(1, e \"+\" e) | \"n\"",
+  )
+  assert_true(warn_id >= 1)
+  let warn_json = parser_diagnostics_json(warn_id)
+  assert_true(warn_json.contains("\"kind\":\"resolved\""))
+  assert_true(warn_json.contains("\"outcome\":\"discarded\""))
+  assert_true(warn_json.contains("\"keptActionIndexes\""))
+  parser_free(warn_id)
+  let dynamic_id = parser_create_from_dsl(
+    "start e\nrule e: prec.dynamic(1, e \"+\" e) | \"n\"",
+  )
+  assert_true(dynamic_id >= 1)
+  let dynamic_json = parser_diagnostics_json(dynamic_id)
+  assert_true(dynamic_json.contains("\"kind\":\"dynamic-precedence\""))
+  assert_true(dynamic_json.contains("\"outcome\":\"dynamic\""))
+  assert_true(dynamic_json.contains("id=1"))
+  parser_free(dynamic_id)
+  let declared_id = parser_create_from_dsl(
+    "start s\nconflicts [[a, b]]\nrule s: a \"e\" | b \"e\"\nrule a: \"d\"\nrule b: \"d\"",
+  )
+  assert_true(declared_id >= 1)
+  let declared_json = parser_diagnostics_json(declared_id)
+  assert_true(declared_json.contains("\"kind\":\"declared-glr\""))
+  assert_true(declared_json.contains("\"outcome\":\"glr\""))
+  parser_free(declared_id)
 }
 
 ///|
@@ -355,6 +515,53 @@ test "parse_incremental/invalid_old_tree_returns_minus_one" {
   let new_tid = parse_incremental(pid, 99999, "a", 0, 0, 0, 0, 0, 0, 0, 0, 0)
   // 无效旧树应返回 -1，而非成功
   assert_eq(new_tid, -1)
+  parser_free(pid)
+}
+
+///|
+test "parse_incremental_trace/success_returns_trace_and_usable_tree" {
+  let dsl = "start s\nrule s: /[a-z]/ /[a-z]/"
+  let pid = parser_create_from_dsl(dsl)
+  assert_true(pid >= 1)
+  let old_tid = parse_full(pid, "ab")
+  assert_true(old_tid >= 1)
+  let json = parse_incremental_trace(
+    pid, old_tid, "ad", 1, 2, 2, 0, 1, 0, 2, 0, 2,
+  )
+  assert_true(json.contains("\"ok\":true"))
+  assert_true(json.contains("\"treeId\""))
+  assert_true(json.contains("\"trace\""))
+  assert_true(json.contains("\"edit\""))
+  assert_true(json.contains("\"reparseRange\""))
+  assert_true(json.contains("\"reusedRanges\""))
+  assert_true(json.contains("\"reusedNodeCount\""))
+  assert_true(json.contains("\"sourceByteLength\":2"))
+  assert_true(json.contains("\"kind\":\"leaf\""))
+  let tree_id = match @json.parse(json) {
+    Object(object) =>
+      match object.get("treeId") {
+        Some(Number(number, ..)) => number.to_int()
+        _ => -1
+      }
+    _ => -1
+  }
+  assert_true(tree_id >= 1)
+  assert_true(tree_root_sexp(tree_id).length() > 0)
+  tree_free(tree_id)
+  tree_free(old_tid)
+  parser_free(pid)
+}
+
+///|
+test "parse_incremental_trace/invalid_old_tree_returns_error_envelope" {
+  let dsl = "start s\nrule s: \"a\""
+  let pid = parser_create_from_dsl(dsl)
+  assert_true(pid >= 1)
+  let json = parse_incremental_trace(pid, 99999, "a", 0, 0, 0, 0, 0, 0, 0, 0, 0)
+  assert_true(json.contains("\"ok\":false"))
+  assert_true(json.contains("\"treeId\":-1"))
+  assert_true(json.contains("\"trace\":null"))
+  assert_true(json.contains("invalid old tree id"))
   parser_free(pid)
 }
 

@@ -486,6 +486,8 @@ pub fn bundle_register(json : String) -> Int {
     None => ParserScannerKind::None
     Some(scanner) if scanner.id == "python-indent" && scanner.api_version == 1 =>
       ParserScannerKind::PythonIndent
+    Some(scanner) if scanner.id == "tree-sitter-rust" &&
+      scanner.api_version == 1 => ParserScannerKind::TreeSitterRust
     Some(scanner) => {
       last_bundle_error_msg[0] = "unsupported scanner '" +
         scanner.id +
@@ -558,6 +560,8 @@ fn parser_scanner_kind_from_builtin_id(
 ) -> ParserScannerKind {
   if builtin_id == "python" {
     ParserScannerKind::PythonIndent
+  } else if builtin_id == "rust" {
+    ParserScannerKind::TreeSitterRust
   } else {
     ParserScannerKind::None
   }
@@ -588,6 +592,13 @@ fn parse_full_with_entry(
         @grammars.python_indent_scanner(entry.table),
         global_parse_config[0],
       )
+    ParserScannerKind::TreeSitterRust =>
+      @runtime.parse_with_stateful_scanner_and_config(
+        entry.table,
+        source,
+        @grammars.tree_sitter_rust_scanner(entry.table),
+        global_parse_config[0],
+      )
   }
 }
 
@@ -614,6 +625,52 @@ fn parse_incremental_with_entry(
         old_tree,
         edit,
         @grammars.python_indent_scanner(entry.table),
+        global_parse_config[0],
+      )
+    ParserScannerKind::TreeSitterRust =>
+      @runtime.parse_with_old_tree_and_stateful_scanner_and_config(
+        entry.table,
+        new_source,
+        old_tree,
+        edit,
+        @grammars.tree_sitter_rust_scanner(entry.table),
+        global_parse_config[0],
+      )
+  }
+}
+
+///|
+fn parse_incremental_trace_with_entry(
+  entry : ParserEntry,
+  new_source : String,
+  old_tree : @runtime.OldTree?,
+  edit : @runtime.InputEdit?,
+) -> Result[@runtime.IncrementalTraceResult, @runtime.ParseError] {
+  match entry.scanner_kind {
+    ParserScannerKind::None =>
+      @runtime.parse_incremental_trace_with_config(
+        entry.table,
+        new_source,
+        old_tree,
+        edit,
+        global_parse_config[0],
+      )
+    ParserScannerKind::PythonIndent =>
+      @runtime.parse_incremental_trace_with_stateful_scanner_and_config(
+        entry.table,
+        new_source,
+        old_tree,
+        edit,
+        @grammars.python_indent_scanner(entry.table),
+        global_parse_config[0],
+      )
+    ParserScannerKind::TreeSitterRust =>
+      @runtime.parse_incremental_trace_with_stateful_scanner_and_config(
+        entry.table,
+        new_source,
+        old_tree,
+        edit,
+        @grammars.tree_sitter_rust_scanner(entry.table),
         global_parse_config[0],
       )
   }
@@ -688,25 +745,7 @@ pub fn parser_create_from_dsl(dsl : String) -> Int {
       return -1
     }
   }
-  let diagnostics : Array[String] = []
-  for report in conflict_reports {
-    let buf = StringBuilder::new()
-    buf.write_char('{')
-    let severity_str = match report.severity {
-      @tablegen.ConflictSeverity::Warn(desc) => "warn: " + desc
-      @tablegen.ConflictSeverity::Ambiguous(desc) => "ambiguous: " + desc
-      @tablegen.ConflictSeverity::DynamicConflict(id) =>
-        "dynamic_conflict(id=" + id.to_string() + ")"
-      @tablegen.ConflictSeverity::Declared(desc) => "declared: " + desc
-    }
-    write_kvs(buf, "severity", severity_str)
-    buf.write_char(',')
-    write_kvi(buf, "state", report.state)
-    buf.write_char(',')
-    write_kvi(buf, "terminal", report.terminal)
-    buf.write_char('}')
-    diagnostics.push(buf.to_string())
-  }
+  let diagnostics = conflict_reports_to_json_entries(conflict_reports, table)
   register_parser_entry(
     table,
     dsl,
@@ -919,25 +958,7 @@ pub fn parser_create_from_grammar_json(grammar_json : String) -> Int {
       return -1
     }
   }
-  let diagnostics : Array[String] = []
-  for report in conflict_reports {
-    let buf = StringBuilder::new()
-    buf.write_char('{')
-    let severity_str = match report.severity {
-      @tablegen.ConflictSeverity::Warn(desc) => "warn: " + desc
-      @tablegen.ConflictSeverity::Ambiguous(desc) => "ambiguous: " + desc
-      @tablegen.ConflictSeverity::DynamicConflict(id) =>
-        "dynamic_conflict(id=" + id.to_string() + ")"
-      @tablegen.ConflictSeverity::Declared(desc) => "declared: " + desc
-    }
-    write_kvs(buf, "severity", severity_str)
-    buf.write_char(',')
-    write_kvi(buf, "state", report.state)
-    buf.write_char(',')
-    write_kvi(buf, "terminal", report.terminal)
-    buf.write_char('}')
-    diagnostics.push(buf.to_string())
-  }
+  let diagnostics = conflict_reports_to_json_entries(conflict_reports, table)
   register_parser_entry(
     table,
     grammar_json,
@@ -982,7 +1003,12 @@ pub fn parse_full(parser_id : Int, source : String) -> Int {
       match parse_full_with_entry(entry, source) {
         Ok(root) => {
           last_parse_error_msg[0] = ""
-          tree_registry.register({ root, input: source, table: entry.table })
+          tree_registry.register({
+            root,
+            input: source,
+            table: entry.table,
+            parser_id,
+          })
         }
         Err(e) => {
           last_parse_error_msg[0] = e.message
@@ -1083,11 +1109,72 @@ pub fn parse_incremental(
   match parse_incremental_with_entry(entry, new_source, old_tree, edit) {
     Ok(root) => {
       last_parse_error_msg[0] = ""
-      tree_registry.register({ root, input: new_source, table: entry.table })
+      tree_registry.register({
+        root,
+        input: new_source,
+        table: entry.table,
+        parser_id,
+      })
     }
     Err(e) => {
       last_parse_error_msg[0] = e.message
       -1
+    }
+  }
+}
+
+///|
+/// 增量解析并返回结构化复用 trace。成功时返回包含新 tree id 的 JSON envelope。
+pub fn parse_incremental_trace(
+  parser_id : Int,
+  old_tree_id : Int,
+  new_source : String,
+  start_byte : Int,
+  old_end_byte : Int,
+  new_end_byte : Int,
+  start_row : Int,
+  start_col : Int,
+  old_end_row : Int,
+  old_end_col : Int,
+  new_end_row : Int,
+  new_end_col : Int,
+) -> String {
+  let entry = match parser_registry.get(parser_id) {
+    None => {
+      last_parse_error_msg[0] = "invalid parser id"
+      return incremental_trace_error_json("invalid parser id")
+    }
+    Some(e) => e
+  }
+  let old_tree : @runtime.OldTree? = match tree_registry.get(old_tree_id) {
+    None => {
+      last_parse_error_msg[0] = "invalid old tree id"
+      return incremental_trace_error_json("invalid old tree id")
+    }
+    Some(te) => Some({ root: te.root, old_input: te.input })
+  }
+  let edit : @runtime.InputEdit? = Some({
+    start_byte,
+    old_end_byte,
+    new_end_byte,
+    start_point: { row: start_row, column: start_col },
+    old_end_point: { row: old_end_row, column: old_end_col },
+    new_end_point: { row: new_end_row, column: new_end_col },
+  })
+  match parse_incremental_trace_with_entry(entry, new_source, old_tree, edit) {
+    Ok(result) => {
+      last_parse_error_msg[0] = ""
+      let tree_id = tree_registry.register({
+        root: result.root,
+        input: new_source,
+        table: entry.table,
+        parser_id,
+      })
+      incremental_trace_success_json(tree_id, result.trace)
+    }
+    Err(e) => {
+      last_parse_error_msg[0] = e.message
+      incremental_trace_error_json(e.message)
     }
   }
 }

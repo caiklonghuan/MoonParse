@@ -5,6 +5,8 @@ import {
   "caiklonghuan/MoonParse/query" @query,
   "caiklonghuan/MoonParse/runtime",
   "caiklonghuan/MoonParse/tablegen",
+  "moonbitlang/core/json" @json,
+  "moonbitlang/core/encoding/utf8" @utf8,
 }
 
 options(
@@ -33,6 +35,7 @@ options(
         "tree_to_pretty_text",
         "tree_free",
         "parse_incremental",
+        "parse_incremental_trace",
         "tree_root_sexp",
         "tree_byte_offset_to_char_col",
         "tree_error_summary",
@@ -86,6 +89,11 @@ options(
         "bundle_json",
         "bundle_error_last",
         "bundle_free",
+        "bundle_lint",
+        "pack_check",
+        "pack_build",
+        "pack_test",
+        "corpus_rewrite_snapshots",
       ],
       "use-js-builtin-string": true,
     },

@@ -4,6 +4,7 @@ package "caiklonghuan/MoonParse/wasm"
 import {
   "caiklonghuan/MoonParse/runtime",
   "caiklonghuan/MoonParse/tablegen",
+  "moonbitlang/core/debug",
 }
 
 // Values
@@ -17,9 +18,13 @@ pub fn bundle_free(Int) -> Unit
 
 pub fn bundle_json(Int) -> String
 
+pub fn bundle_lint(Int, Int, String) -> String
+
 pub fn bundle_parser_id(Int) -> Int
 
 pub fn bundle_register(String) -> Int
+
+pub fn corpus_rewrite_snapshots(String) -> String
 
 pub fn cst_to_json(@runtime.CstNode, String, @tablegen.ParseTable) -> String
 
@@ -77,6 +82,12 @@ pub fn highlight_names_json() -> String
 
 pub fn moonparse_version() -> String
 
+pub fn pack_build(String) -> String
+
+pub fn pack_check(String) -> String
+
+pub fn pack_test(String) -> String
+
 pub fn parse_config_reset() -> Unit
 
 pub fn parse_config_set(Int, Int, Int, Int, Int, Int, Int) -> Unit
@@ -86,6 +97,8 @@ pub fn parse_error_last() -> String
 pub fn parse_full(Int, String) -> Int
 
 pub fn parse_incremental(Int, Int, String, Int, Int, Int, Int, Int, Int, Int, Int, Int) -> Int
+
+pub fn parse_incremental_trace(Int, Int, String, Int, Int, Int, Int, Int, Int, Int, Int, Int) -> String
 
 pub fn parser_create_from_base64(String) -> Int
 
@@ -156,6 +169,9 @@ pub fn wasm_parse_incremental(Int, String, Int, String) -> String
 pub fn wasm_query(Int, String) -> String
 
 // Errors
+type LintWireError derive(@debug.Debug)
+
+type PackWireError derive(@debug.Debug)
 
 // Types and methods
 

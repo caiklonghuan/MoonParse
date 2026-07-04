@@ -32,6 +32,98 @@ function base64ToUint8Array(base64) {
   return bytes;
 }
 
+function nowMs() {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+function roundMs(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function normalizeModuleQueryResults(results, source) {
+  const normalized = [];
+  for (const result of results) {
+    if (result.capture === "module.export.candidate") {
+      const offset = byteOffsetToStringOffset(source, result.start);
+      const lineStart = source.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
+      const prefix = source.slice(lineStart, offset);
+      if (/\bpub(?:\s*\([^)]*\))?\s+(?:fn|const|type|struct|enum|trait|suberror)\b[^\n]*$/.test(prefix)) {
+        normalized.push({ ...result, capture: "module.export" });
+      }
+      continue;
+    }
+    if (result.capture === "module.qualified.value" ||
+      result.capture === "module.qualified.type") {
+      const match = /@([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)/.exec(result.text);
+      if (!match) continue;
+      const leading = result.text.slice(0, match.index);
+      const aliasText = `@${match[1]}`;
+      const memberText = match[2];
+      const aliasStart = result.start + utf8ByteLength(leading);
+      const aliasEnd = aliasStart + utf8ByteLength(aliasText);
+      const memberStart = aliasEnd + 1;
+      const memberEnd = memberStart + utf8ByteLength(memberText);
+      normalized.push(moduleCaptureAt(
+        result,
+        "module.reference",
+        aliasStart,
+        aliasEnd,
+        aliasText,
+        leading,
+      ));
+      normalized.push(moduleCaptureAt(
+        result,
+        result.capture === "module.qualified.type"
+          ? "module.member.type"
+          : "module.member.value",
+        memberStart,
+        memberEnd,
+        memberText,
+        leading + aliasText + ".",
+      ));
+      continue;
+    }
+    normalized.push(result);
+  }
+  return normalized;
+}
+
+function moduleCaptureAt(base, capture, start, end, text, prefix) {
+  const lines = prefix.split("\n");
+  const rowDelta = lines.length - 1;
+  const col = rowDelta === 0
+    ? base.start_col + utf8ByteLength(prefix)
+    : utf8ByteLength(lines[lines.length - 1]);
+  return {
+    match_id: base.match_id,
+    capture,
+    start,
+    end,
+    start_row: base.start_row + rowDelta,
+    start_col: col,
+    end_row: base.start_row + rowDelta,
+    end_col: col + utf8ByteLength(text),
+    text,
+  };
+}
+
+function utf8ByteLength(text) {
+  return new TextEncoder().encode(text).length;
+}
+
+function byteOffsetToStringOffset(text, byteOffset) {
+  if (byteOffset <= 0) return 0;
+  let bytes = 0;
+  let offset = 0;
+  for (const char of text) {
+    const next = bytes + utf8ByteLength(char);
+    if (next > byteOffset) break;
+    bytes = next;
+    offset += char.length;
+  }
+  return offset;
+}
+
 async function loadWasmModule(wasmUrl) {
   if (isBrowser) {
     if (typeof WebAssembly.compileStreaming === "function") {
@@ -60,9 +152,11 @@ async function loadWasmModule(wasmUrl) {
 }
 
 class ParseTree {
-  constructor(handle, wasm) {
+  constructor(handle, wasm, parserHandle, source = "") {
     this.handle = handle;
     this._wasm = wasm;
+    this._parserHandle = parserHandle;
+    this._source = source;
     this._json = null;
     this._root = null;
   }
@@ -143,7 +237,7 @@ class MoonParser {
       const detail = this._wasm.parse_error_last?.() || "check the grammar or source";
       throw new Error(`[MoonParse] parse() failed — ${detail}`);
     }
-    return new ParseTree(tid, this._wasm);
+    return new ParseTree(tid, this._wasm, this.handle, source);
   }
 
   parseIncremental(source, oldTree, edit) {
@@ -168,7 +262,61 @@ class MoonParser {
     }
     this._wasm.tree_free(oldHandle);
     oldTree.handle = -1;
-    return new ParseTree(tid, this._wasm);
+    return new ParseTree(tid, this._wasm, this.handle, source);
+  }
+
+  parseIncrementalTrace(source, oldTree, edit) {
+    const oldHandle = oldTree.handle;
+    const incrementalStart = nowMs();
+    const raw = this._wasm.parse_incremental_trace(
+      this.handle,
+      oldHandle,
+      source,
+      edit.start_byte,
+      edit.old_end_byte,
+      edit.new_end_byte,
+      edit.start_row,
+      edit.start_col,
+      edit.old_end_row,
+      edit.old_end_col,
+      edit.new_end_row,
+      edit.new_end_col,
+    );
+    const incrementalElapsedMs = roundMs(nowMs() - incrementalStart);
+    const result = JSON.parse(raw ?? '{"ok":false,"error":"empty trace response","treeId":-1,"trace":null}');
+    if (!result.ok || result.treeId < 0) {
+      const detail = result.error || this._wasm.parse_error_last?.() || "check parser_id, old_tree_id, and edit fields";
+      throw new Error(`[MoonParse] parseIncrementalTrace() failed — ${detail}`);
+    }
+
+    const tree = new ParseTree(result.treeId, this._wasm, this.handle, source);
+    this._wasm.tree_free(oldHandle);
+    oldTree.handle = -1;
+
+    let baselineTree = null;
+    let fullBaselineElapsedMs = null;
+    let baselineError = null;
+    const baselineStart = nowMs();
+    try {
+      baselineTree = this.parse(source);
+    } catch (error) {
+      baselineError = error?.message ?? String(error);
+    } finally {
+      fullBaselineElapsedMs = roundMs(nowMs() - baselineStart);
+      try { baselineTree?.free?.(); } catch (_) {}
+    }
+
+    const speedup = incrementalElapsedMs > 0 && fullBaselineElapsedMs != null
+      ? roundMs(fullBaselineElapsedMs / incrementalElapsedMs)
+      : null;
+    const trace = {
+      ...(result.trace ?? {}),
+      incrementalElapsedMs,
+      fullBaselineElapsedMs,
+      speedup,
+    };
+    if (baselineError) trace.baselineError = baselineError;
+    return { tree, trace };
   }
 
   tableJson() {
@@ -291,11 +439,13 @@ class MoonLanguage {
       this.localsQuery = this.bundle.queries?.locals ? new MoonQuery(this.bundle.queries.locals, wasm) : null;
       this.bindingsQuery = this.bundle.queries?.bindings ? new MoonQuery(this.bundle.queries.bindings, wasm) : null;
       this.foldingQuery = this.bundle.queries?.folding ? new MoonQuery(this.bundle.queries.folding, wasm) : null;
+      this.modulesQuery = this.bundle.queries?.modules ? new MoonQuery(this.bundle.queries.modules, wasm) : null;
     } catch (error) {
       this.highlightsQuery?.free();
       this.localsQuery?.free();
       this.bindingsQuery?.free();
       this.foldingQuery?.free();
+      this.modulesQuery?.free();
       wasm.bundle_free(this.handle);
       if (this.parser) this.parser.handle = -1;
       this.handle = -1;
@@ -318,12 +468,52 @@ class MoonLanguage {
   fold(tree) {
     return this.foldingQuery ? this.foldingQuery.exec(tree) : [];
   }
+  modules(tree) {
+    if (this.handle < 0) {
+      throw new Error("[MoonParse] modules() failed: Language Bundle has been freed");
+    }
+    if (!tree || tree.handle < 0) {
+      throw new Error("[MoonParse] modules() failed: ParseTree has been freed or is invalid");
+    }
+    if (tree._wasm !== this._wasm || tree._parserHandle !== this.parser.handle) {
+      throw new Error("[MoonParse] modules() failed: tree was not created by this Language Bundle");
+    }
+    return this.modulesQuery
+      ? normalizeModuleQueryResults(this.modulesQuery.exec(tree), tree._source ?? "")
+      : [];
+  }
+  lint(tree, options = {}) {
+    if (this.handle < 0) {
+      throw new Error("[MoonParse] lint() failed: Language Bundle has been freed");
+    }
+    if (!tree || tree.handle < 0) {
+      throw new Error("[MoonParse] lint() failed: ParseTree has been freed or is invalid");
+    }
+    if (tree._wasm !== this._wasm || tree._parserHandle !== this.parser.handle) {
+      throw new Error("[MoonParse] lint() failed: tree was not created by this Language Bundle");
+    }
+    let optionsJson;
+    try {
+      optionsJson = JSON.stringify(options ?? {});
+    } catch (error) {
+      throw new Error(`[MoonParse] lint() failed: invalid options: ${error?.message ?? String(error)}`);
+    }
+    const result = JSON.parse(
+      this._wasm.bundle_lint(this.handle, tree.handle, optionsJson) ??
+        '{"ok":false,"diagnostics":[],"error":"empty lint response"}',
+    );
+    if (!result.ok) {
+      throw new Error(`[MoonParse] lint() failed: ${result.error || "unknown error"}`);
+    }
+    return result.diagnostics ?? [];
+  }
   free() {
     if (this.handle < 0) return;
     this.highlightsQuery?.free();
     this.localsQuery?.free();
     this.bindingsQuery?.free();
     this.foldingQuery?.free();
+    this.modulesQuery?.free();
     this._wasm.bundle_free(this.handle);
     this.parser.handle = -1;
     this.handle = -1;
@@ -363,6 +553,38 @@ export async function loadMoonParse(wasmUrl = "./moonparse.wasm") {
   }
 
   return {
+    checkPack(files) {
+      return JSON.parse(wasm.pack_check(JSON.stringify({ files })));
+    },
+
+    buildPack(files) {
+      const result = JSON.parse(wasm.pack_build(JSON.stringify({ files })));
+      if (!result.ok || result.bundle == null) {
+        return {
+          ok: false,
+          diagnostics: result.diagnostics ?? [],
+          bundleJson: null,
+          language: null,
+        };
+      }
+      const bundleJson = JSON.stringify(result.bundle);
+      const language = new MoonLanguage(bundleJson, wasm);
+      return {
+        ok: true,
+        diagnostics: result.diagnostics ?? [],
+        bundleJson,
+        language,
+      };
+    },
+
+    runCorpus(files) {
+      return JSON.parse(wasm.pack_test(JSON.stringify({ files })));
+    },
+
+    rewriteCorpusSnapshots(request) {
+      return JSON.parse(wasm.corpus_rewrite_snapshots(JSON.stringify(request)));
+    },
+
     loadBundle(bundleJson) {
       return new MoonLanguage(bundleJson, wasm);
     },

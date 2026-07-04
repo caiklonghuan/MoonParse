@@ -55,6 +55,7 @@ fn[T] Registry::remove(self : Registry[T], id : Int) -> Bool {
 priv enum ParserScannerKind {
   None
   PythonIndent
+  TreeSitterRust
 }
 
 ///|
@@ -72,6 +73,7 @@ priv struct TreeEntry {
   root : @runtime.CstNode
   input : String
   table : @tablegen.ParseTable
+  parser_id : Int
 }
 
 ///|
