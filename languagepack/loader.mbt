@@ -59,12 +59,12 @@ fn load_corpus_from_source(
 }
 
 ///|
-pub fn load_pack(
+fn load_pack_internal(
   source : LanguagePackSource,
-) -> Result[LanguagePack, Array[PackDiagnostic]] {
+) -> (LanguagePack?, Array[PackDiagnostic]) {
   let manifest = match load_manifest(source.manifest) {
     Ok(value) => value
-    Err(errors) => return Err(errors)
+    Err(errors) => return (None, errors)
   }
   let diagnostics : Array[PackDiagnostic] = []
   let grammar_source = match source_text(source, manifest.grammar.path) {
@@ -157,19 +157,33 @@ pub fn load_pack(
   let (corpus, corpus_diagnostics) = load_corpus_from_source(source, manifest)
   diagnostics.push_iter(corpus_diagnostics.iter())
   if has_pack_errors(diagnostics) {
-    Err(diagnostics)
+    (None, diagnostics)
   } else {
-    Ok({
-      manifest,
-      grammar_source,
-      highlights_query,
-      locals_query,
-      bindings_query,
-      folding_query,
-      modules_query,
-      lint_rule_sets,
-      scanner,
-      corpus,
-    })
+    (
+      Some({
+        manifest,
+        grammar_source,
+        highlights_query,
+        locals_query,
+        bindings_query,
+        folding_query,
+        modules_query,
+        lint_rule_sets,
+        scanner,
+        corpus,
+      }),
+      diagnostics,
+    )
+  }
+}
+
+///|
+pub fn load_pack(
+  source : LanguagePackSource,
+) -> Result[LanguagePack, Array[PackDiagnostic]] {
+  let (pack, diagnostics) = load_pack_internal(source)
+  match pack {
+    Some(pack) => Ok(pack)
+    None => Err(diagnostics)
   }
 }

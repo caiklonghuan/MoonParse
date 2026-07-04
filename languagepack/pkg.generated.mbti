@@ -11,6 +11,8 @@ import {
 // Values
 pub fn build_bundle(LanguagePackSource, PackBuildOptions) -> Result[LanguageBundle, Array[PackDiagnostic]]
 
+pub fn build_bundle_report(LanguagePackSource, PackBuildOptions) -> PackBuildReport
+
 pub fn bundle_from_json(String) -> Result[LanguageBundle, Array[PackDiagnostic]]
 
 pub fn bundle_to_json(LanguageBundle) -> String
@@ -36,6 +38,8 @@ pub fn parse_bundle(LanguageBundle, String, scanner_provider? : PackScannerProvi
 pub fn parse_corpus_document(String, String, String) -> Result[CorpusDocument, Array[PackDiagnostic]]
 
 pub fn rewrite_corpus_snapshots(CorpusDocument, Array[CorpusSnapshotUpdate]) -> Result[String, Array[PackDiagnostic]]
+
+pub fn test_pack(LanguagePackSource, PackBuildOptions, scanner_provider? : PackScannerProvider) -> PackTestReport
 
 pub fn valid_pack_path(String) -> Bool
 
@@ -84,6 +88,21 @@ pub(all) struct CorpusDocument {
   newline : String
 } derive(@debug.Debug)
 
+pub(all) struct CorpusFailure {
+  kind : CorpusFailureKind
+  expected : String
+  actual : String
+  message : String
+} derive(Eq, @debug.Debug)
+
+pub(all) enum CorpusFailureKind {
+  Error
+  Sexp
+  Contains
+  NotContains
+  Parse
+} derive(Eq, @debug.Debug)
+
 pub(all) struct CorpusResource {
   directory : String
   format : String
@@ -94,6 +113,17 @@ pub(all) struct CorpusSnapshotUpdate {
   case_name : String
   sexp : String
 } derive(@debug.Debug)
+
+pub(all) struct CorpusTestResult {
+  path : String
+  case_index : Int
+  name : String
+  source_line : Int
+  actual_error : String
+  actual_sexp : String
+  failures : Array[CorpusFailure]
+  passed : Bool
+} derive(Eq, @debug.Debug)
 
 pub(all) enum GrammarFormat {
   Dsl
@@ -255,6 +285,11 @@ pub(all) struct PackBuildPolicy {
   allow_ambiguous_conflicts : Bool
 } derive(@debug.Debug)
 
+pub(all) struct PackBuildReport {
+  bundle : LanguageBundle?
+  diagnostics : Array[PackDiagnostic]
+}
+
 pub(all) struct PackCompatibility {
   minimum_moonparse_version : String
   maximum_moonparse_version_exclusive : String
@@ -290,6 +325,11 @@ pub(all) enum PackSeverity {
   Error
 } derive(Eq, @debug.Debug)
 pub impl Show for PackSeverity
+
+pub(all) struct PackTestReport {
+  diagnostics : Array[PackDiagnostic]
+  cases : Array[CorpusTestResult]
+} derive(@debug.Debug)
 
 pub(all) struct QueryResources {
   highlights : String?

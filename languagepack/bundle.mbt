@@ -97,9 +97,11 @@ fn build_bundle_internal(
   options : PackBuildOptions,
 ) -> (LanguageBundle?, Array[PackDiagnostic]) {
   let diagnostics : Array[PackDiagnostic] = []
-  let pack = match load_pack(source) {
-    Ok(pack) => pack
-    Err(errors) => return (None, errors)
+  let (loaded_pack, load_diagnostics) = load_pack_internal(source)
+  diagnostics.push_iter(load_diagnostics.iter())
+  let pack = match loaded_pack {
+    Some(pack) => pack
+    None => return (None, diagnostics)
   }
   if compare_semver(
       options.software_version,
@@ -355,7 +357,18 @@ pub fn check_pack(
   source : LanguagePackSource,
   options : PackBuildOptions,
 ) -> Array[PackDiagnostic] {
-  build_bundle_internal(source, options).1
+  build_bundle_report(source, options).diagnostics
+}
+
+///|
+/// Build a Language Pack once and retain both its optional Bundle and all
+/// diagnostics, including non-fatal warnings.
+pub fn build_bundle_report(
+  source : LanguagePackSource,
+  options : PackBuildOptions,
+) -> PackBuildReport {
+  let (bundle, diagnostics) = build_bundle_internal(source, options)
+  { bundle, diagnostics }
 }
 
 ///|
@@ -363,10 +376,10 @@ pub fn build_bundle(
   source : LanguagePackSource,
   options : PackBuildOptions,
 ) -> Result[LanguageBundle, Array[PackDiagnostic]] {
-  let (bundle, diagnostics) = build_bundle_internal(source, options)
-  match bundle {
+  let report = build_bundle_report(source, options)
+  match report.bundle {
     Some(bundle) => Ok(bundle)
-    None => Err(diagnostics)
+    None => Err(report.diagnostics)
   }
 }
 

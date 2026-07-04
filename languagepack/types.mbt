@@ -241,6 +241,41 @@ pub(all) struct CorpusSnapshotUpdate {
 } derive(Debug)
 
 ///|
+pub(all) enum CorpusFailureKind {
+  Error
+  Sexp
+  Contains
+  NotContains
+  Parse
+} derive(Debug, Eq)
+
+///|
+pub(all) struct CorpusFailure {
+  kind : CorpusFailureKind
+  expected : String
+  actual : String
+  message : String
+} derive(Debug, Eq)
+
+///|
+pub(all) struct CorpusTestResult {
+  path : String
+  case_index : Int
+  name : String
+  source_line : Int
+  actual_error : String
+  actual_sexp : String
+  failures : Array[CorpusFailure]
+  passed : Bool
+} derive(Debug, Eq)
+
+///|
+pub(all) struct PackTestReport {
+  diagnostics : Array[PackDiagnostic]
+  cases : Array[CorpusTestResult]
+} derive(Debug)
+
+///|
 pub(all) struct LanguagePack {
   manifest : LanguagePackManifest
   grammar_source : String
@@ -313,6 +348,12 @@ pub(all) struct LanguageBundle {
   lint_rule_sets : Array[LintRuleSet]
   scanner : ScannerDescriptor?
   capabilities : BundleCapabilities
+}
+
+///|
+pub(all) struct PackBuildReport {
+  bundle : LanguageBundle?
+  diagnostics : Array[PackDiagnostic]
 }
 
 ///|
