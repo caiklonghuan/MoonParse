@@ -47,11 +47,16 @@ for (const id of ids) {
   const resourceMap = Object.fromEntries(resources);
   websiteResources[id] = {
     manifest: manifestValue,
+    files: {
+      "language-pack.json": manifest,
+      ...resourceMap,
+    },
     grammar: resourceMap[manifestValue.grammar.path],
     highlightQuery: manifestValue.queries?.highlights ? resourceMap[manifestValue.queries.highlights] : null,
     localsQuery: manifestValue.queries?.locals ? resourceMap[manifestValue.queries.locals] : null,
     bindingsQuery: manifestValue.queries?.bindings ? resourceMap[manifestValue.queries.bindings] : null,
     foldingQuery: manifestValue.queries?.folding ? resourceMap[manifestValue.queries.folding] : null,
+    modulesQuery: manifestValue.queries?.modules ? resourceMap[manifestValue.queries.modules] : null,
   };
   lines.push(`///|`, `let embedded_${id}_manifest : String = ${JSON.stringify(manifest)}`, "");
   resources.forEach(([path, text], index) => {
@@ -63,7 +68,17 @@ for (const id of ids) {
     "  let files : Map[String, Bytes] = Map::new()",
   );
   resources.forEach(([path], index) => {
-    lines.push(`  files[${JSON.stringify(path)}] = @utf8.encode(embedded_${id}_file_${index})`);
+    const target = `embedded_${id}_file_${index}`;
+    const assignment = `  files[${JSON.stringify(path)}] = @utf8.encode(${target})`;
+    if (assignment.length <= 80) {
+      lines.push(assignment);
+    } else {
+      lines.push(
+        `  files[${JSON.stringify(path)}] = @utf8.encode(`,
+        `    ${target},`,
+        "  )",
+      );
+    }
   });
   lines.push(
     `  @languagepack.LanguagePackSource::new(embedded_${id}_manifest, files)`,

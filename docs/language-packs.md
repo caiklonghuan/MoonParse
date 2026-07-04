@@ -14,6 +14,7 @@ languages/<id>/
   queries/locals.scm
   queries/bindings.scm
   queries/folding.scm
+  queries/modules.scm
   scanner/scanner.json
   corpus/*.txt
 ```
@@ -35,6 +36,30 @@ so the same logic works in native, Node and WASM hosts.
 `LanguageBundle` contains both ParseTable JSON and binary bytes. Serialized
 bundles carry both representations and reject corruption or semantic mismatch.
 Corpus resources remain in the Pack and are not shipped in the runtime bundle.
+
+## Modules query contract
+
+Packs that declare `queries.modules` enable import-aware workspace resolution.
+The query may emit these captures:
+
+- `module.name`: optional logical module name.
+- `module.export`: a definition name that is public outside its package.
+- `import.source`: imported module/package path.
+- `import.alias`: optional alias; the final source path segment is the default.
+- `module.reference`: alias used by a qualified reference.
+- `module.member`, `module.member.value`, or `module.member.type`: referenced
+  member and namespace.
+
+`import.source` and its optional alias must share one `match_id`. A qualified
+reference must contain exactly one `module.reference` and one member capture in
+the same match. Hosts ignore malformed, duplicate, or out-of-range match groups.
+Capture text is trimmed; matching quotes and a leading `@` on aliases are
+removed. `MoonLanguage.modules(tree)` exposes the normalized capture stream and
+returns an empty array for packs without the capability.
+
+The MoonBit pack combines this query with `moon.mod.json`, `moon.work`, and
+`moon.pkg`: package-private declarations resolve only inside their package,
+while imported packages expose only `pub` declarations.
 
 ## Pack CLI
 

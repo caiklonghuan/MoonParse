@@ -3,8 +3,10 @@ builtin_grammars_json
 bundle_error_last
 bundle_free
 bundle_json
+bundle_lint
 bundle_parser_id
 bundle_register
+corpus_rewrite_snapshots
 cursor_free
 cursor_goto_first_child
 cursor_goto_next_sibling
@@ -30,11 +32,15 @@ highlight_exec
 highlight_exec_with_locals
 highlight_names_json
 moonparse_version
+pack_build
+pack_check
+pack_test
 parse_config_reset
 parse_config_set
 parse_error_last
 parse_full
 parse_incremental
+parse_incremental_trace
 parser_create_from_base64
 parser_create_from_bytes
 parser_create_from_dsl
