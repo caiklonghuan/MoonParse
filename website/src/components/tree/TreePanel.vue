@@ -1,17 +1,23 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { ancestorNodeIds, findBestCstNode } from '@/lib/queryDebugger.js'
+import { classifyTraceNode } from '@/lib/incrementalTrace.js'
 
 const props = defineProps({
   tree: { type: Object, default: null },
+  selectedRange: { type: Object, default: null },
+  incrementalTrace: { type: Object, default: null },
 })
 
 const emit = defineEmits(['select'])
 
 const showHelpers = ref(false)
 const expandedIds = ref(new Set())
+const selectedNodeId = ref(null)
+const treeBodyRef = ref(null)
 
-function createUiNode(node, id) {
-  const children = (node.children ?? []).map((child, index) => createUiNode(child, `${id}.${index}`))
+function createUiNode(node, id, trace) {
+  const children = (node.children ?? []).map((child, index) => createUiNode(child, `${id}.${index}`, trace))
 
   // Propagate end position upward from children (fixes parser not propagating
   // ranges through suite/indented_text/helper nodes).
@@ -51,6 +57,8 @@ function createUiNode(node, id) {
     }
   }
 
+  const traceClass = classifyTraceNode(trace, startByte, endByte)
+
   return {
     id,
     type: node.type,
@@ -66,6 +74,9 @@ function createUiNode(node, id) {
     endRow,
     endCol,
     text: node.text ?? '',
+    traceEdit: traceClass.edit,
+    traceReparse: traceClass.reparse,
+    traceReused: traceClass.reused,
     children,
   }
 }
@@ -171,7 +182,7 @@ const rawRoots = computed(() => {
   if (!props.tree) return []
 
   try {
-    return [createUiNode(props.tree.root, '0')]
+    return [createUiNode(props.tree.root, '0', props.incrementalTrace)]
   } catch {
     return []
   }
@@ -187,6 +198,20 @@ const hasExpandableNodes = computed(() => roots.value.some((node) => node.hasChi
 watch(roots, (nodes) => {
   expandedIds.value = new Set(nodes.filter((node) => node.hasChildren).map((node) => node.id))
 }, { immediate: true })
+
+watch([roots, () => props.selectedRange], ([nodes, range]) => {
+  const match = nodes.length && range ? findBestCstNode(nodes[0], range) : null
+  selectedNodeId.value = match?.node?.id ?? null
+  if (!selectedNodeId.value) return
+
+  const next = new Set(expandedIds.value)
+  for (const id of ancestorNodeIds(selectedNodeId.value)) next.add(id)
+  expandedIds.value = next
+  nextTick(() => {
+    const element = treeBodyRef.value?.querySelector(`[data-node-id="${selectedNodeId.value}"]`)
+    element?.scrollIntoView?.({ block: 'nearest' })
+  })
+}, { immediate: true, flush: 'post' })
 
 function isExpanded(node) {
   return expandedIds.value.has(node.id)
@@ -252,7 +277,7 @@ function selectNode(node) {
       </div>
     </div>
 
-    <div class="tree-body">
+    <div ref="treeBodyRef" class="tree-body">
       <template v-if="roots.length">
         <TreeNodeItem
           v-for="node in roots"
@@ -260,6 +285,7 @@ function selectNode(node) {
           :node="node"
           :depth="0"
           :expanded-ids="expandedIds"
+          :selected-node-id="selectedNodeId"
           @toggle="toggleNode"
           @select="selectNode"
         />
@@ -278,6 +304,7 @@ const TreeNodeItem = defineComponent({
     node:  { type: Object, required: true },
     depth: { type: Number, default: 0    },
     expandedIds: { type: Object, required: true },
+    selectedNodeId: { type: String, default: null },
   },
   emits: ['toggle', 'select'],
   setup(props, { emit }) {
@@ -324,7 +351,14 @@ const TreeNodeItem = defineComponent({
         : null
 
       const row = h('div', {
-        class: 'tree-node',
+        class: [
+          'tree-node',
+          n.id === props.selectedNodeId ? 'tree-node--selected' : '',
+          n.traceReused ? 'tree-node--trace-reused' : '',
+          n.traceReparse ? 'tree-node--trace-reparse' : '',
+          n.traceEdit ? 'tree-node--trace-edit' : '',
+        ].filter(Boolean),
+        'data-node-id': n.id,
         style: { paddingLeft: indent + 'px' },
       }, [arrow, typeEl, range, preview])
 
@@ -335,6 +369,7 @@ const TreeNodeItem = defineComponent({
               node:  child,
               depth: props.depth + 1,
               expandedIds: props.expandedIds,
+              selectedNodeId: props.selectedNodeId,
               onToggle: (c) => emit('toggle', c),
               onSelect: (c) => emit('select', c),
             })
@@ -419,6 +454,31 @@ export default { components: { TreeNodeItem } }
 }
 .tree-node:hover {
   background: var(--accent-bg);
+}
+.tree-node--selected {
+  background: var(--accent-bg-strong);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.tree-node--trace-reused {
+  background: rgba(78, 201, 176, 0.12);
+}
+.tree-node--trace-reparse {
+  background: rgba(244, 183, 71, 0.14);
+}
+.tree-node--trace-edit {
+  background: rgba(244, 71, 71, 0.16);
+}
+.tree-node--trace-reused .tree-range {
+  color: #4ec9b0;
+  opacity: 0.9;
+}
+.tree-node--trace-reparse .tree-range {
+  color: #f4b747;
+  opacity: 0.9;
+}
+.tree-node--trace-edit .tree-range {
+  color: #f44747;
+  opacity: 0.9;
 }
 
 .tree-arrow {

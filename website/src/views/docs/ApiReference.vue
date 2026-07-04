@@ -113,6 +113,23 @@ const mp = await loadMoonParse('./moonparse.wasm')</code></pre>
   new_end_col: number,
 }</code></pre>
 
+    <h3>parser.parseIncrementalTrace(source, oldTree, edit)</h3>
+    <p>执行一次带 trace 的增量解析，返回 <code>{ tree, trace }</code>。它保留 <code>parseIncremental()</code> 的旧树失效语义，但额外报告编辑范围、重解析范围、真实复用节点范围、复用字节数以及 JS 侧测得的增量/全量基准耗时。普通实时解析不需要调用它；Playground 只在增量面板开启时使用。</p>
+    <pre><code>{
+  tree: ParseTree,
+  trace: {
+    edit: { oldRange, newRange },
+    reparseRange,
+    reusedRanges,
+    reusedNodeCount,
+    reusedByteCount,
+    sourceByteLength,
+    incrementalElapsedMs,
+    fullBaselineElapsedMs,
+    speedup,
+  }
+}</code></pre>
+
     <h3>parser.dsl</h3>
     <p><code>readonly string</code>，创建解析器时保存的原始文本。对于 <code>mp.createParser()</code> 它是 DSL 文本；对于 <code>mp.createParserFromGrammarObject()</code>，底层保存的是对应的 Grammar JSON 字符串。</p>
 
@@ -120,7 +137,7 @@ const mp = await loadMoonParse('./moonparse.wasm')</code></pre>
     <p>返回序列化后的解析表 JSON，可用于缓存或预编译恢复。</p>
 
     <h3>parser.diagnosticsJson()</h3>
-    <p>返回文法编译阶段的诊断信息 JSON 数组，例如冲突、警告等。</p>
+    <p>返回文法编译阶段的 LR 冲突诊断 JSON 数组。每项保留 <code>severity/state/terminal</code>，并包含 <code>message</code>、<code>terminalName</code>、候选 <code>actions</code>、冲突状态 <code>items</code>、最短 <code>statePath</code>、<code>branches</code> 和最终 <code>resolution</code>。从预编译 ParseTable 创建的 parser 不携带构表期 item set，因此返回空数组。</p>
 
     <h3>parser.free()</h3>
     <p>释放解析器持有的 WASM 句柄。</p>

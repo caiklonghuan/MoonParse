@@ -671,7 +671,9 @@ for (const preset of BUILTIN_LANGUAGE_PRESETS) {
     if (pack.highlightQuery) preset.highlightQuery = pack.highlightQuery
     if (pack.localsQuery) preset.localsQuery = pack.localsQuery
     if (pack.bindingsQuery) preset.bindingsQuery = pack.bindingsQuery
+    if (pack.foldingQuery) preset.foldingQuery = pack.foldingQuery
     preset.languagePack = pack.manifest
+    preset.languagePackFiles = pack.files
   }
 }
 

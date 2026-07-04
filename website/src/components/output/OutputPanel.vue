@@ -1,6 +1,9 @@
 <script setup>
-import { ref, computed, inject } from 'vue'
+import { ref, computed, inject, watch } from 'vue'
 import SexpView from './SexpView.vue'
+import ConflictPanel from './ConflictPanel.vue'
+import TreeSitterComparePanel from './TreeSitterComparePanel.vue'
+import { formatTraceMs, formatTraceRange, traceReuseRate } from '@/lib/incrementalTrace.js'
 
 const props = defineProps({
   tree:        { type: Object,  default: null },
@@ -8,21 +11,38 @@ const props = defineProps({
   parseTime:   { type: Number,  default: 0    },
   isIncremental:{ type: Boolean, default: false },
   parserError: { type: String,  default: null },
+  traceEnabled: { type: Boolean, default: false },
+  incrementalTrace: { type: Object, default: null },
+  activeTab: { type: String, default: '' },
+  source: { type: String, default: '' },
+  languageId: { type: String, default: 'unknown' },
 })
+
+const emit = defineEmits(['update:traceEnabled', 'update:activeTab'])
 
 const mp = inject('mp')
 
-function diagMessage(d) {
-  return typeof d === 'string' ? d : (d.severity ?? JSON.stringify(d))
-}
-
-const activeTab = ref('sexp')
-const TABS = ['sexp', 'diagnostics', 'perf']
+const TABS = ['sexp', 'diagnostics', 'perf', 'incremental', 'compare']
+const activeTab = ref(TABS.includes(props.activeTab) ? props.activeTab : 'sexp')
 const TAB_LABELS = {
   sexp:        '{ } S 表达式',
   diagnostics: '⚠ 诊断',
   perf:        '⚡ 性能',
+  incremental: '↯ 增量',
 }
+TAB_LABELS.compare = 'Tree-sitter Compare'
+
+function setActiveTab(tab) {
+  if (!TABS.includes(tab)) return
+  activeTab.value = tab
+  emit('update:activeTab', tab)
+}
+
+watch(() => props.activeTab, (tab) => {
+  if (TABS.includes(tab) && tab !== activeTab.value) {
+    activeTab.value = tab
+  }
+})
 
 const sexp = computed(() => {
   try { return props.tree?.sexp() ?? '' }
@@ -49,6 +69,13 @@ const version = computed(() => {
   try { return mp?.value?.version() ?? '—' }
   catch { return '—' }
 })
+
+const reuseRateLabel = computed(() => `${Math.round(traceReuseRate(props.incrementalTrace) * 10000) / 100}%`)
+const reusedRanges = computed(() => props.incrementalTrace?.reusedRanges ?? [])
+const speedupLabel = computed(() => {
+  const value = props.incrementalTrace?.speedup
+  return value == null || !Number.isFinite(Number(value)) ? '—' : `${Number(value).toFixed(2)}×`
+})
 </script>
 
 <template>
@@ -60,7 +87,7 @@ const version = computed(() => {
           :key="tab"
           class="tab-btn"
           :class="{ 'tab-btn--active': activeTab === tab }"
-          @click="activeTab = tab"
+          @click="setActiveTab(tab)"
         >
           {{ TAB_LABELS[tab] }}
         </button>
@@ -87,15 +114,7 @@ const version = computed(() => {
           <div class="diag-label">语法 DSL 错误</div>
           <div class="diag-value diag-error">{{ parserError }}</div>
         </div>
-        <div v-if="diagnostics.length" class="diag-section">
-          <div class="diag-label">解析器诊断（{{ diagnostics.length }}）</div>
-          <div v-for="(d, i) in diagnostics" :key="i" class="diag-item">
-            {{ diagMessage(d) }}
-          </div>
-        </div>
-        <div v-if="!diagnostics.length && !parserError && errorSummary === 'ok'" class="output-empty">
-          ✓ 未发现问题。
-        </div>
+        <ConflictPanel :diagnostics="diagnostics" />
       </div>
 
       <div v-else-if="activeTab === 'perf'" class="output-perf">
@@ -118,6 +137,88 @@ const version = computed(() => {
           <span class="perf-value">{{ version }}</span>
         </div>
       </div>
+
+      <div v-else-if="activeTab === 'incremental'" class="output-incremental">
+        <div class="incremental-toolbar">
+          <label class="trace-toggle">
+            <input
+              type="checkbox"
+              :checked="traceEnabled"
+              @change="emit('update:traceEnabled', $event.target.checked)"
+            />
+            Enable incremental trace
+          </label>
+          <span class="incremental-hint">
+            Baseline full parse runs only while enabled and an incremental edit occurs.
+          </span>
+        </div>
+
+        <div v-if="!traceEnabled" class="output-empty">
+          Trace is disabled. Enable it, then edit the source to collect reuse data.
+        </div>
+        <div v-else-if="!incrementalTrace" class="output-empty">
+          No incremental trace yet. Make a source edit after enabling this panel.
+        </div>
+        <template v-else>
+          <div class="incremental-metrics">
+            <div class="perf-row">
+              <span class="perf-label">复用率</span>
+              <span class="perf-value perf-good">{{ reuseRateLabel }}</span>
+            </div>
+            <div class="perf-row">
+              <span class="perf-label">复用节点/字节</span>
+              <span class="perf-value">
+                {{ incrementalTrace.reusedNodeCount }} nodes · {{ incrementalTrace.reusedByteCount }}/{{ incrementalTrace.sourceByteLength }} bytes
+              </span>
+            </div>
+            <div class="perf-row">
+              <span class="perf-label">增量耗时</span>
+              <span class="perf-value">{{ formatTraceMs(incrementalTrace.incrementalElapsedMs) }}</span>
+            </div>
+            <div class="perf-row">
+              <span class="perf-label">全量基准</span>
+              <span class="perf-value">{{ formatTraceMs(incrementalTrace.fullBaselineElapsedMs) }}</span>
+            </div>
+            <div class="perf-row">
+              <span class="perf-label">加速比</span>
+              <span class="perf-value">{{ speedupLabel }}</span>
+            </div>
+          </div>
+
+          <div class="trace-section">
+            <div class="trace-section-title">Ranges</div>
+            <div class="trace-range-row"><span>Edit old</span><code>{{ formatTraceRange(incrementalTrace.edit?.oldRange) }}</code></div>
+            <div class="trace-range-row"><span>Edit new</span><code>{{ formatTraceRange(incrementalTrace.edit?.newRange) }}</code></div>
+            <div class="trace-range-row"><span>Reparse</span><code>{{ formatTraceRange(incrementalTrace.reparseRange) }}</code></div>
+          </div>
+
+          <div class="trace-section">
+            <div class="trace-section-title">Reused ranges</div>
+            <div v-if="reusedRanges.length === 0" class="trace-empty">No reused nodes recorded.</div>
+            <div
+              v-for="(range, index) in reusedRanges.slice(0, 80)"
+              :key="`${range.kind}:${range.startByte}:${range.endByte}:${index}`"
+              class="trace-range-row"
+            >
+              <span>{{ range.kind }}</span>
+              <code>{{ formatTraceRange(range) }}</code>
+            </div>
+            <div v-if="reusedRanges.length > 80" class="trace-empty">
+              {{ reusedRanges.length - 80 }} more reused ranges hidden.
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <TreeSitterComparePanel
+        v-else-if="activeTab === 'compare'"
+        :source="source"
+        :language-id="languageId"
+        :tree="tree"
+        :moon-sexp="sexp"
+        :moon-parse-time="parseTime"
+        :active="activeTab === 'compare'"
+      />
 
     </div>
   </div>
@@ -154,6 +255,68 @@ const version = computed(() => {
 .perf-label  { min-width: 140px; color: var(--text); opacity: 0.6; font-size: 12px; }
 .perf-value  { font-size: 14px; color: var(--text-h); }
 .perf-good   { color: #4ec9b0; }
+
+.output-incremental {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.incremental-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: var(--sans);
+}
+.trace-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-h);
+}
+.incremental-hint,
+.trace-empty {
+  color: var(--text);
+  opacity: 0.55;
+  font-size: 12px;
+  font-family: var(--sans);
+}
+.incremental-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.trace-section {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.trace-section-title {
+  margin-bottom: 8px;
+  color: var(--text-h);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+}
+.trace-range-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 3px 0;
+}
+.trace-range-row span {
+  color: var(--text);
+  opacity: 0.65;
+  font-family: var(--sans);
+  font-size: 12px;
+}
+.trace-range-row code {
+  color: var(--text-h);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 .output-empty {
   padding: 24px 16px;

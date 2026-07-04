@@ -32,6 +32,8 @@ const QUERY_PREDICATES = new Set([
 
 const GRAMMAR_OPERATORS = new Set([':', '|', '*', '+', '?', '(', ')', '[', ']', '{', '}', ',', '!', '&', '.'])
 const QUERY_OPERATORS = new Set(['(', ')', ':'])
+const JSON_KEYWORDS = new Set(['true', 'false', 'null'])
+const JSON_OPERATORS = new Set(['{', '}', '[', ']', ':', ','])
 
 function isWhitespace(char) {
   return char === ' ' || char === '\t' || char === '\n' || char === '\r'
@@ -369,6 +371,59 @@ function scanQuery(text) {
   return ranges
 }
 
+function scanJson(text) {
+  const ranges = []
+  let index = 0
+
+  while (index < text.length) {
+    const char = text[index]
+
+    if (isWhitespace(char)) {
+      index += 1
+      continue
+    }
+
+    if (char === '"') {
+      const { end, terminated } = readString(text, index, '"')
+      const nextChar = text[skipWhitespace(text, end)]
+      pushRange(ranges, index, end, terminated
+        ? (nextChar === ':' ? 'cm-dsl-field' : 'cm-dsl-string')
+        : 'cm-dsl-error')
+      index = end
+      continue
+    }
+
+    if ((char === '-' && isDigit(text[index + 1])) || isDigit(char)) {
+      const start = index
+      index += char === '-' ? 1 : 0
+      index = readWhile(text, index, (value) =>
+        isDigit(value) || value === '.' || value === 'e' || value === 'E' || value === '+' || value === '-')
+      pushRange(ranges, start, index, 'cm-dsl-number')
+      continue
+    }
+
+    if (isIdentStart(char)) {
+      const start = index
+      const end = readWhile(text, index + 1, isIdentPart)
+      const word = text.slice(start, end)
+      pushRange(ranges, start, end, JSON_KEYWORDS.has(word) ? 'cm-dsl-keyword' : 'cm-dsl-error')
+      index = end
+      continue
+    }
+
+    if (JSON_OPERATORS.has(char)) {
+      pushRange(ranges, index, index + 1, 'cm-dsl-operator')
+      index += 1
+      continue
+    }
+
+    pushRange(ranges, index, index + 1, 'cm-dsl-error')
+    index += 1
+  }
+
+  return ranges
+}
+
 function buildDecorationSet(docText, scanner) {
   const marks = scanner(docText).map((range) =>
     Decoration.mark({ class: range.className }).range(range.from, range.to),
@@ -394,3 +449,4 @@ function createDslSyntaxField(scanner) {
 
 export const moonGrammarSyntax = createDslSyntaxField(scanGrammar)
 export const moonQuerySyntax = createDslSyntaxField(scanQuery)
+export const moonJsonSyntax = createDslSyntaxField(scanJson)

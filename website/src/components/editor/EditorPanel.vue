@@ -1,6 +1,8 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import {
+  Annotation,
+  Compartment,
   EditorState,
   StateEffect,
   StateField,
@@ -14,6 +16,14 @@ import {
 } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { moonGrammarSyntax } from '@/lib/dslSyntax.js'
+import {
+  byteRangeToUtf16Range,
+  utf16OffsetToPoint,
+  utf16OffsetToUtf8Byte,
+  utf16RangeToByteRange,
+} from '@/lib/textOffsets.js'
+import { traceDecorationRanges } from '@/lib/incrementalTrace.js'
+import { validatedLintEdit } from '@/lib/lintWorkbench.js'
 
 const props = defineProps({
   modelValue:          { type: String,  default: '' },
@@ -21,9 +31,13 @@ const props = defineProps({
   syntaxRanges:        { type: Array,   default: () => [] },
   parserError:         { type: String,  default: null },
   dslValidationErrors: { type: Array,   default: () => [] },
+  grammarReadOnly:     { type: Boolean, default: false },
+  showGrammar:         { type: Boolean, default: true },
+  selectedRange:       { type: Object,  default: null },
+  incrementalTrace:    { type: Object,  default: null },
 })
 
-const emit = defineEmits(['update:modelValue', 'update:grammar', 'edit'])
+const emit = defineEmits(['update:modelValue', 'update:grammar', 'edit', 'select'])
 
 const activeTab = ref('source')
 
@@ -34,8 +48,11 @@ let grammarView = null
 
 const setRangeEffect = StateEffect.define()
 const clearRangeEffect = StateEffect.define()
+const externalSelection = Annotation.define()
 
 const setSyntaxEffect = StateEffect.define()
+const grammarEditable = new Compartment()
+const setTraceEffect = StateEffect.define()
 
 const rangeField = StateField.define({
   create: () => Decoration.none,
@@ -44,9 +61,9 @@ const rangeField = StateField.define({
     for (const e of tr.effects) {
       if (e.is(setRangeEffect)) {
         const { from, to } = e.value
-        decos = Decoration.set([
-          Decoration.mark({ class: 'cm-highlight-range' }).range(from, to),
-        ])
+        decos = from < to
+          ? Decoration.set([Decoration.mark({ class: 'cm-highlight-range' }).range(from, to)])
+          : Decoration.none
       } else if (e.is(clearRangeEffect)) {
         decos = Decoration.none
       }
@@ -70,6 +87,20 @@ const syntaxField = StateField.define({
   provide: (f) => EditorView.decorations.from(f),
 })
 
+const traceField = StateField.define({
+  create: () => Decoration.none,
+  update(decos, tr) {
+    decos = decos.map(tr.changes)
+    for (const e of tr.effects) {
+      if (e.is(setTraceEffect)) {
+        decos = e.value
+      }
+    }
+    return decos
+  },
+  provide: (f) => EditorView.decorations.from(f),
+})
+
 const HL_CLASS = {
   string:    'hl-string',
   number:    'hl-number',
@@ -85,12 +116,11 @@ const HL_CLASS = {
   constant:  'hl-constant',
 }
 
-function buildSyntaxDecos(ranges, docLen) {
+function buildSyntaxDecos(ranges, source) {
   if (!ranges || !ranges.length) return Decoration.none
   const marks = []
   for (const r of ranges) {
-    const from = Math.min(r.start_byte, docLen)
-    const to   = Math.min(r.end_byte,   docLen)
+    const { from, to } = byteRangeToUtf16Range(source, r.start_byte, r.end_byte)
     if (from >= to) continue
     const cls = HL_CLASS[r.highlight] ?? `hl-${r.highlight}`
     marks.push(Decoration.mark({ class: cls }).range(from, to))
@@ -105,33 +135,51 @@ function buildSyntaxDecos(ranges, docLen) {
 
 function applySyntaxRanges(ranges) {
   if (!sourceView) return
-  const docLen = sourceView.state.doc.length
-  const decos = buildSyntaxDecos(ranges, docLen)
+  const source = sourceView.state.doc.toString()
+  const decos = buildSyntaxDecos(ranges, source)
   sourceView.dispatch({ effects: setSyntaxEffect.of(decos) })
 }
 
-function byteToRowCol(doc, offset) {
-  const line = doc.lineAt(offset)
-  return { row: line.number - 1, col: offset - line.from }
+function buildTraceDecos(trace, source) {
+  const marks = []
+  for (const range of traceDecorationRanges(trace)) {
+    const { from, to } = byteRangeToUtf16Range(source, range.startByte, range.endByte)
+    if (from >= to) continue
+    marks.push(Decoration.mark({ class: `cm-inc-${range.role}` }).range(from, to))
+  }
+  marks.sort((a, b) => a.from - b.from || a.to - b.to)
+  try {
+    return Decoration.set(marks, true)
+  } catch {
+    return Decoration.none
+  }
+}
+
+function applyTrace(trace) {
+  if (!sourceView) return
+  const source = sourceView.state.doc.toString()
+  sourceView.dispatch({ effects: setTraceEffect.of(buildTraceDecos(trace, source)) })
 }
 
 function computeInputEdit(tr) {
   let edit = null
-  const oldDoc = tr.startState.doc
-  const newDoc = tr.state.doc
-  tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+  const oldSource = tr.startState.doc.toString()
+  const newSource = tr.state.doc.toString()
+  tr.changes.iterChanges((fromA, toA, _fromB, toB) => {
     if (edit) return
-    const newEndByte = fromB + inserted.length
+    const startPoint = utf16OffsetToPoint(oldSource, fromA)
+    const oldEndPoint = utf16OffsetToPoint(oldSource, toA)
+    const newEndPoint = utf16OffsetToPoint(newSource, toB)
     edit = {
-      start_byte:   fromA,
-      old_end_byte: toA,
-      new_end_byte: newEndByte,
-      start_row:    byteToRowCol(oldDoc, fromA).row,
-      start_col:    byteToRowCol(oldDoc, fromA).col,
-      old_end_row:  byteToRowCol(oldDoc, toA).row,
-      old_end_col:  byteToRowCol(oldDoc, toA).col,
-      new_end_row:  byteToRowCol(newDoc, newEndByte).row,
-      new_end_col:  byteToRowCol(newDoc, newEndByte).col,
+      start_byte:   utf16OffsetToUtf8Byte(oldSource, fromA),
+      old_end_byte: utf16OffsetToUtf8Byte(oldSource, toA),
+      new_end_byte: utf16OffsetToUtf8Byte(newSource, toB),
+      start_row:    startPoint.row,
+      start_col:    startPoint.column,
+      old_end_row:  oldEndPoint.row,
+      old_end_col:  oldEndPoint.column,
+      new_end_row:  newEndPoint.row,
+      new_end_col:  newEndPoint.column,
     }
   })
   return edit
@@ -150,12 +198,25 @@ function buildState(content, onChange, onEditEmit, options = {}) {
     highlightActiveLine(),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     EditorView.updateListener.of((update) => {
-      if (!update.docChanged) return
-      const newContent = update.state.doc.toString()
-      onChange(newContent)
-      if (onEditEmit) {
-        const edit = computeInputEdit(update.transactions[0])
-        if (edit) onEditEmit(edit)
+      if (update.docChanged) {
+        const newContent = update.state.doc.toString()
+        onChange(newContent)
+        if (onEditEmit) {
+          const edit = computeInputEdit(update.transactions[0])
+          if (edit) onEditEmit(edit)
+        }
+      }
+      if (
+        withSelectionField &&
+        update.selectionSet &&
+        !update.transactions.some((transaction) => transaction.annotation(externalSelection))
+      ) {
+        const selection = update.state.selection.main
+        emit('select', utf16RangeToByteRange(
+          update.state.doc.toString(),
+          selection.from,
+          selection.to,
+        ))
       }
     }),
     EditorView.theme({
@@ -173,6 +234,10 @@ function buildState(content, onChange, onEditEmit, options = {}) {
     extensions.push(syntaxField)
   }
 
+  if (withSelectionField) {
+    extensions.push(traceField)
+  }
+
   return EditorState.create({ doc: content, extensions })
 }
 
@@ -188,13 +253,22 @@ onMounted(() => {
   })
 
   applySyntaxRanges(props.syntaxRanges)
+  applyTrace(props.incrementalTrace)
+  if (props.selectedRange) {
+    highlightRange(props.selectedRange.startByte, props.selectedRange.endByte)
+  }
 
   grammarView = new EditorView({
     state: buildState(
       props.grammar,
       (val) => emit('update:grammar', val),
       null,
-      { extraExtensions: [moonGrammarSyntax] },
+      {
+        extraExtensions: [
+          moonGrammarSyntax,
+          grammarEditable.of(EditorView.editable.of(!props.grammarReadOnly)),
+        ],
+      },
     ),
     parent: grammarEditorRef.value,
   })
@@ -221,20 +295,44 @@ watch(() => props.grammar, (val) => {
   }
 })
 
+watch(() => props.grammarReadOnly, (readOnly) => {
+  if (!grammarView) return
+  grammarView.dispatch({
+    effects: grammarEditable.reconfigure(EditorView.editable.of(!readOnly)),
+  })
+})
+
+watch(() => props.showGrammar, (showGrammar) => {
+  if (!showGrammar && activeTab.value === 'grammar') {
+    activeTab.value = 'source'
+  }
+})
+
 watch(() => props.syntaxRanges, (ranges) => {
   applySyntaxRanges(ranges)
 }, { deep: false })
 
+watch(() => props.incrementalTrace, (trace) => {
+  applyTrace(trace)
+}, { deep: false })
+
+watch(() => props.selectedRange, (range) => {
+  if (range) highlightRange(range.startByte, range.endByte)
+  else clearHighlight()
+})
+
 function highlightRange(startByte, endByte) {
   if (!sourceView) return
-  const docLen = sourceView.state.doc.length
-  const from = Math.min(startByte, docLen)
-  const to   = Math.min(endByte,   docLen)
-  if (from > to) return
+  const { from, to } = byteRangeToUtf16Range(
+    sourceView.state.doc.toString(),
+    startByte,
+    endByte,
+  )
   sourceView.dispatch({
     effects:       setRangeEffect.of({ from, to }),
     selection:     { anchor: from, head: to },
     scrollIntoView: true,
+    annotations: externalSelection.of(true),
   })
   sourceView.focus()
 }
@@ -249,7 +347,22 @@ function focus() {
   sourceView?.focus()
 }
 
-defineExpose({ highlightRange, clearHighlight, focus })
+function applyTextEdit(edit, expectedSource = null) {
+  if (!sourceView) return false
+  const source = sourceView.state.doc.toString()
+  if (expectedSource != null && expectedSource !== source) return false
+  const change = validatedLintEdit(source, edit)
+  if (!change) return false
+  sourceView.dispatch({
+    changes: change,
+    selection: { anchor: change.from + change.insert.length },
+    scrollIntoView: true,
+  })
+  sourceView.focus()
+  return true
+}
+
+defineExpose({ highlightRange, clearHighlight, focus, applyTextEdit })
 </script>
 
 <template>
@@ -262,6 +375,7 @@ defineExpose({ highlightRange, clearHighlight, focus })
           @click="activeTab = 'source'"
         >✎ 源码</button>
         <button
+          v-if="showGrammar"
           class="tab-btn"
           :class="{ 'tab-btn--active': activeTab === 'grammar' }"
           @click="activeTab = 'grammar'"
@@ -278,7 +392,7 @@ defineExpose({ highlightRange, clearHighlight, focus })
       <div
         ref="grammarEditorRef"
         class="cm-host"
-        :class="{ 'cm-host--hidden': activeTab !== 'grammar' }"
+        :class="{ 'cm-host--hidden': activeTab !== 'grammar' || !showGrammar }"
       />
     </div>
 
@@ -291,7 +405,7 @@ defineExpose({ highlightRange, clearHighlight, focus })
 
     <Transition name="err">
       <div
-        v-if="activeTab === 'grammar' && dslValidationErrors.length > 0"
+        v-if="showGrammar && activeTab === 'grammar' && dslValidationErrors.length > 0"
         class="grammar-validation-bar"
         role="status"
       >
@@ -389,6 +503,21 @@ defineExpose({ highlightRange, clearHighlight, focus })
   outline: 1px solid rgba(255, 213, 0, 0.6);
 }
 
+.cm-inc-reused {
+  background: rgba(78, 201, 176, 0.18);
+  border-bottom: 1px solid rgba(78, 201, 176, 0.75);
+}
+
+.cm-inc-reparse {
+  background: rgba(244, 183, 71, 0.18);
+  border-bottom: 1px solid rgba(244, 183, 71, 0.65);
+}
+
+.cm-inc-edit {
+  background: rgba(244, 71, 71, 0.22);
+  border-bottom: 1px solid rgba(244, 71, 71, 0.8);
+}
+
 .hl-string    { color: #1f8f52; }
 .hl-number    { color: #b27000; }
 .hl-boolean   { color: #0b7285; font-weight: 600; }
@@ -402,4 +531,3 @@ defineExpose({ highlightRange, clearHighlight, focus })
 .hl-property  { color: #1857b6; }
 .hl-constant  { color: #0f766e; font-weight: 600; }
 </style>
-

@@ -1,12 +1,17 @@
 import { shallowRef, ref, watch, onUnmounted } from 'vue'
 
-export function useParseTree(parser, sourceCode) {
+export function useParseTree(parser, sourceCode, traceEnabled = null) {
   const tree = shallowRef(null)
   const parseTime = ref(0)
   const isIncremental = ref(false)
+  const incrementalTrace = shallowRef(null)
 
   let pendingEdit = null
   let debounceTimer = null
+
+  function shouldTrace() {
+    return Boolean(traceEnabled?.value ?? traceEnabled)
+  }
 
   function freeTree(t) {
     if (t) { try { t.free() } catch (_) {} }
@@ -17,6 +22,7 @@ export function useParseTree(parser, sourceCode) {
     if (old) { freeTree(old); tree.value = null }
     parseTime.value = 0
     isIncremental.value = false
+    incrementalTrace.value = null
   }
 
   function doParse(p, source, edit) {
@@ -27,16 +33,26 @@ export function useParseTree(parser, sourceCode) {
 
     try {
       if (edit && tree.value) {
-        newTree = p.parseIncremental(source, tree.value, edit)
+        if (shouldTrace() && typeof p.parseIncrementalTrace === 'function') {
+          const result = p.parseIncrementalTrace(source, tree.value, edit)
+          newTree = result.tree
+          incrementalTrace.value = result.trace
+          parseTime.value = result.trace?.incrementalElapsedMs ?? 0
+        } else {
+          newTree = p.parseIncremental(source, tree.value, edit)
+          incrementalTrace.value = null
+        }
         incremental = true
       } else {
         newTree = p.parse(source)
+        incrementalTrace.value = null
       }
     } catch (_) {
       try {
         freeTree(newTree)
         newTree = p.parse(source)
         incremental = false
+        incrementalTrace.value = null
       } catch (e2) {
         console.error('[useParseTree] parse failed:', e2)
         return
@@ -45,7 +61,9 @@ export function useParseTree(parser, sourceCode) {
 
     const old = tree.value
     tree.value = newTree
-    parseTime.value = Math.round((performance.now() - t0) * 100) / 100
+    if (!incrementalTrace.value) {
+      parseTime.value = Math.round((performance.now() - t0) * 100) / 100
+    }
     isIncremental.value = incremental
 
     if (old && old !== newTree) freeTree(old)
@@ -80,11 +98,15 @@ export function useParseTree(parser, sourceCode) {
     schedule()
   })
 
+  watch(() => shouldTrace(), (enabled) => {
+    if (!enabled) incrementalTrace.value = null
+  })
+
   onUnmounted(() => {
     clearTimeout(debounceTimer)
     freeTree(tree.value)
     tree.value = null
   })
 
-  return { tree, parseTime, isIncremental, triggerEdit }
+  return { tree, parseTime, isIncremental, incrementalTrace, triggerEdit }
 }
