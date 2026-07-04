@@ -10,6 +10,7 @@ import {
 } from "vscode-languageserver";
 import type { DocumentEntry } from "./document-manager.js";
 import type { SymbolIndex } from "./symbol-index.js";
+import type { LintDiagnosticData } from "./diagnostics.js";
 
 // ── 主入口 ──
 
@@ -21,6 +22,30 @@ export function getCodeActions(
   const actions: CodeAction[] = [];
 
   for (const diag of diagnostics) {
+    const lintData = readLintDiagnosticData(diag.data);
+    if (lintData) {
+      if (
+        lintData.documentVersion === entry.version &&
+        lintData.fix &&
+        isValidRange(entry, lintData.fix.edit.range)
+      ) {
+        actions.push({
+          title: lintData.fix.title,
+          kind: CodeActionKind.QuickFix,
+          diagnostics: [diag],
+          isPreferred: true,
+          edit: {
+            changes: {
+              [entry.uri]: [{
+                range: lintData.fix.edit.range,
+                newText: lintData.fix.edit.newText,
+              }],
+            },
+          },
+        });
+      }
+      continue;
+    }
     const msg = diag.message;
 
     // Missing rule — 提供 "Create rule"
@@ -76,6 +101,32 @@ export function getCodeActions(
   }
 
   return actions;
+}
+
+function readLintDiagnosticData(value: unknown): LintDiagnosticData | null {
+  if (!value || typeof value !== "object") return null;
+  const data = value as Partial<LintDiagnosticData>;
+  if (
+    data.kind !== "moonparse-lint" ||
+    typeof data.ruleId !== "string" ||
+    !Number.isInteger(data.documentVersion)
+  ) return null;
+  return data as LintDiagnosticData;
+}
+
+function isValidRange(entry: DocumentEntry, range: Diagnostic["range"]): boolean {
+  const positions = [range.start, range.end];
+  for (const position of positions) {
+    if (!Number.isInteger(position.line) || !Number.isInteger(position.character)) return false;
+    if (position.line < 0 || position.line >= entry.lineOffsets.length || position.character < 0) return false;
+    const lineStart = entry.lineOffsets[position.line];
+    const lineEnd = position.line + 1 < entry.lineOffsets.length
+      ? Math.max(lineStart, entry.lineOffsets[position.line + 1] - 1)
+      : entry.text.length;
+    if (position.character > lineEnd - lineStart) return false;
+  }
+  return range.start.line < range.end.line ||
+    (range.start.line === range.end.line && range.start.character <= range.end.character);
 }
 
 // ── Quick Fix 生成 ──

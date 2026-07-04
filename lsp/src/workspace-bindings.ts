@@ -34,9 +34,16 @@ export function workspaceCandidatesForReference(
   uri: string,
   reference: BindingReference,
 ): ExportedDefinition[] {
-  if (!isWorkspaceResolvableReference(reference)) return [];
   const module = workspace.module(uri);
   if (!module) return [];
+  const qualified = workspace.qualifiedReferenceForBinding(
+    uri,
+    reference.id,
+    reference.start_byte,
+    reference.end_byte,
+  );
+  if (qualified) return workspace.findQualifiedDefinitions(uri, qualified);
+  if (!isWorkspaceResolvableReference(reference)) return [];
   return workspace.findExportedDefinitions(
     module.packageId,
     reference.name,
@@ -73,14 +80,13 @@ export function workspaceOccurrencesForExported(
   }
 
   for (const [, file] of workspace.entries()) {
-    if (file.packageId !== exported.packageId) continue;
+    if (exported.visibility === "package" && file.packageId !== exported.packageId) continue;
     if (!file.bindingIndex) continue;
     for (const reference of file.bindingIndex.allReferences()) {
-      if (!referenceMatchesExport(reference, exported)) continue;
-
       const localDefinition = file.bindingIndex.findDefinition(reference.id);
       if (localDefinition) {
-        if (file.uri === exported.uri && localDefinition.id === exported.localId) {
+        if (file.uri === exported.uri && localDefinition.id === exported.localId &&
+          reference.name === exported.name && reference.ns === exported.ns) {
           occurrences.push({
             uri: file.uri,
             file,
@@ -118,6 +124,18 @@ export function bindingDiagnosticsWithWorkspace(
     if (diagnostic.kind === "unresolved" && diagnostic.reference_id >= 0) {
       const reference = index.getReference(diagnostic.reference_id);
       if (reference) {
+        const aliasStatus = moduleAliasStatus(workspace, uri, reference);
+        if (aliasStatus === "valid" || aliasStatus === "external") continue;
+        if (aliasStatus === "ambiguous") {
+          addDiagnostic(result, seen, ambiguousDiagnostic(reference));
+          continue;
+        }
+        const qualifiedStatus = qualifiedReferenceStatus(workspace, uri, reference);
+        if (qualifiedStatus === "external") continue;
+        if (qualifiedStatus === "ambiguous") {
+          addDiagnostic(result, seen, ambiguousDiagnostic(reference));
+          continue;
+        }
         const candidates = workspaceCandidatesForReference(workspace, uri, reference);
         if (candidates.length === 1) continue;
         if (candidates.length > 1) {
@@ -133,7 +151,84 @@ export function bindingDiagnosticsWithWorkspace(
     addDiagnostic(result, seen, duplicate);
   }
 
+  const module = workspace.module(uri);
+  if (module?.resolutionMode === "strict") {
+    for (const qualified of module.qualifiedReferences) {
+      const imports = workspace.importsForAlias(uri, qualified.alias);
+      if (imports.length === 0 || imports[0]?.status === "external") continue;
+      const candidates = workspace.findQualifiedDefinitions(uri, qualified);
+      if (imports.length > 1 || imports[0]?.status === "ambiguous" || candidates.length > 1) {
+        addDiagnostic(result, seen, moduleReferenceDiagnostic(
+          "ambiguous",
+          `ambiguous imported reference '${qualified.alias}.${qualified.name}'`,
+          qualified.referenceId ?? -1,
+          qualified.startByte,
+          qualified.endByte,
+        ));
+      } else if (imports[0]?.status === "missing" || candidates.length === 0) {
+        addDiagnostic(result, seen, moduleReferenceDiagnostic(
+          "unresolved",
+          `unresolved imported member '${qualified.alias}.${qualified.name}'`,
+          qualified.referenceId ?? -1,
+          qualified.startByte,
+          qualified.endByte,
+        ));
+      }
+    }
+  }
+
   return result;
+}
+
+function moduleAliasStatus(
+  workspace: WorkspaceIndex,
+  uri: string,
+  reference: BindingReference,
+): "none" | "valid" | "external" | "ambiguous" {
+  const module = workspace.module(uri);
+  if (!module || module.resolutionMode !== "strict") return "none";
+  const qualified = module.qualifiedReferences.find((item) =>
+    item.aliasStartByte === reference.start_byte && item.aliasEndByte === reference.end_byte);
+  if (!qualified) return "none";
+  const imports = workspace.importsForAlias(uri, qualified.alias);
+  if (imports.length === 0) return "none";
+  if (imports.length !== 1 || imports[0].status === "ambiguous") return "ambiguous";
+  return imports[0].status === "external" ? "external" : "valid";
+}
+
+function qualifiedReferenceStatus(
+  workspace: WorkspaceIndex,
+  uri: string,
+  reference: BindingReference,
+): "none" | "external" | "ambiguous" | "local" {
+  const qualified = workspace.qualifiedReferenceForBinding(
+    uri,
+    reference.id,
+    reference.start_byte,
+    reference.end_byte,
+  );
+  if (!qualified) return "none";
+  const imports = workspace.importsForAlias(uri, qualified.alias);
+  if (imports.length === 0) return "none";
+  if (imports.length !== 1 || imports[0].status === "ambiguous") return "ambiguous";
+  return imports[0].status === "external" ? "external" : "local";
+}
+
+function moduleReferenceDiagnostic(
+  kind: "unresolved" | "ambiguous",
+  message: string,
+  referenceId: number,
+  startByte: number,
+  endByte: number,
+): BindingDiagnostic {
+  return {
+    kind,
+    message,
+    reference_id: referenceId,
+    definition_id: -1,
+    start_byte: startByte,
+    end_byte: endByte,
+  };
 }
 
 export function exportedDuplicateDiagnostics(
@@ -172,15 +267,6 @@ function ambiguousDiagnostic(reference: BindingReference): BindingDiagnostic {
     start_byte: reference.start_byte,
     end_byte: reference.end_byte,
   };
-}
-
-function referenceMatchesExport(
-  reference: BindingReference,
-  exported: ExportedDefinition,
-): boolean {
-  return isWorkspaceResolvableReference(reference) &&
-    reference.name === exported.name &&
-    reference.ns === exported.ns;
 }
 
 function sortUniqueOccurrences(

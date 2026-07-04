@@ -19,6 +19,7 @@ import { parseTableInfo } from "./parse-table-info.js";
 import { prepareRename, renameSymbol } from "./rename.js";
 import {
   loadMoonParse,
+  type CstNode,
   type MoonLanguage,
   type ParseTree,
 } from "../../wasm/moonparse.js";
@@ -58,6 +59,15 @@ function rebuildIndex(language: MoonLanguage, text: string): BindingIndex {
 
 function labels(items: CompletionItem[] | null): string[] {
   return (items ?? []).map((item) => item.label);
+}
+
+function findNode(node: CstNode, type: string): CstNode | null {
+  if (node.type === type) return node;
+  for (const child of node.children ?? []) {
+    const found = findNode(child, type);
+    if (found) return found;
+  }
+  return null;
 }
 
 describe("MoonBit bundle LSP integration", () => {
@@ -108,6 +118,8 @@ describe("MoonBit bundle LSP integration", () => {
       expect(symbols[0]?.children?.some((symbol) => symbol.name === "value")).toBe(true);
 
       expect(foldingRangesFromCaptures(entry, moonbit.fold(tree)).length).toBeGreaterThan(0);
+      const lint = moonbit.lint(tree);
+      expect(lint).toEqual([]);
       expect(labels(getCompletions(entry, tree, index, tableInfo, 2, 3))).toContain("value");
 
       expect(prepareRename(entry, index, tableInfo, 2, 2)?.placeholder).toBe("value");
@@ -126,6 +138,100 @@ describe("MoonBit bundle LSP integration", () => {
       ]);
     } finally {
       tree.free();
+    }
+  });
+
+  it("runs configured MoonBit lint rules and severity overrides", () => {
+    const moonbit = language!;
+    const tree = moonbit.parse("let value = -0\n// TODO: demo\n");
+    try {
+      const diagnostics = moonbit.lint(tree);
+      expect(diagnostics.map((item) => item.ruleId)).toEqual([
+        "moonbit/recommended/negative-zero",
+        "moonbit/recommended/todo-comment",
+      ]);
+      expect(diagnostics[0].fix?.edit.replacement).toBe("0");
+      expect(moonbit.lint(tree, {
+        rules: {
+          "moonbit/recommended/negative-zero": "off",
+          "moonbit/recommended/todo-comment": "error",
+        },
+      }).map((item) => item.severity)).toEqual(["error"]);
+    } finally {
+      tree.free();
+    }
+  });
+
+  it("exposes public exports and qualified references through the modules query", () => {
+    const moonbit = language!;
+    const tree = moonbit.parse(
+      "pub fn run() { @json.parse(value) }\n" +
+      "priv fn hidden() {}\n" +
+      "type Box = @types.User\n",
+    );
+    try {
+      expect(tree.errorSummary()).toBe("ok");
+      expect(findNode(tree.root, "visibility")).toMatchObject({
+        start_byte: 0,
+        end_byte: 3,
+      });
+      expect(findNode(tree.root, "fn_name")).toMatchObject({
+        start_byte: 7,
+        end_byte: 10,
+      });
+      const modules = moonbit.modules(tree);
+      expect(modules.map((capture) => ({
+        capture: capture.capture,
+        text: capture.text,
+      }))).toEqual([
+        { capture: "module.export", text: "run" },
+        { capture: "module.reference", text: "@json" },
+        { capture: "module.member.value", text: "parse" },
+        { capture: "module.reference", text: "@types" },
+        { capture: "module.member.type", text: "User" },
+      ]);
+      expect(modules[1].match_id).toBe(modules[2].match_id);
+      expect(modules[3].match_id).toBe(modules[4].match_id);
+    } finally {
+      tree.free();
+    }
+  });
+
+  it("parses every supported function visibility prefix without recovery", () => {
+    const moonbit = language!;
+    const cases = [
+      { source: "fn run() {}\n", visibilityEnd: null, exported: false },
+      { source: "pub fn run() {}\n", visibilityEnd: 3, exported: true },
+      { source: "priv fn run() {}\n", visibilityEnd: 4, exported: false },
+      { source: "pub(all) fn run() {}\n", visibilityEnd: 8, exported: true },
+      { source: "pub(readonly) fn run() {}\n", visibilityEnd: 13, exported: true },
+      { source: "pub(open) fn run() {}\n", visibilityEnd: 9, exported: true },
+    ];
+
+    for (const item of cases) {
+      const tree = moonbit.parse(item.source);
+      try {
+        expect(tree.errorSummary(), item.source).toBe("ok");
+        const visibility = findNode(tree.root, "visibility");
+        if (item.visibilityEnd == null) {
+          expect(visibility, item.source).toBeNull();
+        } else {
+          expect(visibility, item.source).toMatchObject({
+            start_byte: 0,
+            end_byte: item.visibilityEnd,
+          });
+        }
+        const nameStart = item.source.indexOf("run");
+        expect(findNode(tree.root, "fn_name"), item.source).toMatchObject({
+          start_byte: nameStart,
+          end_byte: nameStart + 3,
+        });
+        expect(moonbit.modules(tree).some((capture) =>
+          capture.capture === "module.export" && capture.text === "run"), item.source)
+          .toBe(item.exported);
+      } finally {
+        tree.free();
+      }
     }
   });
 

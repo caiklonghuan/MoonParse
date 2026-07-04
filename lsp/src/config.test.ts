@@ -29,4 +29,19 @@ describe("mergeConfig", () => {
       idleEvictMs: 50,
     });
   });
+
+  it("merges lint defaults and copies override maps", () => {
+    const ruleSets = { "json/recommended": false };
+    const rules = { "json/recommended/negative-zero": "error" as const };
+    const merged = mergeConfig(defaultConfig, {
+      lint: { enabled: true, ruleSets, rules },
+    });
+    expect(merged.lint).toEqual({ enabled: true, ruleSets, rules });
+    expect(merged.lint.ruleSets).not.toBe(ruleSets);
+    expect(mergeConfig(defaultConfig, undefined).lint).toEqual({
+      enabled: true,
+      ruleSets: {},
+      rules: {},
+    });
+  });
 });

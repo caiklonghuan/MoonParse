@@ -5,6 +5,7 @@ import {
   type InitializeParams,
   type InitializeResult,
   type Diagnostic,
+  DiagnosticSeverity,
   type DidChangeWatchedFilesParams,
 } from "vscode-languageserver/node.js";
 
@@ -24,7 +25,11 @@ import { DocumentStore, type DocumentEntry } from "./document-manager.js";
 import { MoonParseRuntime, type CstErrorNode } from "./runtime.js";
 import { createServerCapabilities } from "./capabilities.js";
 import { MOONPARSE_VERSION } from "./version.js";
-import { errorsToDiagnostics, bindingDiagnosticsToDiagnostics } from "./diagnostics.js";
+import {
+  errorsToDiagnostics,
+  bindingDiagnosticsToDiagnostics,
+  lintDiagnosticsToDiagnostics,
+} from "./diagnostics.js";
 import { SemanticTokensManager } from "./semantic-tokens.js";
 import { extractDocumentSymbols } from "./document-symbol.js";
 import { getDocumentHighlights } from "./document-highlight.js";
@@ -44,12 +49,19 @@ import { bindingDiagnosticsWithWorkspace } from "./workspace-bindings.js";
 import {
   prepareWorkspaceRename,
   renameWorkspaceSymbol,
+  type RebuiltWorkspaceFile,
 } from "./workspace-rename.js";
 import type { WorkspaceFileEntry } from "./workspace-index.js";
 import { formatGrammar, formatGrammarRange } from "./formatting.js";
 import { getCodeActions } from "./code-actions.js";
 import { isRangeChange, contentChangeToInputEdit } from "./input-edit.js";
 import type { BindingGraph, MoonQuery, ParseTree } from "../../wasm/moonparse.js";
+import { normalizeModuleCaptures, type ModuleQueryData } from "./module-query.js";
+import {
+  discoverMoonBitWorkspace,
+  MoonBitWorkspaceModel,
+} from "./moonbit-workspace.js";
+import { moduleInfoForUri, type ModuleFileMetadata } from "./module-graph.js";
 
 const connection = createConnection(ProposedFeatures.all);
 const logger = new Logger(connection, defaultConfig.trace);
@@ -59,6 +71,8 @@ let store = new DocumentStore(config);
 let runtime = new MoonParseRuntime(logger, config.wasmPath);
 let tokensManager = new SemanticTokensManager(runtime);
 const workspaceIndex = new WorkspaceIndex(config.workspaceIndex);
+let moonBitWorkspace = new MoonBitWorkspaceModel();
+const moduleDiagnosticUris = new Set<string>();
 let symbolIndex = new SymbolIndex();      // 旧索引，逐步迁移到 bindingIndex
 
 // shutdown 后拒绝处理请求
@@ -134,6 +148,7 @@ connection.onInitialize(
       defaultConfig,
       params.initializationOptions as Partial<ServerConfig> | undefined,
     );
+    runtime.setWasmPath(config.wasmPath);
     store.updateConfig(config);
     workspaceIndex.updateConfig(config.workspaceIndex);
     workspaceIndex.setRoots(workspaceRootsFromInitialize(params));
@@ -161,9 +176,9 @@ connection.onInitialized(() => {
       (_parserHandle) => { /* MoonParser 由 runtime.freeParser 管理 */ },
     );
 
-    logger.telemetry("server.initialized");
     await syncConfiguredBundles();
     await indexWorkspaceRoots();
+    logger.telemetry("server.initialized");
   }).catch((err) => {
     logger.error(`WASM 初始化失败: ${safeErrorMessage(err)}`);
   });
@@ -192,7 +207,9 @@ connection.onDidChangeConfiguration(async (change) => {
     ?.moonparse;
   if (raw) {
     const prevTrace = config.trace;
+    const previousBundles = JSON.stringify(config.languageBundles);
     config = mergeConfig(defaultConfig, raw);
+    runtime.setWasmPath(config.wasmPath);
     store.updateConfig(config);
     workspaceIndex.updateConfig(config.workspaceIndex);
     evictIdleWorkspaceEntries();
@@ -208,8 +225,11 @@ connection.onDidChangeConfiguration(async (change) => {
       `配置已更新 — trace=${config.trace} incremental=${config.incrementalParse}`,
     );
     if (runtime.loaded) {
-      await syncConfiguredBundles();
+      if (JSON.stringify(config.languageBundles) !== previousBundles) {
+        await syncConfiguredBundles();
+      }
       await indexWorkspaceRoots();
+      refreshOpenBindingDiagnostics();
     }
   }
 });
@@ -256,7 +276,40 @@ async function indexWorkspaceRoots(): Promise<void> {
   const roots = workspaceIndex.getRoots();
   if (roots.length === 0) return;
 
-  for (const rootUri of roots) {
+  moonBitWorkspace = await discoverMoonBitWorkspace(roots);
+  workspaceIndex.setControlledRoots(moonBitWorkspace.scanRootUris());
+  for (const uri of moduleDiagnosticUris) {
+    connection.sendDiagnostics({ uri, diagnostics: [] });
+  }
+  moduleDiagnosticUris.clear();
+  for (const diagnostic of moonBitWorkspace.diagnostics) {
+    logger.error(`MoonBit workspace metadata (${diagnostic.path}): ${diagnostic.message}`);
+    const uri = pathToFileURL(diagnostic.path).href;
+    moduleDiagnosticUris.add(uri);
+    connection.sendDiagnostics({
+      uri,
+      diagnostics: [{
+        severity: DiagnosticSeverity.Error,
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
+        },
+        message: diagnostic.message,
+        code: "MP_MODULE_CONFIG",
+        source: "moonparse(module)",
+      }],
+    });
+  }
+
+  const scanRoots = minimalScanRootUris([
+    ...roots,
+    ...moonBitWorkspace.scanRootUris(),
+  ]);
+  for (const [uri, file] of [...workspaceIndex.entries()]) {
+    if (!file.isOpen) workspaceIndex.remove(uri, freeWorkspaceTree);
+  }
+
+  for (const rootUri of scanRoots) {
     if (!rootUri.startsWith("file:")) continue;
     try {
       await scanWorkspacePath(fileURLToPath(rootUri));
@@ -266,6 +319,28 @@ async function indexWorkspaceRoots(): Promise<void> {
   }
   refreshOpenBindingDiagnostics();
   logger.trace(`workspace index files=${workspaceIndex.size}`);
+}
+
+function minimalScanRootUris(uris: string[]): string[] {
+  const candidates = uris
+    .filter((uri) => uri.startsWith("file:"))
+    .map((uri) => ({ uri, path: canonicalScanPath(fileURLToPath(uri)) }))
+    .sort((a, b) => a.path.length - b.path.length || a.path.localeCompare(b.path));
+  const selected: Array<{ uri: string; path: string }> = [];
+  for (const candidate of candidates) {
+    if (selected.some((root) =>
+      candidate.path === root.path || candidate.path.startsWith(`${root.path}/`))) {
+      continue;
+    }
+    selected.push(candidate);
+  }
+  return selected.map((item) => item.uri);
+}
+
+function canonicalScanPath(path: string): string {
+  let value = path.replace(/\\/g, "/");
+  while (value.endsWith("/")) value = value.slice(0, -1);
+  return process.platform === "win32" ? value.toLowerCase() : value;
 }
 
 async function scanWorkspacePath(filePath: string): Promise<void> {
@@ -374,7 +449,7 @@ function parseWorkspaceFile(
 
   const startMs = Date.now();
   const tree = runtime.parseFull(entry.languageId, entry.text);
-  const { graph, bindingIndex } = buildBindingsForTree(entry, tree);
+  const { graph, bindingIndex, moduleMetadata } = buildBindingsForTree(entry, tree);
   if (parseTimedOut(startMs)) {
     runtime.freeTree(tree);
     workspaceTrace(
@@ -404,6 +479,7 @@ function parseWorkspaceFile(
     tree,
     graph,
     bindingIndex,
+    moduleMetadata,
   });
 }
 
@@ -448,30 +524,105 @@ function ensureParser(entry: DocumentEntry): void {
 function buildBindingsForTree(
   entry: DocumentEntry,
   tree: ParseTree,
-): { graph: BindingGraph | null; bindingIndex: BindingIndex | null } {
+): {
+  graph: BindingGraph | null;
+  bindingIndex: BindingIndex | null;
+  moduleData: ModuleQueryData;
+  moduleMetadata: ModuleFileMetadata | null;
+} {
   const bundleLanguage = runtime.getLanguage(entry.languageId);
   const bq = bindingQueryForLang(entry.languageId);
   let queryToFree: MoonQuery | null = null;
 
   try {
-    let graph: BindingGraph;
+    let graph: BindingGraph | null;
     if (bundleLanguage?.capabilities.bindings) {
       graph = bundleLanguage.resolveBindings(tree);
     } else if (bq) {
       queryToFree = runtime.compileQuery(bq);
       graph = runtime.queryResolveBindings(queryToFree, tree);
     } else {
-      return { graph: null, bindingIndex: null };
+      graph = null;
     }
 
-    const bindingIndex = new BindingIndex();
-    bindingIndex.update(entry.uri, entry, graph);
-    return { graph, bindingIndex };
+    const moduleCaptures = runtime.modules(entry.languageId, tree);
+    const sourceByteLength = Buffer.byteLength(entry.text, "utf8");
+    const initialModuleData = normalizeModuleCaptures(
+      moduleCaptures,
+      sourceByteLength,
+      graph,
+    );
+    if (graph) augmentBindingGraphWithModuleReferences(graph, initialModuleData);
+    const moduleData = normalizeModuleCaptures(moduleCaptures, sourceByteLength, graph);
+    let bindingIndex: BindingIndex | null = null;
+    if (graph) {
+      bindingIndex = new BindingIndex();
+      bindingIndex.update(entry.uri, entry, graph);
+    }
+    return {
+      graph,
+      bindingIndex,
+      moduleData,
+      moduleMetadata: moduleMetadataForEntry(entry, moduleData),
+    };
   } catch {
-    return { graph: null, bindingIndex: null };
+    const moduleData = normalizeModuleCaptures([], Buffer.byteLength(entry.text, "utf8"));
+    return { graph: null, bindingIndex: null, moduleData, moduleMetadata: null };
   } finally {
     if (queryToFree) runtime.freeQuery(queryToFree);
   }
+}
+
+function augmentBindingGraphWithModuleReferences(
+  graph: BindingGraph,
+  moduleData: ModuleQueryData,
+): void {
+  let nextId = graph.references.reduce((max, item) => Math.max(max, item.id), -1) + 1;
+  for (const qualified of moduleData.qualifiedReferences) {
+    const existing = graph.references.filter((reference) =>
+      reference.start_byte === qualified.startByte &&
+      reference.end_byte === qualified.endByte);
+    if (existing.length > 0) continue;
+    graph.references.push({
+      id: nextId++,
+      name: qualified.name,
+      kind: qualified.namespace === "type" ? "type" : "variable",
+      ns: qualified.namespace,
+      scope_id: graph.scopes.find((scope) =>
+        scope.start_byte <= qualified.startByte && qualified.endByte <= scope.end_byte)?.id ?? 0,
+      start_byte: qualified.startByte,
+      end_byte: qualified.endByte,
+      diagnose_unresolved: false,
+    });
+  }
+}
+
+function moduleMetadataForEntry(
+  entry: DocumentEntry,
+  moduleData: ModuleQueryData,
+): ModuleFileMetadata | null {
+  if (entry.languageId === "moonbit") {
+    return moonBitWorkspace.metadataForFile(entry.uri, moduleData);
+  }
+  const language = runtime.getLanguage(entry.languageId);
+  if (language?.capabilities.modules) {
+    const fallback = moduleInfoForUri(entry.uri, workspaceIndex.getRoots());
+    const logicalModule = moduleData.moduleName || fallback.packageId;
+    return {
+      owningModuleId: logicalModule,
+      packageId: logicalModule,
+      moduleId: moduleData.moduleName || fallback.moduleId,
+      imports: moduleData.imports.map((imported) => ({
+        ...imported,
+        targetPackageId: null,
+        status: "external",
+      })),
+      publicExportRanges: moduleData.publicExportRanges,
+      qualifiedReferences: moduleData.qualifiedReferences,
+      resolutionMode: "strict",
+    };
+  }
+  return null;
 }
 
 function triggerParse(entry: DocumentEntry, generation = workspaceIndex.beginUpdate(entry.uri)): void {
@@ -580,7 +731,11 @@ function triggerParse(entry: DocumentEntry, generation = workspaceIndex.beginUpd
       symbolIndex.build(entry.uri, entry, tree);
     }
 
-    const { graph: bindingGraph, bindingIndex } = buildBindingsForTree(entry, tree);
+    const {
+      graph: bindingGraph,
+      bindingIndex,
+      moduleMetadata,
+    } = buildBindingsForTree(entry, tree);
 
     // 合并语法诊断 + 绑定诊断，推送到客户端
     workspaceIndex.upsertParsedDocument({
@@ -596,6 +751,7 @@ function triggerParse(entry: DocumentEntry, generation = workspaceIndex.beginUpd
       tree,
       graph: bindingGraph,
       bindingIndex,
+      moduleMetadata,
     });
 
     parseDiagnosticsByUri.set(entry.uri, parseDiags);
@@ -642,7 +798,7 @@ function buildBindingIndexForText(entry: DocumentEntry, text: string): BindingIn
 function rebuildWorkspaceFileForRename(
   file: WorkspaceFileEntry,
   text: string,
-): { graph: BindingGraph | null; bindingIndex: BindingIndex | null } | null {
+): RebuiltWorkspaceFile | null {
   if (!runtime.loaded) return null;
   const entry = createWorkspaceEntry(file.uri, text, file.languageId);
   ensureParser(entry);
@@ -684,7 +840,21 @@ function publishDiagnosticsForEntry(
       config.maxDiagnostics,
     )
     : [];
-  const allDiags = [...parseDiags, ...bindingDiags];
+  const tree = workspaceIndex.tree(entry.uri);
+  let lintDiags: Diagnostic[] = [];
+  if (tree) {
+    try {
+      lintDiags = lintDiagnosticsToDiagnostics(
+        entry,
+        runtime.lint(entry.languageId, tree, config.lint),
+        config.maxDiagnostics,
+      );
+    } catch (err) {
+      logger.error(`lint failed (${entry.uri}): ${safeErrorMessage(err)}`);
+    }
+  }
+  const allDiags = [...parseDiags, ...bindingDiags, ...lintDiags]
+    .slice(0, config.maxDiagnostics);
   store.setDiagnostics(entry.uri, allDiags);
   connection.sendDiagnostics({ uri: entry.uri, diagnostics: allDiags });
 }
@@ -855,11 +1025,24 @@ connection.onDidChangeWatchedFiles((params: DidChangeWatchedFilesParams) => {
 });
 
 async function handleWatchedFiles(params: DidChangeWatchedFilesParams): Promise<void> {
+  if (params.changes.some((change) => isWorkspaceMetadataUri(change.uri))) {
+    await indexWorkspaceRoots();
+    for (const [, entry] of store.entries()) {
+      triggerParse(entry, workspaceIndex.beginUpdate(entry.uri));
+    }
+    return;
+  }
   for (const change of params.changes) {
     await handleWatchedFileChange(change.uri, change.type);
   }
   refreshOpenBindingDiagnostics();
   evictIdleWorkspaceEntries();
+}
+
+function isWorkspaceMetadataUri(uri: string): boolean {
+  const path = uri.split(/[?#]/, 1)[0].replace(/\\/g, "/");
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return name === "moon.work" || name === "moon.mod.json" || name === "moon.pkg";
 }
 
 async function handleWatchedFileChange(uri: string, type: FileChangeType): Promise<void> {

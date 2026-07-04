@@ -265,6 +265,38 @@ describe("WorkspaceIndex", () => {
     expect(index.module(uri)).toBeUndefined();
   });
 
+  it("treats differently-cased Windows file URIs as one indexed file", () => {
+    if (process.platform !== "win32") return;
+
+    const lowerUri = "file:///c:/workspace/src/main.mbt";
+    const displayUri = "file:///C:/Workspace/src/main.mbt";
+    const index = new WorkspaceIndex(config);
+    index.setRoots(["file:///C:/Workspace"]);
+
+    for (const uri of [lowerUri, displayUri]) {
+      index.upsertParsedDocument({
+        uri,
+        text: "fn main",
+        lineOffsets: new Uint32Array([0]),
+        languageId: "moonbit",
+        version: 1,
+        sizeBytes: 7,
+        isOpen: true,
+        tree: {} as ParseTree,
+        graph: makeGraph(uri),
+      });
+    }
+
+    expect(index.size).toBe(1);
+    expect(index.get(lowerUri)?.uri).toBe(displayUri);
+    expect(index.get(displayUri)?.uri).toBe(displayUri);
+    expect(index.findExportedDefinitions(
+      "file:///c:/workspace",
+      "main",
+      "value",
+    )).toHaveLength(1);
+  });
+
   it("creates stable global symbol ids", () => {
     const def = globalDefinitionId("file:///workspace/main.mbt", 42);
     const ref = globalReferenceId("file:///workspace/main.mbt", 9);

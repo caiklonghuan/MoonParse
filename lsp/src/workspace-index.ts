@@ -3,9 +3,13 @@ import type { BindingIndex } from "./binding-index.js";
 import {
   ModuleGraph,
   type ExportedDefinition,
+  type ModuleFileMetadata,
   type ModuleEntry,
   type ModuleImport,
+  type ModuleResolutionMode,
+  type QualifiedModuleReference,
 } from "./module-graph.js";
+import { workspaceUriKey } from "./uri-key.js";
 
 export interface WorkspaceIndexConfig {
   enabled: boolean;
@@ -30,7 +34,10 @@ export interface WorkspaceFileEntry {
   skipReason?: string;
   packageId: string;
   moduleId: string;
+  owningModuleId: string;
   imports: ModuleImport[];
+  qualifiedReferences: QualifiedModuleReference[];
+  resolutionMode: ModuleResolutionMode;
   exportedDefinitions: ExportedDefinition[];
   tree: ParseTree | null;
   graph: BindingGraph | null;
@@ -51,6 +58,7 @@ export interface ParsedWorkspaceDocument {
   tree: ParseTree;
   graph?: BindingGraph | null;
   bindingIndex?: BindingIndex | null;
+  moduleMetadata?: ModuleFileMetadata | null;
 }
 
 export type GlobalSymbolKind = "definition" | "reference";
@@ -85,6 +93,7 @@ export function parseGlobalSymbolId(value: string): GlobalSymbolId | null {
 
 export class WorkspaceIndex {
   private roots: string[] = [];
+  private controlledRoots: string[] = [];
   private files = new Map<string, WorkspaceFileEntry>();
   private generations = new Map<string, number>();
   private modules = new ModuleGraph();
@@ -96,7 +105,7 @@ export class WorkspaceIndex {
   }
 
   setRoots(roots: string[]): void {
-    this.roots = roots.map(normalizeUri).filter(Boolean).sort();
+    this.roots = roots.map(workspaceUriKey).filter(Boolean).sort();
     this.modules.setRoots(this.roots);
     this.rebuildModuleEntries();
   }
@@ -105,10 +114,15 @@ export class WorkspaceIndex {
     return [...this.roots];
   }
 
+  setControlledRoots(roots: string[]): void {
+    this.controlledRoots = roots.map(workspaceUriKey).filter(Boolean).sort();
+  }
+
   isInWorkspace(uri: string): boolean {
-    if (this.roots.length === 0) return true;
-    const value = normalizeUri(uri);
-    return this.roots.some((root) => value === root || value.startsWith(`${root}/`));
+    if (this.roots.length === 0 && this.controlledRoots.length === 0) return true;
+    const value = workspaceUriKey(uri);
+    return [...this.roots, ...this.controlledRoots]
+      .some((root) => value === root || value.startsWith(`${root}/`));
   }
 
   shouldIndexUri(
@@ -128,16 +142,17 @@ export class WorkspaceIndex {
     if (sizeBytes > this.config.maxFileBytes) return "maxFileBytes";
     if (!this.isInWorkspace(uri)) return "outsideWorkspace";
     if (!enabledExtensions.includes(extensionFromUri(uri))) return "extension";
-    if (!this.files.has(uri) && this.files.size >= this.config.maxFiles) {
+    if (!this.files.has(workspaceUriKey(uri)) && this.files.size >= this.config.maxFiles) {
       return "maxFiles";
     }
     return null;
   }
 
   beginUpdate(uri: string, nowMs: number = Date.now()): number {
+    const key = workspaceUriKey(uri);
     const next = this.currentGeneration(uri) + 1;
-    this.generations.set(uri, next);
-    const entry = this.files.get(uri);
+    this.generations.set(key, next);
+    const entry = this.files.get(key);
     if (entry) {
       entry.generation = next;
       entry.lastAccessMs = nowMs;
@@ -147,7 +162,8 @@ export class WorkspaceIndex {
   }
 
   currentGeneration(uri: string): number {
-    return this.generations.get(uri) ?? this.files.get(uri)?.generation ?? 0;
+    const key = workspaceUriKey(uri);
+    return this.generations.get(key) ?? this.files.get(key)?.generation ?? 0;
   }
 
   isCurrentGeneration(uri: string, generation: number): boolean {
@@ -155,14 +171,14 @@ export class WorkspaceIndex {
   }
 
   markSkipped(uri: string, reason: string, nowMs: number = Date.now()): void {
-    const entry = this.files.get(uri);
+    const entry = this.files.get(workspaceUriKey(uri));
     if (!entry) return;
     entry.skipReason = reason;
     entry.lastAccessMs = nowMs;
   }
 
   touch(uri: string, nowMs: number = Date.now()): void {
-    const entry = this.files.get(uri);
+    const entry = this.files.get(workspaceUriKey(uri));
     if (entry) entry.lastAccessMs = nowMs;
   }
 
@@ -171,7 +187,7 @@ export class WorkspaceIndex {
     freeTree?: (tree: ParseTree) => void,
     nowMs: number = Date.now(),
   ): boolean {
-    if (this.files.has(uri)) return true;
+    if (this.files.has(workspaceUriKey(uri))) return true;
     if (this.config.maxFiles <= 0) return false;
     if (this.files.size < this.config.maxFiles) return true;
     this.evictClosedUntilCapacity(freeTree, nowMs);
@@ -208,11 +224,16 @@ export class WorkspaceIndex {
   }
 
   upsertParsedDocument(document: ParsedWorkspaceDocument): void {
+    const key = workspaceUriKey(document.uri);
     const nowMs = document.indexedAtMs ?? Date.now();
     const generation = document.generation ?? this.currentGeneration(document.uri);
-    const moduleEntry = this.modules.upsertFile(document.uri, document.graph ?? null);
-    this.generations.set(document.uri, generation);
-    this.files.set(document.uri, {
+    const moduleEntry = this.modules.upsertFile(
+      document.uri,
+      document.graph ?? null,
+      document.moduleMetadata,
+    );
+    this.generations.set(key, generation);
+    this.files.set(key, {
       uri: document.uri,
       text: document.text,
       lineOffsets: cloneLineOffsets(document.lineOffsets),
@@ -227,7 +248,10 @@ export class WorkspaceIndex {
       skipReason: undefined,
       packageId: moduleEntry.packageId,
       moduleId: moduleEntry.moduleId,
+      owningModuleId: moduleEntry.owningModuleId,
       imports: moduleEntry.imports,
+      qualifiedReferences: moduleEntry.qualifiedReferences,
+      resolutionMode: moduleEntry.resolutionMode,
       exportedDefinitions: moduleEntry.exportedDefinitions,
       tree: document.tree,
       graph: document.graph ?? null,
@@ -236,7 +260,7 @@ export class WorkspaceIndex {
   }
 
   markClosed(uri: string): void {
-    const entry = this.files.get(uri);
+    const entry = this.files.get(workspaceUriKey(uri));
     if (entry) {
       entry.isOpen = false;
       entry.lastAccessMs = Date.now();
@@ -244,14 +268,15 @@ export class WorkspaceIndex {
   }
 
   remove(uri: string, freeTree?: (tree: ParseTree) => void): void {
-    const entry = this.files.get(uri);
+    const key = workspaceUriKey(uri);
+    const entry = this.files.get(key);
     if (entry?.tree && freeTree) freeTree(entry.tree);
-    this.files.delete(uri);
+    this.files.delete(key);
     this.modules.removeFile(uri);
   }
 
   clearRuntime(uri: string): void {
-    const entry = this.files.get(uri);
+    const entry = this.files.get(workspaceUriKey(uri));
     if (!entry) return;
     entry.tree = null;
     entry.graph = null;
@@ -262,19 +287,19 @@ export class WorkspaceIndex {
   }
 
   get(uri: string): WorkspaceFileEntry | undefined {
-    return this.files.get(uri);
+    return this.files.get(workspaceUriKey(uri));
   }
 
   tree(uri: string): ParseTree | undefined {
-    return this.files.get(uri)?.tree ?? undefined;
+    return this.files.get(workspaceUriKey(uri))?.tree ?? undefined;
   }
 
   graph(uri: string): BindingGraph | undefined {
-    return this.files.get(uri)?.graph ?? undefined;
+    return this.files.get(workspaceUriKey(uri))?.graph ?? undefined;
   }
 
   bindingIndex(uri: string): BindingIndex | undefined {
-    return this.files.get(uri)?.bindingIndex ?? undefined;
+    return this.files.get(workspaceUriKey(uri))?.bindingIndex ?? undefined;
   }
 
   module(uri: string): ModuleEntry | undefined {
@@ -294,6 +319,34 @@ export class WorkspaceIndex {
     return this.modules.findExportedDefinitions(packageId, name, ns, kind);
   }
 
+  findQualifiedDefinitions(
+    uri: string,
+    qualified: QualifiedModuleReference,
+  ): ExportedDefinition[] {
+    return this.modules.findQualifiedDefinitions(uri, qualified);
+  }
+
+  qualifiedReferenceForBinding(
+    uri: string,
+    referenceId: number,
+    startByte?: number,
+    endByte?: number,
+  ): QualifiedModuleReference | null {
+    return this.modules.qualifiedReferenceForBinding(uri, referenceId, startByte, endByte);
+  }
+
+  qualifiedReferenceAt(
+    uri: string,
+    startByte: number,
+    endByte: number,
+  ): QualifiedModuleReference | null {
+    return this.modules.qualifiedReferenceAt(uri, startByte, endByte);
+  }
+
+  importsForAlias(uri: string, alias: string): ModuleImport[] {
+    return this.modules.importsForAlias(uri, alias);
+  }
+
   entriesForPackage(packageId: string): WorkspaceFileEntry[] {
     return [...this.files.values()]
       .filter((entry) => entry.packageId === packageId)
@@ -301,7 +354,7 @@ export class WorkspaceIndex {
   }
 
   isOpenEntryFresh(uri: string, text: string, version: number): boolean {
-    const entry = this.files.get(uri);
+    const entry = this.files.get(workspaceUriKey(uri));
     return !!entry && entry.isOpen && entry.text === text && entry.version === version;
   }
 
@@ -309,8 +362,8 @@ export class WorkspaceIndex {
     return this.files.size;
   }
 
-  entries(): IterableIterator<[string, WorkspaceFileEntry]> {
-    return this.files.entries();
+  *entries(): IterableIterator<[string, WorkspaceFileEntry]> {
+    for (const entry of this.files.values()) yield [entry.uri, entry];
   }
 
   dispose(freeTree?: (tree: ParseTree) => void): void {
@@ -327,10 +380,17 @@ export class WorkspaceIndex {
   private rebuildModuleEntries(): void {
     this.modules.clear();
     for (const entry of this.files.values()) {
-      const moduleEntry = this.modules.upsertFile(entry.uri, entry.graph);
+      const moduleEntry = this.modules.upsertFile(
+        entry.uri,
+        entry.graph,
+        metadataForEntry(entry),
+      );
       entry.packageId = moduleEntry.packageId;
       entry.moduleId = moduleEntry.moduleId;
+      entry.owningModuleId = moduleEntry.owningModuleId;
       entry.imports = moduleEntry.imports;
+      entry.qualifiedReferences = moduleEntry.qualifiedReferences;
+      entry.resolutionMode = moduleEntry.resolutionMode;
       entry.exportedDefinitions = moduleEntry.exportedDefinitions;
     }
   }
@@ -342,6 +402,20 @@ export class WorkspaceIndex {
         a.lastAccessMs - b.lastAccessMs ||
         a.uri.localeCompare(b.uri));
   }
+}
+
+function metadataForEntry(entry: WorkspaceFileEntry): ModuleFileMetadata {
+  return {
+    owningModuleId: entry.owningModuleId,
+    packageId: entry.packageId,
+    moduleId: entry.moduleId,
+    imports: entry.imports.map((item) => ({ ...item })),
+    publicExportRanges: entry.exportedDefinitions
+      .filter((item) => item.visibility === "public")
+      .map((item) => ({ startByte: item.startByte, endByte: item.endByte })),
+    qualifiedReferences: entry.qualifiedReferences.map((item) => ({ ...item })),
+    resolutionMode: entry.resolutionMode,
+  };
 }
 
 function cloneLineOffsets(offsets: Uint32Array): Uint32Array {
@@ -360,10 +434,4 @@ export function extensionFromUri(uri: string): string {
   } catch {
     return extension.toLowerCase();
   }
-}
-
-function normalizeUri(uri: string): string {
-  let value = uri.trim();
-  while (value.endsWith("/")) value = value.slice(0, -1);
-  return process.platform === "win32" ? value.toLowerCase() : value;
 }

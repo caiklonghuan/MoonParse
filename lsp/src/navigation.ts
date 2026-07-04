@@ -53,7 +53,7 @@ export function getWorkspaceDefinitionLocation(
   if (hit.kind !== "reference") return null;
 
   const reference = index.getReference(hit.id);
-  if (!reference || !isWorkspaceResolvableReference(reference)) return null;
+  if (!reference) return null;
 
   const exported = resolveWorkspaceReference(workspace, entry.uri, reference);
   return exported ? exportedToLocation(workspace, exported) : null;
@@ -87,7 +87,7 @@ export function getWorkspaceReferenceLocations(
 
   if (hit.kind !== "reference") return [];
   const reference = index.getReference(hit.id);
-  if (!reference || !isWorkspaceResolvableReference(reference)) return [];
+  if (!reference) return [];
   const exported = resolveWorkspaceReference(workspace, entry.uri, reference);
   return exported
     ? workspaceReferencesForExported(workspace, exported, includeDeclaration)

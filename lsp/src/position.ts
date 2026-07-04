@@ -1,25 +1,21 @@
-// ── LSP UTF-16 position ↔ UTF-8 byte offset 转换 ──
-//
-// LSP 协议使用 UTF-16 code unit 作为列号单位。
-// MoonParse 内部使用 UTF-8 byte offset。
-// 对于 BMP 内字符（包括中文），1 code point = 1 UTF-16 = 1-3 UTF-8 bytes。
-// 对于补充平面字符（emoji等），1 code point = 2 UTF-16 = 4 UTF-8 bytes。
+// LSP positions use UTF-16 code units while MoonParse uses UTF-8 byte offsets.
 
-// 单个 code point 占多少 UTF-8 字节
-function utf8Len(cp: number): number {
-  if (cp < 0x80) return 1;
-  if (cp < 0x800) return 2;
-  if (cp < 0x10000) return 3;
-  return 4;
+const encoder = new TextEncoder();
+
+function utf8ByteLength(text: string): number {
+  return encoder.encode(text).length;
 }
 
-// 单个 code point 占多少 UTF-16 code unit（1 或 2）
-function utf16Len(cp: number): number {
-  return cp > 0xffff ? 2 : 1;
+function clampUtf16Boundary(text: string, offset: number): number {
+  let value = Math.max(0, Math.min(text.length, Math.trunc(offset)));
+  if (
+    value > 0 && value < text.length &&
+    /[\uD800-\uDBFF]/.test(text[value - 1]) &&
+    /[\uDC00-\uDFFF]/.test(text[value])
+  ) value -= 1;
+  return value;
 }
 
-// LSP (line, character) → 全文字节偏移
-// line/character 均为 0-based，character 按 UTF-16 code unit 计数
 export function utf16ToByteOffset(
   text: string,
   lineOffsets: Uint32Array,
@@ -27,22 +23,15 @@ export function utf16ToByteOffset(
   character: number,
 ): number {
   if (line < 0) return 0;
-  if (line >= lineOffsets.length) return text.length;
-
+  if (line >= lineOffsets.length) return utf8ByteLength(text);
   const lineStart = lineOffsets[line];
-  let bytePos = lineStart;
-  let utf16Pos = 0;
-
-  while (bytePos < text.length && utf16Pos < character) {
-    const cp = text.codePointAt(bytePos)!;
-    if (cp === 10) break; // 换行，不跨行
-    bytePos += utf8Len(cp);
-    utf16Pos += utf16Len(cp);
-  }
-  return bytePos;
+  const utf16Offset = clampUtf16Boundary(text, lineStart + Math.max(0, character));
+  const lineEnd = line + 1 < lineOffsets.length
+    ? Math.max(lineStart, lineOffsets[line + 1] - 1)
+    : text.length;
+  return utf8ByteLength(text.slice(0, Math.min(utf16Offset, lineEnd)));
 }
 
-// 后续多选 range：LSP (line, character, length) → Utf16Range
 export interface Utf16Range {
   startByte: number;
   endByte: number;
@@ -62,46 +51,34 @@ export function utf16RangeToByteRange(
   return { startByte: start, endByte: end };
 }
 
-// ── 反向转换：字节偏移 → LSP (line, character) ──
-
 export interface LspPosition {
   line: number;
   character: number;
 }
 
-// 全文字节偏移 → LSP position
 export function byteOffsetToUtf16(
   text: string,
-  lineOffsets: Uint32Array,
+  _lineOffsets: Uint32Array,
   targetByte: number,
 ): LspPosition {
-  // 找所在行
+  const safeTarget = Math.max(0, Math.min(Math.trunc(targetByte), utf8ByteLength(text)));
+  let bytes = 0;
   let line = 0;
-  for (let i = lineOffsets.length - 1; i >= 0; i--) {
-    if (lineOffsets[i] <= targetByte) {
-      line = i;
-      break;
+  let character = 0;
+  for (const value of text) {
+    const width = utf8ByteLength(value);
+    if (bytes + width > safeTarget) break;
+    bytes += width;
+    if (value === "\n") {
+      line += 1;
+      character = 0;
+    } else {
+      character += value.length;
     }
   }
-
-  const lineStart = lineOffsets[line];
-  let bytePos = lineStart;
-  let utf16Pos = 0;
-
-  while (bytePos < targetByte && bytePos < text.length) {
-    const cp = text.codePointAt(bytePos)!;
-    if (cp === 10) break;
-    const nextByte = bytePos + utf8Len(cp);
-    if (nextByte > targetByte) break; // target 落在多字节字符中间，停在字符起始处
-    bytePos = nextByte;
-    utf16Pos += utf16Len(cp);
-  }
-
-  return { line, character: utf16Pos };
+  return { line, character };
 }
 
-// 注意：LSP Range 的 end 也按 UTF-16 计算，反向转换同理。
-// 字节范围 → LSP Range
 export interface LspRange {
   start: LspPosition;
   end: LspPosition;

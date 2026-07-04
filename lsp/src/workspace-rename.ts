@@ -10,7 +10,7 @@ import type {
 } from "../../wasm/moonparse.js";
 import type { BindingIndex } from "./binding-index.js";
 import type { DocumentEntry } from "./document-manager.js";
-import type { ExportedDefinition } from "./module-graph.js";
+import type { ExportedDefinition, ModuleFileMetadata } from "./module-graph.js";
 import { ModuleGraph } from "./module-graph.js";
 import type { ParseTableInfo } from "./parse-table-info.js";
 import { isValidWordForTable } from "./parse-table-info.js";
@@ -35,6 +35,7 @@ export type WorkspaceRenameOutcome =
 export interface RebuiltWorkspaceFile {
   graph: BindingGraph | null;
   bindingIndex: BindingIndex | null;
+  moduleMetadata?: ModuleFileMetadata | null;
 }
 
 export type RebuildWorkspaceFile = (
@@ -169,7 +170,7 @@ function resolveWorkspaceRenameTarget(
 
   if (hit.kind !== "reference") return { applies: false };
   const reference = index.getReference(hit.id);
-  if (!reference || !isWorkspaceResolvableReference(reference)) {
+  if (!reference) {
     return { applies: false };
   }
   const candidates = workspaceCandidatesForReference(workspace, entry.uri, reference);
@@ -255,7 +256,11 @@ function dryRunWorkspaceRename(
     rebuilt.set(uri, next);
   }
 
-  for (const file of packageEntries) {
+  const validationEntries = uniqueFiles([
+    ...packageEntries,
+    ...[...byteEditsByUri.values()].map((group) => group.file),
+  ]);
+  for (const file of validationEntries) {
     const next = rebuilt.get(file.uri);
     if (!(next?.graph ?? file.graph) || !(next?.bindingIndex ?? file.bindingIndex)) {
       return false;
@@ -264,14 +269,19 @@ function dryRunWorkspaceRename(
 
   const originalModuleGraph = new ModuleGraph();
   originalModuleGraph.setRoots(workspace.getRoots());
-  for (const file of packageEntries) {
-    originalModuleGraph.upsertFile(file.uri, file.graph);
+  for (const file of validationEntries) {
+    originalModuleGraph.upsertFile(file.uri, file.graph, metadataForWorkspaceFile(file));
   }
 
   const moduleGraph = new ModuleGraph();
   moduleGraph.setRoots(workspace.getRoots());
-  for (const file of packageEntries) {
-    moduleGraph.upsertFile(file.uri, rebuilt.get(file.uri)?.graph ?? file.graph);
+  for (const file of validationEntries) {
+    const next = rebuilt.get(file.uri);
+    moduleGraph.upsertFile(
+      file.uri,
+      next?.graph ?? file.graph,
+      next?.moduleMetadata ?? metadataForWorkspaceFile(file),
+    );
   }
 
   if (moduleGraph.findExportedDefinitions(
@@ -282,17 +292,36 @@ function dryRunWorkspaceRename(
     return false;
   }
 
-  if (hasBlockingVirtualDiagnostics(packageEntries, rebuilt, moduleGraph, exported.packageId)) {
+  if (hasBlockingVirtualDiagnostics(validationEntries, rebuilt, moduleGraph, exported.packageId)) {
     return false;
   }
 
   return unchangedReferencesKeepTargets(
-    packageEntries,
+    validationEntries,
     rebuilt,
     byteEditsByUri,
     originalModuleGraph,
     moduleGraph,
   );
+}
+
+function uniqueFiles(files: WorkspaceFileEntry[]): WorkspaceFileEntry[] {
+  return [...new Map(files.map((file) => [file.uri, file])).values()]
+    .sort((a, b) => a.uri.localeCompare(b.uri));
+}
+
+function metadataForWorkspaceFile(file: WorkspaceFileEntry): ModuleFileMetadata {
+  return {
+    owningModuleId: file.owningModuleId,
+    packageId: file.packageId,
+    moduleId: file.moduleId,
+    imports: file.imports.map((item) => ({ ...item })),
+    publicExportRanges: file.exportedDefinitions
+      .filter((item) => item.visibility === "public")
+      .map((item) => ({ startByte: item.startByte, endByte: item.endByte })),
+    qualifiedReferences: file.qualifiedReferences.map((item) => ({ ...item })),
+    resolutionMode: file.resolutionMode,
+  };
 }
 
 function hasBlockingVirtualDiagnostics(
@@ -310,6 +339,9 @@ function hasBlockingVirtualDiagnostics(
       }
       if (diagnostic.kind === "unresolved" && diagnostic.reference_id >= 0) {
         const reference = index.getReference(diagnostic.reference_id);
+        if (reference && virtualDeclaredAliasIsValid(moduleGraph, file.uri, reference)) {
+          continue;
+        }
         if (!reference || virtualWorkspaceCandidates(moduleGraph, file.uri, reference).length !== 1) {
           return true;
         }
@@ -323,6 +355,19 @@ function hasBlockingVirtualDiagnostics(
     }
   }
   return false;
+}
+
+function virtualDeclaredAliasIsValid(
+  moduleGraph: ModuleGraph,
+  uri: string,
+  reference: BindingReference,
+): boolean {
+  const module = moduleGraph.getModuleByUri(uri);
+  const qualified = module?.qualifiedReferences.find((item) =>
+    item.aliasStartByte === reference.start_byte && item.aliasEndByte === reference.end_byte);
+  if (!qualified) return false;
+  const imports = moduleGraph.importsForAlias(uri, qualified.alias);
+  return imports.length === 1 && imports[0].status !== "ambiguous";
 }
 
 function unchangedReferencesKeepTargets(
@@ -379,9 +424,16 @@ function virtualWorkspaceCandidates(
   uri: string,
   reference: BindingReference,
 ): ExportedDefinition[] {
-  if (!isWorkspaceResolvableReference(reference)) return [];
   const module = moduleGraph.getModuleByUri(uri);
   if (!module) return [];
+  const qualified = moduleGraph.qualifiedReferenceForBinding(
+    uri,
+    reference.id,
+    reference.start_byte,
+    reference.end_byte,
+  );
+  if (qualified) return moduleGraph.findQualifiedDefinitions(uri, qualified);
+  if (!isWorkspaceResolvableReference(reference)) return [];
   return moduleGraph.findExportedDefinitions(module.packageId, reference.name, reference.ns);
 }
 

@@ -14,6 +14,8 @@ import {
   type CstNode,
   type ParseConfig,
   type MoonLanguage,
+  type LintDiagnostic,
+  type LintOptions,
 } from "../../wasm/moonparse.js";
 
 import type { Logger } from "./logger.js";
@@ -56,6 +58,11 @@ export class MoonParseRuntime {
   // 是否已完成 WASM 加载
   get loaded(): boolean {
     return this._loaded;
+  }
+
+  setWasmPath(wasmPath: string): void {
+    if (this._loaded) return;
+    this.wasmPath = wasmPath;
   }
 
   // ── 加载 WASM ──
@@ -164,6 +171,16 @@ export class MoonParseRuntime {
     return this.parsers.get(languageId)?.language;
   }
 
+  lint(
+    languageId: string,
+    tree: ParseTree,
+    options: LintOptions = {},
+  ): LintDiagnostic[] {
+    const language = this.parsers.get(languageId)?.language;
+    if (!language?.capabilities.lint) return [];
+    return language.lint(tree, options);
+  }
+
   // ── 解析 ──
 
   // 全量解析，返回的 tree 自动纳入资源追踪
@@ -264,6 +281,12 @@ export class MoonParseRuntime {
   // 通用名称绑定解析（scope + definition + reference + edge + diagnostic）
   queryResolveBindings(query: MoonQuery, tree: ParseTree): import("../../wasm/moonparse.js").BindingGraph {
     return query.resolveBindings(tree);
+  }
+
+  modules(languageId: string, tree: ParseTree): CaptureResult[] {
+    const language = this.parsers.get(languageId)?.language;
+    if (!language?.capabilities.modules) return [];
+    return language.modules(tree);
   }
 
   // ── Highlight ──

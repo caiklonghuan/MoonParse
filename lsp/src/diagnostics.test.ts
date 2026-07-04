@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { stripQuotes, isCloseDelimiter, type CstErrorNode } from "./runtime.js";
-import { bindingDiagnosticsToDiagnostics, errorsToDiagnostics } from "./diagnostics.js";
+import {
+  bindingDiagnosticsToDiagnostics,
+  errorsToDiagnostics,
+  lintDiagnosticsToDiagnostics,
+} from "./diagnostics.js";
 import type { DocumentEntry } from "./document-manager.js";
 
 // ── 工具函数：构造测试用的 DocumentEntry ──
@@ -271,5 +275,54 @@ describe("bindingDiagnosticsToDiagnostics", () => {
       "MP_BIND_DUPLICATE",
       "MP_BIND_AMBIGUOUS",
     ]);
+  });
+});
+
+describe("lintDiagnosticsToDiagnostics", () => {
+  it("maps severity, UTF-8 ranges, rule code and Quick Fix data", () => {
+    const entry = makeEntry("😀值 = -0");
+    entry.version = 7;
+    const [diagnostic] = lintDiagnosticsToDiagnostics(entry, [{
+      ruleId: "json/recommended/negative-zero",
+      message: "Use 0 instead of -0.",
+      severity: "warning",
+      startByte: 10,
+      endByte: 12,
+      fix: {
+        title: "Replace -0 with 0",
+        edit: { startByte: 10, endByte: 12, replacement: "0" },
+      },
+    }], 100);
+    expect(diagnostic.severity).toBe(2);
+    expect(diagnostic.source).toBe("moonparse(lint)");
+    expect(diagnostic.code).toBe("json/recommended/negative-zero");
+    expect(diagnostic.range).toEqual({
+      start: { line: 0, character: 6 },
+      end: { line: 0, character: 8 },
+    });
+    expect(diagnostic.data).toEqual({
+      kind: "moonparse-lint",
+      ruleId: "json/recommended/negative-zero",
+      documentVersion: 7,
+      fix: {
+        title: "Replace -0 with 0",
+        edit: {
+          range: diagnostic.range,
+          newText: "0",
+        },
+      },
+    });
+  });
+
+  it("maps all severities, omits absent fixes and drops invalid ranges", () => {
+    const entry = makeEntry("abcd");
+    const diagnostics = lintDiagnosticsToDiagnostics(entry, [
+      { ruleId: "a", message: "a", severity: "error", startByte: 0, endByte: 1, fix: null },
+      { ruleId: "b", message: "b", severity: "information", startByte: 1, endByte: 2, fix: null },
+      { ruleId: "c", message: "c", severity: "hint", startByte: 2, endByte: 3, fix: null },
+      { ruleId: "bad", message: "bad", severity: "warning", startByte: -1, endByte: 9, fix: null },
+    ], 100);
+    expect(diagnostics.map((item) => item.severity)).toEqual([1, 3, 4]);
+    expect((diagnostics[0].data as { fix?: unknown }).fix).toBeUndefined();
   });
 });

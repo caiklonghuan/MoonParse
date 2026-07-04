@@ -25,10 +25,20 @@ export interface ServerConfig {
   // 启动时加载的 LanguageBundle；配置扩展名优先于 Bundle 元数据。
   languageBundles: Array<{ path: string; extensions?: string[] }>;
 
+  lint: LintConfig;
+
   workspaceIndex: WorkspaceIndexConfig;
 }
 
 export type ServerTraceLevel = "off" | "messages" | "verbose";
+
+export type LintSeverityConfig = "hint" | "information" | "warning" | "error";
+
+export interface LintConfig {
+  enabled: boolean;
+  ruleSets: Record<string, boolean>;
+  rules: Record<string, "off" | LintSeverityConfig>;
+}
 
 export interface WorkspaceIndexConfig {
   enabled: boolean;
@@ -55,6 +65,11 @@ export const defaultConfig: ServerConfig = {
   wasmPath: "./moonparse.wasm",
   debounceMs: 100,
   languageBundles: [],
+  lint: {
+    enabled: true,
+    ruleSets: {},
+    rules: {},
+  },
   workspaceIndex: {
     enabled: true,
     maxFileBytes: 1_000_000,
@@ -81,6 +96,11 @@ export function mergeConfig(
     wasmPath: value.wasmPath ?? defaults.wasmPath,
     debounceMs: value.debounceMs ?? defaults.debounceMs,
     languageBundles: [...(value.languageBundles ?? defaults.languageBundles)],
+    lint: {
+      enabled: value.lint?.enabled ?? defaults.lint.enabled,
+      ruleSets: { ...(value.lint?.ruleSets ?? defaults.lint.ruleSets) },
+      rules: { ...(value.lint?.rules ?? defaults.lint.rules) },
+    },
     workspaceIndex: {
       enabled: value.workspaceIndex?.enabled ?? defaults.workspaceIndex.enabled,
       maxFileBytes:
