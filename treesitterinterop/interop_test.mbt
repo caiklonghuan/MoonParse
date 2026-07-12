@@ -37,12 +37,12 @@ fn simple_grammar_json() -> String {
 
 ///|
 fn simple_source() -> TreeSitterProjectSource {
-  let queries : Map[String, String] = Map::new()
+  let queries : Map[String, String] = Map([])
   queries["highlights"] = "(number) @number\n"
   queries["tags"] = "(document) @definition.file\n"
-  let corpus : Map[String, String] = Map::new()
+  let corpus : Map[String, String] = Map([])
   corpus["basic.txt"] = "===\nnumber\n===\n42\n---\n(document (number))\n"
-  let source_files : Map[String, Bytes] = Map::new()
+  let source_files : Map[String, Bytes] = Map([])
   source_files["grammar.json"] = @utf8.encode(simple_grammar_json())
   {
     grammar_json: simple_grammar_json(),
@@ -96,7 +96,7 @@ test "project import extracts metadata and preserves tags" {
   let source_manifest = source_manifest_to_json({
     ..simple_source(),
     source_files: {
-      let files : Map[String, Bytes] = Map::new()
+      let files : Map[String, Bytes] = Map([])
       files["abc.txt"] = @utf8.encode("abc")
       files
     },
@@ -195,7 +195,7 @@ test "export pack grammar JSON preserves immediate token rules" {
     #|{"schemaVersion":1,"id":"immediate","name":"Immediate","version":"0.1.0","maturity":"imported","entryRule":"s","extensions":[],"compatibility":{"minimumMoonParseVersion":"0.1.0","maximumMoonParseVersionExclusive":"0.2.0"},"grammar":{"path":"grammar/main.json","format":"json"},"queries":{},"corpus":{"directory":"corpus","format":"moonparse-corpus-v2"},"build":{"allowAmbiguousConflicts":false}}
   let grammar_json =
     #|{"start":"s","rules":{"s":{"name":"s","is_named":true,"is_token":false,"is_immediate":false,"lexical_precedence":0,"declaration_order":0,"params":[],"attributes":[],"pattern":{"type":"RuleRef","name":"bang"}},"bang":{"name":"bang","is_named":true,"is_token":true,"is_immediate":true,"lexical_precedence":0,"declaration_order":1,"params":[],"attributes":[],"pattern":{"type":"Literal","value":"!"}}},"precedences":[],"extras":[],"externals":[],"word":null,"conflicts":[],"supertypes":[],"reserved_sets":{}}
-  let files : Map[String, Bytes] = Map::new()
+  let files : Map[String, Bytes] = Map([])
   files["grammar/main.json"] = @utf8.encode(grammar_json)
   let result = export_tree_sitter_pack(
     @languagepack.LanguagePackSource::new(manifest, files),

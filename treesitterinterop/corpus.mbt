@@ -3,9 +3,9 @@ fn ts_lines(text : String) -> Array[String] {
   text
   .split("\n")
   .map(fn(line) {
-    let value = line.to_string()
+    let value = line.to_owned()
     if value.has_suffix("\r") {
-      value[:value.length() - 1].to_string()
+      value[:value.length() - 1].to_owned()
     } else {
       value
     }
@@ -51,7 +51,7 @@ fn trim_blank_edges(lines : Array[String]) -> Array[String] {
   while end > start && lines[end - 1].trim().is_empty() {
     end = end - 1
   }
-  lines[start:end].to_array()
+  lines[start:end].to_owned()
 }
 
 ///|
@@ -96,7 +96,7 @@ pub fn convert_tree_sitter_corpus(
       )
       break
     }
-    let name = lines[index].trim().to_string()
+    let name = lines[index].trim().to_owned()
     index = index + 1
     if index >= lines.length() || !ts_is_eq_separator(lines[index]) {
       diagnostics.push(

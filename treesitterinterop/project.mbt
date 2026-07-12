@@ -259,7 +259,7 @@ pub fn import_tree_sitter_project(
         scanner_id: None,
         scanner_status: "none",
       }
-      return { files: Map::new(), diagnostics, report }
+      return { files: Map([]), diagnostics, report }
     }
   }
   let tree_sitter_root = parse_optional_json_object(source.tree_sitter_json)

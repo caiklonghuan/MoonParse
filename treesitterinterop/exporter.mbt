@@ -426,7 +426,7 @@ fn export_grammar_json(
     grammar,
     diagnostics: [],
     unsupported: [],
-    mono_keys: Map::new(),
+    mono_keys: Map([]),
     mono_rules: [],
     mono_names: [],
   }

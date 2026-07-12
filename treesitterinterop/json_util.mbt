@@ -112,12 +112,12 @@ fn parse_optional_json_object(text : String?) -> Map[String, Json]? {
 fn strip_tree_sitter_prefix(name : String) -> String {
   let scoped = if name.contains("/") {
     let parts = name.split("/").to_array()
-    parts[parts.length() - 1].to_string()
+    parts[parts.length() - 1].to_owned()
   } else {
     name
   }
   if scoped.has_prefix("tree-sitter-") {
-    scoped[12:].to_string()
+    scoped[12:].to_owned()
   } else {
     scoped
   }
@@ -149,7 +149,7 @@ fn normalize_id(raw : String) -> String {
       last_dash = false
     }
   }
-  let value = b.to_string().trim_end(chars=['-']).to_string()
+  let value = b.to_string().trim_end(chars=['-']).to_owned()
   if value.is_empty() {
     "tree-sitter-import"
   } else {

@@ -602,7 +602,7 @@ pub fn import_tree_sitter_grammar(
   let (grammar_name, dsl, unsupported, generated, diagnostics) = tree_sitter_grammar_to_dsl(
     path, json,
   )
-  let files : Map[String, Bytes] = Map::new()
+  let files : Map[String, Bytes] = Map([])
   files["grammar/main.grammar"] = @utf8.encode(dsl)
   let report : TreeSitterCompatibilityReport = {
     grammar_path: path,
