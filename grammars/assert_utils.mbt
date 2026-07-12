@@ -12,7 +12,7 @@ pub fn assert_node_text_eq(
   source : String,
   expected : String,
 ) -> Unit {
-  let actual = source[node.start_byte:node.end_byte].to_string()
+  let actual = source[node.start_byte:node.end_byte].to_owned()
   if actual != expected {
     println(
       "assert_node_text_eq: expected \{expected.escape()} got \{actual.escape()}",

@@ -80,7 +80,7 @@ fn scan_rust_raw_string(input : String, pos : Int) -> Int? {
 }
 
 ///|
-impl @runtime.StatefulScanner for RustTreeSitterScanner with scan(
+impl @runtime.StatefulScanner for RustTreeSitterScanner with fn scan(
   self,
   input,
   pos,
@@ -97,7 +97,9 @@ impl @runtime.StatefulScanner for RustTreeSitterScanner with scan(
 }
 
 ///|
-impl @runtime.StatefulScanner for RustTreeSitterScanner with clone_scanner(self) {
+impl @runtime.StatefulScanner for RustTreeSitterScanner with fn clone_scanner(
+  self,
+) {
   ({ raw_string_id: self.raw_string_id } : RustTreeSitterScanner)
   as &@runtime.StatefulScanner
 }

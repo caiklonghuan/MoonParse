@@ -23,7 +23,7 @@ let embedded_json_file_5 : String = "(number) @diagnostic\n#eq? @diagnostic \"-0
 
 ///|
 pub fn embedded_json_pack_source() -> @languagepack.LanguagePackSource {
-  let files : Map[String, Bytes] = Map::new()
+  let files : Map[String, Bytes] = Map([])
   files["corpus/valid.txt"] = @utf8.encode(embedded_json_file_0)
   files["grammar/main.grammar"] = @utf8.encode(embedded_json_file_1)
   files["lint/recommended.json"] = @utf8.encode(embedded_json_file_2)
@@ -55,7 +55,7 @@ let embedded_python_file_4 : String = "{\n  \"tabWidth\": 8\n}\n"
 
 ///|
 pub fn embedded_python_pack_source() -> @languagepack.LanguagePackSource {
-  let files : Map[String, Bytes] = Map::new()
+  let files : Map[String, Bytes] = Map([])
   files["corpus/functions.txt"] = @utf8.encode(embedded_python_file_0)
   files["grammar/main.grammar"] = @utf8.encode(embedded_python_file_1)
   files["queries/bindings.scm"] = @utf8.encode(embedded_python_file_2)
@@ -99,7 +99,7 @@ let embedded_moonbit_file_9 : String = "; Export candidates are normalized by Mo
 
 ///|
 pub fn embedded_moonbit_pack_source() -> @languagepack.LanguagePackSource {
-  let files : Map[String, Bytes] = Map::new()
+  let files : Map[String, Bytes] = Map([])
   files["corpus/valid.txt"] = @utf8.encode(embedded_moonbit_file_0)
   files["grammar/main.grammar"] = @utf8.encode(embedded_moonbit_file_1)
   files["lint/recommended.json"] = @utf8.encode(embedded_moonbit_file_2)

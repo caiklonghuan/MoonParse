@@ -90,7 +90,7 @@ fn write_sexp_impl(
     buf.write_char('"')
     let text = if node.start_byte <= node.end_byte &&
       node.end_byte <= input.length() {
-      input[node.start_byte:node.end_byte].to_string()
+      input[node.start_byte:node.end_byte].to_owned()
     } else {
       ""
     }
@@ -151,7 +151,7 @@ fn write_tree_impl(
   if node.children.is_empty() {
     let text = if node.start_byte < node.end_byte &&
       node.end_byte <= input.length() {
-      input[node.start_byte:node.end_byte].to_string()
+      input[node.start_byte:node.end_byte].to_owned()
     } else {
       ""
     }

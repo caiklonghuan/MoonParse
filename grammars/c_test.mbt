@@ -42,7 +42,7 @@ fn c_count_fragment(text : String, fragment : String) -> Int {
     return 0
   }
   for i in 0..<(limit + 1) {
-    if text[i:i + fragment.length()].to_string() == fragment {
+    if text[i:i + fragment.length()].to_owned() == fragment {
       total = total + 1
     }
   }

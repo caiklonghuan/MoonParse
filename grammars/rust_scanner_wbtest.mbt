@@ -18,10 +18,10 @@ test "tree-sitter-rust scanner scans raw string variants" {
   let table = rust_raw_table()
   let scanner = tree_sitter_rust_scanner(table)
   let raw_id = table.external_token_ids[0]
-  assert_eq(scanner.scan("r\"abc\"", 0, [raw_id]), Some((raw_id, 6)))
-  assert_eq(scanner.scan("r#\"a\"b\"#", 0, [raw_id]), Some((raw_id, 8)))
-  assert_eq(scanner.scan("r###\"x\"###", 0, [raw_id]), Some((raw_id, 10)))
-  assert_eq(scanner.scan("not_raw", 0, [raw_id]), None)
+  assert_true(scanner.scan("r\"abc\"", 0, [raw_id]) == Some((raw_id, 6)))
+  assert_true(scanner.scan("r#\"a\"b\"#", 0, [raw_id]) == Some((raw_id, 8)))
+  assert_true(scanner.scan("r###\"x\"###", 0, [raw_id]) == Some((raw_id, 10)))
+  assert_true(scanner.scan("not_raw", 0, [raw_id]) == None)
 }
 
 ///|
@@ -30,7 +30,9 @@ test "tree-sitter-rust scanner recovers unterminated raw strings" {
   let scanner = tree_sitter_rust_scanner(table)
   let raw_id = table.external_token_ids[0]
   let input = "r##\"unterminated"
-  assert_eq(scanner.scan(input, 0, [raw_id]), Some((raw_id, input.length())))
+  assert_true(
+    scanner.scan(input, 0, [raw_id]) == Some((raw_id, input.length())),
+  )
 }
 
 ///|
@@ -39,6 +41,6 @@ test "tree-sitter-rust scanner clone keeps independent state" {
   let raw_id = table.external_token_ids[0]
   let scanner = tree_sitter_rust_scanner(table)
   let cloned = scanner.clone_scanner()
-  assert_eq(scanner.scan("r\"a\"", 0, [raw_id]), Some((raw_id, 4)))
-  assert_eq(cloned.scan("r#\"b\"#", 0, [raw_id]), Some((raw_id, 6)))
+  assert_true(scanner.scan("r\"a\"", 0, [raw_id]) == Some((raw_id, 4)))
+  assert_true(cloned.scan("r#\"b\"#", 0, [raw_id]) == Some((raw_id, 6)))
 }

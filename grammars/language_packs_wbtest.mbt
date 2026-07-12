@@ -122,9 +122,9 @@ test "language packs/JSON recommended lint rules and fix" {
   let fix = diagnostics[1].fix.unwrap()
   assert_eq(fix.title, "Replace -0 with 0")
   assert_true(fix.edit == { start_byte: 5, end_byte: 7, replacement: "0" })
-  let fixed = input[:fix.edit.start_byte].to_string() +
+  let fixed = input[:fix.edit.start_byte].to_owned() +
     fix.edit.replacement +
-    input[fix.edit.end_byte:].to_string()
+    input[fix.edit.end_byte:].to_owned()
   let fixed_root = @languagepack.parse_bundle(builtin_json_bundle, fixed).unwrap()
   assert_eq(
     @languagepack.lint_bundle(builtin_json_bundle, fixed_root, fixed).length(),
@@ -170,7 +170,9 @@ test "language packs/all sample bundles dual-format round trip" {
       @languagepack.bundle_from_json(@languagepack.bundle_to_json(bundle)) {
       Ok(value) => value
       Err(errors) =>
-        fail("bundle round trip failed for \{bundle.pack_id}: \{errors}")
+        fail(
+          "bundle round trip failed for \{bundle.pack_id}: \{to_repr(errors)}",
+        )
     }
     assert_eq(restored.pack_id, bundle.pack_id)
     assert_true(

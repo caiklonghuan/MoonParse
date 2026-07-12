@@ -703,9 +703,9 @@ fn json_replace_range(
   old_end_byte : Int,
   replacement : String,
 ) -> String {
-  old_input[0:start_byte].to_string() +
+  old_input[0:start_byte].to_owned() +
   replacement +
-  old_input[old_end_byte:old_input.length()].to_string()
+  old_input[old_end_byte:old_input.length()].to_owned()
 }
 
 ///|
@@ -748,7 +748,7 @@ fn json_is_digit(ch : Char) -> Bool {
 ///|
 fn json_starts_with_at(input : String, start : Int, fragment : String) -> Bool {
   let end_byte = start + fragment.length()
-  end_byte <= input.length() && input[start:end_byte].to_string() == fragment
+  end_byte <= input.length() && input[start:end_byte].to_owned() == fragment
 }
 
 ///|
@@ -856,7 +856,7 @@ fn json_token_replacement(
   input : String,
   token : JsonToken,
 ) -> (Int, String) {
-  let current = input[token.start_byte:token.end_byte].to_string()
+  let current = input[token.start_byte:token.end_byte].to_owned()
   match token.kind {
     0 => {
       let replacement = match current {
@@ -1558,7 +1558,7 @@ test "json 位置 / 根节点字节区间覆盖全部输入" {
   let root = parse_ok(input)
   assert_eq(root.start_byte, 0)
   assert_eq(root.end_byte, input.length())
-  assert_eq(input[root.start_byte:root.end_byte].to_string(), input)
+  assert_eq(input[root.start_byte:root.end_byte].to_owned(), input)
 }
 
 ///|

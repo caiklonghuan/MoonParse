@@ -11,7 +11,7 @@ fn parse_moonbit_ok(source : String) -> @runtime.CstNode {
       } else {
         source.length()
       }
-      println("  ...\{source.substring(start~, end~)}...")
+      println("  ...\{source[start:end].to_owned()}...")
       panic()
     }
   }

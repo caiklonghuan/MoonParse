@@ -42,7 +42,7 @@ fn require_pack(
 ) -> @languagepack.LanguagePack {
   match @languagepack.load_pack(source) {
     Ok(pack) => pack
-    Err(errors) => abort("invalid embedded language pack: \{errors}")
+    Err(errors) => abort("invalid embedded language pack: \{to_repr(errors)}")
   }
 }
 
@@ -52,7 +52,8 @@ fn require_bundle(
 ) -> @languagepack.LanguageBundle {
   match @languagepack.build_bundle(source, builtin_pack_options()) {
     Ok(bundle) => bundle
-    Err(errors) => abort("failed to build embedded language pack: \{errors}")
+    Err(errors) =>
+      abort("failed to build embedded language pack: \{to_repr(errors)}")
   }
 }
 

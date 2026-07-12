@@ -125,7 +125,7 @@ fn has_tid(tids : Array[Int], target : Int) -> Bool {
 }
 
 ///|
-impl @runtime.StatefulScanner for PythonIndentScanner with scan(
+impl @runtime.StatefulScanner for PythonIndentScanner with fn scan(
   self,
   input,
   pos,
@@ -187,7 +187,9 @@ impl @runtime.StatefulScanner for PythonIndentScanner with scan(
 }
 
 ///|
-impl @runtime.StatefulScanner for PythonIndentScanner with clone_scanner(self) {
+impl @runtime.StatefulScanner for PythonIndentScanner with fn clone_scanner(
+  self,
+) {
   let new_stack : Array[Int] = Array::new(capacity=self.indent_stack.length())
   for v in self.indent_stack {
     new_stack.push(v)
