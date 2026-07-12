@@ -1,0 +1,18 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/tests/contracts"
+
+import {
+  "caiklonghuan/MoonParse",
+}
+
+// Values
+pub fn root_v1_surface_is_visible(@MoonParse.Source, @MoonParse.Language, @MoonParse.Query, @MoonParse.Snapshot, @MoonParse.Node, @MoonParse.FieldId) -> (@MoonParse.Parser, @MoonParse.Query?, @MoonParse.ByteRange) raise @MoonParse.QueryError
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+

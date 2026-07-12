@@ -15,7 +15,8 @@
     "cmd/main": {"name": "cmd", "layer": "application", "allow": ["grammar", "tablegen", "runtime", "query", "languagepack", "grammars", "treesitterinterop"]},
     "scripts": {"name": "scripts", "layer": "internal", "allow": ["grammar", "tablegen", "runtime", "grammars"]},
     "examples/api_smoke": {"name": "api-smoke", "layer": "compatibility-test", "allow": [".", "grammar", "tablegen", "runtime", "query"]},
-    "tests/characterization": {"name": "characterization", "layer": "compatibility-test", "allow": [".", "languagepack", "query"]}
+    "tests/characterization": {"name": "characterization", "layer": "compatibility-test", "allow": [".", "languagepack", "query"]},
+    "tests/contracts": {"name": "v1-contract-consumer", "layer": "compatibility-test", "allow": ["."]}
   },
   "v1Contract": {
     "name": "MoonParse-v1-architecture",

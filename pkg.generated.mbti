@@ -32,14 +32,95 @@ pub fn parse_python(String) -> String
 pub fn parse_with_grammar(@grammar.Grammar, String) -> String
 
 // Errors
+pub(all) suberror PackError {
+  BadMagic
+  UnsupportedFormat(Int, Int)
+  UnsupportedRuntimeAbi(Int, Int)
+  Truncated(String)
+  InvalidOffset(String)
+  DuplicateSection(String)
+  MissingSection(String)
+  ChecksumMismatch
+  LimitExceeded(String, Int, Int)
+  InvalidModel(String)
+}
+
+pub(all) suberror ParseFailure {
+  LanguageMismatch
+  InvalidEdit(Int, Int, Int, Int)
+  SplitUtf8CodePoint(Int, Int)
+  InvalidLimit(String, Int, Int)
+  BudgetExceeded(String, Int)
+}
+
+pub(all) suberror QueryError {
+  ParseError(Int, String)
+  UnknownNode(String)
+  UnknownField(String)
+  UnsupportedFeature(String)
+  LanguageMismatch
+  InvalidRange
+  MatchLimitExceeded(Int)
+}
+
+pub(all) suberror SourceError {
+  InvalidUtf8(Int)
+  InvalidByteRange(Int, Int, Int)
+  SplitUtf8CodePoint(Int)
+  InvalidPoint(Int, Int)
+}
 
 // Types and methods
+pub(all) struct ByteRange {
+  start_byte : Int
+  end_byte : Int
+}
+
+pub type Capture
+pub fn Capture::name(Self) -> String
+pub fn Capture::node(Self) -> Node
+pub fn Capture::pattern_index(Self) -> Int
+
+pub type ChangedRange
+pub fn ChangedRange::new_span(Self) -> Span
+pub fn ChangedRange::old_span(Self) -> Span
+
 pub(all) struct CompileOutput {
   table : @tablegen.ParseTable
   table_json : String
   conflicts : Array[@tablegen.ConflictReport]
   validation_warnings : Array[@grammar.ValidationError]
 }
+
+pub type Diagnostic
+pub fn Diagnostic::code(Self) -> String
+pub fn Diagnostic::expected(Self) -> ReadOnlyArray[String]
+pub fn Diagnostic::fix(Self) -> TextEdit?
+pub fn Diagnostic::message(Self) -> String
+pub fn Diagnostic::recovery(Self) -> RecoveryAction?
+pub fn Diagnostic::severity(Self) -> DiagnosticSeverity
+pub fn Diagnostic::span(Self) -> Span
+
+pub(all) enum DiagnosticSeverity {
+  Error
+  Warning
+  Information
+}
+
+pub type FieldId
+
+pub type KindId
+
+pub type Language
+pub fn Language::field_id(Self, String) -> FieldId?
+pub fn Language::field_name(Self, FieldId) -> String?
+pub fn Language::fingerprint(Self) -> String
+pub fn Language::kind_id(Self, String) -> KindId?
+pub fn Language::kind_name(Self, KindId) -> String?
+pub fn Language::load(Bytes) -> Self raise PackError
+pub fn Language::name(Self) -> String
+pub fn Language::query(Self, QueryRole) -> Query?
+pub fn Language::version(Self) -> String
 
 pub(all) struct MoonParseError {
   kind : MoonParseErrorKind
@@ -54,10 +135,103 @@ pub(all) enum MoonParseErrorKind {
   RuntimeParse
 } derive(Eq, @debug.Debug)
 
+pub type Node
+pub fn Node::child(Self, Int) -> Self?
+pub fn Node::child_by_field(Self, String) -> Self?
+pub fn Node::child_by_field_id(Self, FieldId) -> Self?
+pub fn Node::child_count(Self) -> Int
+pub fn Node::is_error(Self) -> Bool
+pub fn Node::is_extra(Self) -> Bool
+pub fn Node::is_missing(Self) -> Bool
+pub fn Node::is_named(Self) -> Bool
+pub fn Node::kind(Self) -> String
+pub fn Node::kind_id(Self) -> KindId
+pub fn Node::named_child_count(Self) -> Int
+pub fn Node::span(Self) -> Span
+pub fn Node::text(Self) -> String
+pub fn Node::walk(Self) -> TreeCursor
+
+pub type ParseLimits
+pub fn ParseLimits::editor_default() -> Self
+pub fn ParseLimits::with_max_active_versions(Self, Int) -> Self raise ParseFailure
+pub fn ParseLimits::with_max_parser_steps(Self, Int) -> Self raise ParseFailure
+pub fn ParseLimits::with_max_query_matches(Self, Int) -> Self raise ParseFailure
+pub fn ParseLimits::with_max_tree_nodes(Self, Int) -> Self raise ParseFailure
+
 pub(all) struct ParseOutput {
   root : @runtime.CstNode
   source : String
 }
+
+pub type ParseStats
+pub fn ParseStats::peak_branches(Self) -> Int
+pub fn ParseStats::recovery_actions(Self) -> Int
+pub fn ParseStats::reparsed_bytes(Self) -> Int
+pub fn ParseStats::reused_bytes(Self) -> Int
+pub fn ParseStats::reused_nodes(Self) -> Int
+pub fn ParseStats::source_bytes(Self) -> Int
+
+pub type Parser
+pub fn Parser::new(Language) -> Self
+pub fn Parser::new_with_limits(Language, ParseLimits) -> Self
+pub fn Parser::parse(Self, Source) -> Snapshot raise ParseFailure
+pub fn Parser::reparse(Self, Snapshot, TextEdit) -> Snapshot raise ParseFailure
+pub fn Parser::reparse_many(Self, Snapshot, ReadOnlyArray[TextEdit]) -> Snapshot raise ParseFailure
+
+pub(all) struct Point {
+  row : Int
+  byte_column : Int
+}
+
+pub type Query
+pub fn Query::compile(Language, String) -> Self raise QueryError
+
+pub(all) enum QueryRole {
+  Highlights
+  Locals
+  Folds
+  Outline
+}
+
+pub(all) enum RecoveryAction {
+  Insert(String)
+  Delete(String)
+  PopToSync(String)
+}
+
+pub type Snapshot
+pub fn Snapshot::byte_at(Self, Point) -> Int raise SourceError
+pub fn Snapshot::captures(Self, Query, within? : ByteRange) -> Array[Capture] raise QueryError
+pub fn Snapshot::changed_ranges(Self) -> ReadOnlyArray[ChangedRange]
+pub fn Snapshot::diagnostics(Self) -> ReadOnlyArray[Diagnostic]
+pub fn Snapshot::language(Self) -> Language
+pub fn Snapshot::point_at(Self, Int) -> Point raise SourceError
+pub fn Snapshot::root(Self) -> Node
+pub fn Snapshot::source(Self) -> Source
+pub fn Snapshot::stats(Self) -> ParseStats
+
+pub type Source
+pub fn Source::byte_length(Self) -> Int
+pub fn Source::from_string(String) -> Self
+pub fn Source::from_utf8(Bytes) -> Self raise SourceError
+pub fn Source::slice(Self, ByteRange) -> String raise SourceError
+pub fn Source::to_bytes(Self) -> Bytes
+
+pub(all) struct Span {
+  range : ByteRange
+  start_point : Point
+  end_point : Point
+}
+
+pub type TextEdit
+pub fn TextEdit::replace(start_byte~ : Int, old_end_byte~ : Int, text~ : String) -> Self
+pub fn TextEdit::replace_utf8(start_byte~ : Int, old_end_byte~ : Int, bytes~ : Bytes) -> Self raise SourceError
+
+pub type TreeCursor
+pub fn TreeCursor::goto_first_child(Self) -> Bool
+pub fn TreeCursor::goto_next_sibling(Self) -> Bool
+pub fn TreeCursor::goto_parent(Self) -> Bool
+pub fn TreeCursor::node(Self) -> Node
 
 // Type aliases
 

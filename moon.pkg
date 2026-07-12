@@ -1,6 +1,6 @@
 import {
-  "caiklonghuan/MoonParse/grammar" @grammar,
-  "caiklonghuan/MoonParse/tablegen" @tablegen,
-  "caiklonghuan/MoonParse/runtime" @runtime,
-  "caiklonghuan/MoonParse/grammars" @grammars,
+  "caiklonghuan/MoonParse/grammar",
+  "caiklonghuan/MoonParse/tablegen",
+  "caiklonghuan/MoonParse/runtime",
+  "caiklonghuan/MoonParse/grammars",
 }
