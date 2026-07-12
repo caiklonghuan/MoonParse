@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "purpose": "M1 contract declarations before their M2 implementation",
+  "allowed": [
+    {
+      "warning_code": 68,
+      "warning_name": "declaration_unimplemented",
+      "paths": ["spec.mbt", "compiler/spec.mbt"],
+      "profiles": ["pr", "nightly"],
+      "expiry_work_package": "M2-C12",
+      "reason": "M1 freezes public declarations before M2 provides the runtime implementation."
+    }
+  ],
+  "release_policy": "reject_all_exceptions",
+  "forbid_additional_paths": true,
+  "forbid_additional_warning_codes": true
+}
