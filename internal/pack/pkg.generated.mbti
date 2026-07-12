@@ -3,15 +3,60 @@ package "caiklonghuan/MoonParse/internal/pack"
 
 import {
   "caiklonghuan/MoonParse/internal/model",
+  "moonbitlang/core/debug",
 }
 
 // Values
+pub fn crc32_iso_hdlc(BytesView) -> UInt
+
+pub fn validate_pack(Bytes) -> Result[ValidatedPack, PackValidationError]
 
 // Errors
 
 // Types and methods
+pub(all) struct PackHeader {
+  format_major : Int
+  format_minor : Int
+  runtime_abi : Int
+  file_length : Int
+  section_count : Int
+  toc_offset : Int
+  payload_crc32 : UInt
+}
+
 pub(all) struct PackModelLink {
   format : @model.PackFormatVersion
+}
+
+pub(all) struct PackTocEntry {
+  kind : Int
+  flags : Int
+  offset : Int
+  length : Int
+}
+
+pub(all) enum PackValidationError {
+  Truncated
+  BadMagic
+  UnsupportedFormat(Int, Int)
+  UnsupportedRuntimeAbi(Int)
+  InvalidFileLength(Int)
+  TooManySections(Int)
+  InvalidToc
+  ChecksumMismatch
+  InvalidSectionFlags(Int)
+  DuplicateSection(Int)
+  UnsortedSections(Int, Int)
+  UnknownRequiredSection(Int)
+  MissingSection(Int)
+  InvalidSectionRange(Int)
+  OverlappingSections(Int, Int)
+  NonZeroPadding(Int)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ValidatedPack {
+  header : PackHeader
+  sections : Array[PackTocEntry]
 }
 
 // Type aliases
