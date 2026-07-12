@@ -75,7 +75,7 @@ fn corpus_write_sexp(
   let text = if node.start_byte >= 0 &&
     node.start_byte <= node.end_byte &&
     node.end_byte <= source.length() {
-    source[node.start_byte:node.end_byte].to_string()
+    source[node.start_byte:node.end_byte].to_owned()
   } else {
     ""
   }

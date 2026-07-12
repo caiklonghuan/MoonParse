@@ -3,9 +3,9 @@ fn corpus_lines(text : String) -> Array[String] {
   text
   .split("\n")
   .map(fn(line) {
-    let value = line.to_string()
+    let value = line.to_owned()
     if value.has_suffix("\r") {
-      value[:value.length() - 1].to_string()
+      value[:value.length() - 1].to_owned()
     } else {
       value
     }
@@ -71,7 +71,7 @@ pub fn parse_corpus_document(
       )
       break
     }
-    let name = lines[index].trim().to_string()
+    let name = lines[index].trim().to_owned()
     index = index + 1
     if index >= lines.length() || lines[index].trim() != "====" {
       diagnostics.push(
@@ -113,13 +113,13 @@ pub fn parse_corpus_document(
     let mut saw_snapshot = false
     while index < lines.length() && lines[index].trim() != "====" {
       let raw = lines[index]
-      let trimmed = raw.trim().to_string()
+      let trimmed = raw.trim().to_owned()
       if list_kind == 3 && (raw.has_prefix(" ") || raw.has_prefix("\t")) {
         snapshot_lines.push(trimmed)
       } else if trimmed.is_empty() || trimmed.has_prefix("#") {
         list_kind = 0
       } else if trimmed.has_prefix("error:") {
-        expected_error = trimmed[6:].trim().to_string()
+        expected_error = trimmed[6:].trim().to_owned()
         list_kind = 0
       } else if trimmed == "sexp-contains:" {
         list_kind = 1
@@ -223,7 +223,7 @@ fn indent_snapshot(sexp : String, newline : String) -> String {
   newline +
   sexp
   .split("\n")
-  .map(fn(line) { "  " + line.to_string() })
+  .map(fn(line) { "  " + line.to_owned() })
   .to_array()
   .join(newline)
 }
@@ -243,7 +243,7 @@ pub fn rewrite_corpus_snapshots(
       ),
     ])
   }
-  let by_index : Map[Int, CorpusSnapshotUpdate] = Map::new()
+  let by_index : Map[Int, CorpusSnapshotUpdate] = Map([])
   for update in updates {
     if update.case_index < 0 ||
       update.case_index >= document.cases.length() ||

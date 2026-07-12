@@ -45,7 +45,7 @@ fn test_source(
   query? : String = "(number) @number",
   corpus? : String = "====\nnumber\n====\n42\n----\nerror: ok\nsexp-contains:\n  number\n",
 ) -> LanguagePackSource {
-  let files : Map[String, Bytes] = Map::new()
+  let files : Map[String, Bytes] = Map([])
   files["grammar/main.grammar"] = @utf8.encode(grammar)
   files["queries/highlights.scm"] = @utf8.encode(query)
   files["corpus/basic.txt"] = @utf8.encode(corpus)
@@ -119,7 +119,7 @@ test "manifest/default resources and schema" {
 ///|
 test "manifest/lint ruleset resources" {
   let manifest = load_manifest(test_lint_source().manifest).unwrap()
-  assert_eq(manifest.lint.rule_sets, ["lint/recommended.json"])
+  assert_true(manifest.lint.rule_sets == ["lint/recommended.json"])
 }
 
 ///|
@@ -281,7 +281,7 @@ test "build_bundle/lint rules compile and round trip" {
   assert_true(restored.capabilities.lint)
   assert_true(restored.capabilities.rewrite)
   assert_true(restored.lint_rule_sets[0].rules[0].compiled_query is Some(_))
-  assert_eq(restored.lint_rule_sets[0].rules[0].query_path, None)
+  assert_true(restored.lint_rule_sets[0].rules[0].query_path == None)
 }
 
 ///|
@@ -367,7 +367,7 @@ test "bundle/json and binary round trip" {
   let restored = bundle_from_json(bundle_to_json(bundle)).unwrap()
   assert_eq(restored.pack_name, "Test Language")
   assert_eq(restored.pack_maturity, "experimental")
-  assert_eq(restored.pack_extensions, [".test"])
+  assert_true(restored.pack_extensions == [".test"])
   let root = parse_bundle(restored, "7").unwrap()
   assert_eq(root.start_byte, 0)
   assert_eq(restored.table_json, @tablegen.table_to_json(restored.table))
@@ -464,7 +464,7 @@ test "corpus/v2 parses and rewrites inline snapshot" {
   let document = parse_corpus_document(
     "corpus/basic.txt", text, "moonparse-corpus-v2",
   ).unwrap()
-  assert_eq(document.cases[0].expected_sexp, Some("(old)"))
+  assert_true(document.cases[0].expected_sexp == Some("(old)"))
   assert_eq(document.cases[0].source_line, 4)
   let updated = rewrite_corpus_snapshots(document, [
     { case_index: 0, case_name: "number", sexp: "(document (number))" },
@@ -474,7 +474,7 @@ test "corpus/v2 parses and rewrites inline snapshot" {
   let reparsed = parse_corpus_document(
     "corpus/basic.txt", updated, "moonparse-corpus-v2",
   ).unwrap()
-  assert_eq(reparsed.cases[0].expected_sexp, Some("(document (number))"))
+  assert_true(reparsed.cases[0].expected_sexp == Some("(document (number))"))
 }
 
 ///|

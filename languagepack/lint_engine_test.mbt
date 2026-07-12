@@ -190,10 +190,13 @@ test "lint engine/four rewrite operations and deterministic sorting" {
   let root = parse_bundle(bundle, "42").unwrap()
   let diagnostics = lint_bundle(bundle, root, "42")
   assert_eq(diagnostics.length(), 4)
-  assert_eq(diagnostics.map(fn(item) { item.rule_id }), [
-    "lint-test/recommended/after", "lint-test/recommended/before", "lint-test/recommended/delete",
-    "lint-test/recommended/replace",
-  ])
+  assert_true(
+    diagnostics.map(fn(item) { item.rule_id }) ==
+    [
+      "lint-test/recommended/after", "lint-test/recommended/before", "lint-test/recommended/delete",
+      "lint-test/recommended/replace",
+    ],
+  )
   assert_true(
     diagnostics[0].fix.unwrap().edit ==
     { start_byte: 2, end_byte: 2, replacement: "z" },

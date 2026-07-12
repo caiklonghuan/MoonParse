@@ -27,15 +27,15 @@ fn lint_wb_capture(
 test "lint engine/template expansion rejects missing duplicate and invalid captures" {
   let source = "alpha"
   let missing : Map[String, Array[@query.CaptureResult]] = {}
-  assert_eq(lint_expand_template("${value}", missing, source), None)
+  assert_true(lint_expand_template("${value}", missing, source) == None)
   let duplicate : Map[String, Array[@query.CaptureResult]] = {
     "value": [lint_wb_capture("value", 0, 1), lint_wb_capture("value", 1, 2)],
   }
-  assert_eq(lint_expand_template("${value}", duplicate, source), None)
+  assert_true(lint_expand_template("${value}", duplicate, source) == None)
   let invalid : Map[String, Array[@query.CaptureResult]] = {
     "value": [lint_wb_capture("value", 0, 99)],
   }
-  assert_eq(lint_expand_template("${value}", invalid, source), None)
+  assert_true(lint_expand_template("${value}", invalid, source) == None)
 }
 
 ///|
@@ -44,16 +44,16 @@ test "lint engine/template expansion preserves raw text and dollar escapes" {
   let captures : Map[String, Array[@query.CaptureResult]] = {
     "value": [lint_wb_capture("value", 0, 5)],
   }
-  assert_eq(
-    lint_expand_template("before-${value}-$$-after", captures, source),
+  assert_true(
+    lint_expand_template("before-${value}-$$-after", captures, source) ==
     Some("before-alpha-$-after"),
   )
   let unicode_source = "\u{4F60}\u{597D}"
   let unicode_captures : Map[String, Array[@query.CaptureResult]] = {
     "value": [lint_wb_capture("value", 0, unicode_source.length())],
   }
-  assert_eq(
-    lint_expand_template("${value}", unicode_captures, unicode_source),
+  assert_true(
+    lint_expand_template("${value}", unicode_captures, unicode_source) ==
     Some("\u{4F60}\u{597D}"),
   )
 }

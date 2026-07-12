@@ -131,7 +131,7 @@ fn lint_template_captures(template : String) -> Result[Array[String], String] {
     if cursor >= template.length() {
       return Err("unterminated '${capture}' interpolation")
     }
-    let capture = template[index + 2:cursor].to_string()
+    let capture = template[index + 2:cursor].to_owned()
     if !lint_valid_capture_name(capture) {
       return Err("invalid template capture '" + capture + "'")
     }

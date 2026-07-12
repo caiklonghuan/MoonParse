@@ -63,7 +63,7 @@ fn lint_expand_template(
       index = index + 1
       continue
     }
-    output.write_string(template[literal_start:index].to_string())
+    output.write_string(template[literal_start:index].to_owned())
     if index + 1 >= template.length() {
       return None
     }
@@ -83,18 +83,18 @@ fn lint_expand_template(
     if end >= template.length() {
       return None
     }
-    let name = template[index + 2:end].to_string()
+    let name = template[index + 2:end].to_owned()
     let capture = match lint_unique_capture(captures, name, source) {
       Some(capture) => capture
       None => return None
     }
     output.write_string(
-      source[capture.node.start_byte:capture.node.end_byte].to_string(),
+      source[capture.node.start_byte:capture.node.end_byte].to_owned(),
     )
     index = end + 1
     literal_start = index
   }
-  output.write_string(template[literal_start:].to_string())
+  output.write_string(template[literal_start:].to_owned())
   Some(output.to_string())
 }
 
@@ -116,7 +116,7 @@ fn lint_build_fix(
   }
   let edit : LintTextEdit = match template.operation {
     Replace => {
-      if source[target.start_byte:target.end_byte].to_string() == replacement {
+      if source[target.start_byte:target.end_byte].to_owned() == replacement {
         return None
       }
       { start_byte: target.start_byte, end_byte: target.end_byte, replacement }

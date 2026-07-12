@@ -8,7 +8,7 @@ fn semver_numbers(version : String) -> (Int, Int, Int)? {
   }
   let numbers : Array[Int] = []
   for part_view in parts {
-    let part = part_view.to_string()
+    let part = part_view.to_owned()
     let mut number = 0
     for char in part {
       if char < '0' || char > '9' {

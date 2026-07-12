@@ -5,7 +5,7 @@ suberror ManifestDecodeError {
 } derive(Debug)
 
 ///|
-impl Show for ManifestDecodeError with output(self, logger) {
+impl Show for ManifestDecodeError with fn output(self, logger) {
   match self {
     BadField(message) => logger.write_string(message)
     BadType(message) => logger.write_string(message)
@@ -252,7 +252,7 @@ fn valid_semver(version : String) -> Bool {
     return false
   }
   for part_view in parts {
-    let part = part_view.to_string()
+    let part = part_view.to_owned()
     if part.is_empty() {
       return false
     }
@@ -332,7 +332,7 @@ fn validate_manifest(manifest : LanguagePackManifest) -> Array[PackDiagnostic] {
       pack_diagnostic("PACK105", Error, "entryRule must not be empty"),
     )
   }
-  let seen : Map[String, Bool] = Map::new()
+  let seen : Map[String, Bool] = Map([])
   for extension in manifest.extensions {
     if extension.length() < 2 || extension[0] != '.' {
       diagnostics.push(

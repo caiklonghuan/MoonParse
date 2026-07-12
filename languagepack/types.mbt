@@ -6,7 +6,7 @@ pub(all) enum PackSeverity {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for PackSeverity with output(self, logger) {
+pub impl Show for PackSeverity with fn output(self, logger) {
   match self {
     Info => logger.write_string("info")
     Warning => logger.write_string("warning")
@@ -26,7 +26,7 @@ pub(all) struct PackDiagnostic {
 } derive(Debug)
 
 ///|
-pub impl Show for PackDiagnostic with output(self, logger) {
+pub impl Show for PackDiagnostic with fn output(self, logger) {
   logger.write_string(self.code + ": " + self.message)
 }
 
