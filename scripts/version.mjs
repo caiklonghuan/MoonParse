@@ -20,6 +20,10 @@ function withJsonVersion(text, version) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+function withMoonModVersion(text, version) {
+  return replaceRequired(text, /^(version\s*=\s*)"[^"]+"/m, `$1"${version}"`, "moon.mod");
+}
+
 function replaceRequired(text, pattern, replacement, label) {
   if (!pattern.test(text)) throw new Error(`cannot find version field in ${label}`);
   return text.replace(pattern, replacement);
@@ -30,7 +34,6 @@ export async function expectedVersionFiles() {
   const files = new Map();
   const jsonPaths = [
     "package.json",
-    "moon.mod.json",
     "wasm/package.json",
     "lsp/package.json",
     "lsp/package-lock.json",
@@ -41,6 +44,8 @@ export async function expectedVersionFiles() {
     const source = await readFile(resolve(ROOT, path), "utf8");
     files.set(path, withJsonVersion(source, version));
   }
+  const moonModPath = "moon.mod";
+  files.set(moonModPath, withMoonModVersion(await readFile(resolve(ROOT, moonModPath), "utf8"), version));
   const manifestPath = "api/snapshots/api-manifest.json";
   const manifest = JSON.parse(await readFile(resolve(ROOT, manifestPath), "utf8"));
   manifest.softwareVersion = version;

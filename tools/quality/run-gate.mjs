@@ -5,6 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { verifyDeclarationScope } from "./declaration-scope.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const moon = process.env.MOON_BIN ?? (process.platform === "win32" ? resolve(process.env.USERPROFILE ?? "", ".moon/bin/moon.exe") : "moon");
@@ -26,14 +27,23 @@ function git(args) {
 
 function commandsFor(gate, profile) {
   if (gate === "V00") return [[process.execPath, [resolve(root, "tools/quality/history-verify.mjs"), "--profile", profile]]];
+  const exception = profile === "release" ? null : verifyDeclarationScope({ profile });
+  const warningArgs = exception?.moon_args ?? [];
+  const declarationScope = [process.execPath, [resolve(root, "tools/quality/declaration-scope.mjs"), "--profile", profile]];
   if (gate === "V01") return [
     [moon, ["version", "--all"]],
-    [moon, ["check", "--target", "all", "--deny-warn", "--frozen"]],
-    [moon, ["build", "--target", "all", "--deny-warn", "--frozen"]],
-    [moon, ["test", "--target", "all", "--deny-warn", "--frozen"]],
+    declarationScope,
+    [moon, ["check", "--target", "all", "--deny-warn", ...warningArgs, "--frozen"]],
+    [moon, ["build", "--target", "all", "--deny-warn", ...warningArgs, "--frozen"]],
+    [moon, ["test", "--target", "all", "--deny-warn", ...warningArgs, "--frozen"]],
     [moon, ["fmt", "--check"]],
     [moon, ["info", "--target", "all", "--frozen"]],
     ["git", ["diff", "--exit-code"]],
+  ];
+  if (gate === "V02") return [
+    declarationScope,
+    [moon, ["check", "spec.mbt", "compiler/spec.mbt", "--target", "all", "--deny-warn", ...warningArgs, "--frozen"]],
+    [moon, ["check", "tests/contracts", "--target", "all", "--deny-warn", ...warningArgs, "--frozen"]],
   ];
   throw new Error(`gate ${gate} is not implemented yet`);
 }
