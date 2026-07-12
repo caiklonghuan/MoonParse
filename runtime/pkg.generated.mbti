@@ -225,7 +225,7 @@ pub type ExternalScanner = (String, Int, Array[Int]) -> (Int, Int)?
 
 // Traits
 pub(open) trait StatefulScanner {
-  scan(Self, String, Int, Array[Int]) -> (Int, Int)?
-  clone_scanner(Self) -> &StatefulScanner
+  fn scan(Self, String, Int, Array[Int]) -> (Int, Int)?
+  fn clone_scanner(Self) -> &StatefulScanner
 }
 
