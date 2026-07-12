@@ -1,8 +1,10 @@
 # MoonParse
 
-MoonBit 编写的解析器生成器与语言工具链基础设施。当前仓库已经打通了 Grammar DSL、ParseTable 生成、GLR 运行时、增量解析、错误恢复、查询 / 高亮、WASM 桥接和 website playground ，适合拿来做内置语法验证、浏览器集成、命令行调试和语言工具链实验。
+MoonBit 编写的解析器生成器与语言工具链基础设施。
 
-## 当前范围
+> **开发状态（M0）**：本 README 当前同时记录既有实现快照与迁移中的工程入口，并不是冠军版 v1 的公开能力承诺。冠军主线冻结为“纯 MoonBit、确定性 `.mpack`、可验证增量解析、Native/WASM 一致”的语法基础设施；Website Workbench、全功能 LSP、VSIX、双向 Tree-sitter 互操作和旧 `.parse_table` 分发均不属于最终产品范围。资产迁移规则见 [docs/asset-disposition.md](docs/asset-disposition.md)。
+
+## 当前实现快照（非冠军版承诺）
 
 - 语法前端：Grammar DSL 解析、语义校验、DSL / JSON 序列化。
 - 建表链路：LALR 解析表生成、冲突诊断、JSON / 二进制表导出。
@@ -346,6 +348,7 @@ Pop-Location
 
 ## 文档导航
 
+- [docs/system-overview.md](docs/system-overview.md)：当前系统架构、数据流与对外使用总览。
 - [docs/architecture.md](docs/architecture.md)：总体架构、依赖方向与模块边界。
 - [README.md](README.md)：与本文件同步的 GitHub 入口 README。
 - [grammar/README.md](grammar/README.md)：Grammar DSL 与前端模型。
