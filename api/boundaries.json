@@ -3,7 +3,7 @@
   "modulePrefix": "caiklonghuan/MoonParse",
   "ignoredDirectories": [".git", "_build", "build", "dist", "node_modules", "out"],
   "packages": {
-    ".": {"name": "root", "layer": "stable-public", "allow": ["grammar", "tablegen", "runtime", "grammars"]},
+    ".": {"name": "root", "layer": "stable-public", "allow": ["grammar", "tablegen", "runtime", "grammars", "internal/syntax"]},
     "compiler": {"name": "compiler", "layer": "offline", "allow": []},
     "internal/model": {"name": "model", "layer": "internal-model", "allow": []},
     "internal/regex": {"name": "regex", "layer": "internal", "allow": ["internal/model"]},

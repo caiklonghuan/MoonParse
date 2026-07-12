@@ -3,4 +3,6 @@ import {
   "caiklonghuan/MoonParse/tablegen",
   "caiklonghuan/MoonParse/runtime",
   "caiklonghuan/MoonParse/grammars",
+  "caiklonghuan/MoonParse/internal/syntax",
+  "moonbitlang/core/encoding/utf8",
 }

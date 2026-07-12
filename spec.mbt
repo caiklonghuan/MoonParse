@@ -86,9 +86,6 @@ pub(all) suberror QueryError {
 }
 
 ///|
-declare pub type Source
-
-///|
 declare pub type Language
 
 ///|
@@ -113,9 +110,6 @@ declare pub type Node
 declare pub type TreeCursor
 
 ///|
-declare pub type TextEdit
-
-///|
 declare pub type ChangedRange
 
 ///|
@@ -129,38 +123,6 @@ declare pub type Query
 
 ///|
 declare pub type Capture
-
-///|
-declare pub fn Source::from_string(text : String) -> Source
-
-///|
-declare pub fn Source::from_utf8(bytes : Bytes) -> Source raise SourceError
-
-///|
-declare pub fn Source::byte_length(self : Self) -> Int
-
-///|
-declare pub fn Source::to_bytes(self : Self) -> Bytes
-
-///|
-declare pub fn Source::slice(
-  self : Self,
-  range : ByteRange,
-) -> String raise SourceError
-
-///|
-declare pub fn TextEdit::replace(
-  start_byte~ : Int,
-  old_end_byte~ : Int,
-  text~ : String,
-) -> TextEdit
-
-///|
-declare pub fn TextEdit::replace_utf8(
-  start_byte~ : Int,
-  old_end_byte~ : Int,
-  bytes~ : Bytes,
-) -> TextEdit raise SourceError
 
 ///|
 declare pub fn Language::load(bytes : Bytes) -> Language raise PackError
