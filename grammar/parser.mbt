@@ -40,7 +40,7 @@ pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
   let state = { tokens, pos: 0, next_declaration_order: 0 }
   let grammar : Grammar = {
     start: None,
-    rules: Map::new(),
+    rules: Map([]),
     precedences: [],
     extras: [],
     externals: [],
@@ -48,7 +48,7 @@ pub fn parse_grammar_lenient(dsl : String) -> (Grammar, Array[ParseError]) {
     word: None,
     conflicts: [],
     supertypes: [],
-    reserved_sets: Map::new(),
+    reserved_sets: Map([]),
   }
   let errors : Array[ParseError] = []
 
@@ -847,7 +847,7 @@ fn parse_signed_level(state : ParserState) -> ParseResult[Int] {
   match state.tokens[state.pos].token {
     Identifier(n) => {
       let (inline_sign, digits) = if n.has_prefix("-") {
-        (-1, n[1:].to_string())
+        (-1, n[1:].to_owned())
       } else {
         (1, n)
       }

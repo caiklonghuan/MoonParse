@@ -15,7 +15,7 @@ test "serialize_roundtrip_simple" {
   let out = grammar_to_string(g)
   // 重新解析应成功且结构相同
   let g2 = parse_ok_s(out)
-  assert_eq(g2.start, g.start)
+  assert_true(g2.start == g.start)
   assert_eq(g2.rules.length(), g.rules.length())
 }
 
@@ -150,7 +150,7 @@ test "grammar_from_json_roundtrip_simple" {
     Success(g) => g
     Error(e) => abort("grammar_from_json failed: \{e.message}")
   }
-  assert_eq(g2.start, g.start)
+  assert_true(g2.start == g.start)
   assert_eq(g2.rules.length(), g.rules.length())
 }
 
@@ -177,7 +177,7 @@ test "grammar_from_json_roundtrip_precedences" {
     Error(e) => abort("grammar_from_json failed: \{e.message}")
   }
   assert_eq(g2.precedences.length(), g.precedences.length())
-  assert_eq(g2.start, g.start)
+  assert_true(g2.start == g.start)
 }
 
 ///|
@@ -194,7 +194,7 @@ test "p1a grammar JSON roundtrip and legacy defaults" {
   }
   assert_true(restored.rules["keyword"].is_immediate)
   assert_eq(restored.rules["keyword"].lexical_precedence, 3)
-  assert_eq(restored.reserved_sets["global"], ["if"])
+  assert_true(restored.reserved_sets["global"] == ["if"])
   let legacy = grammar_to_json(grammar)
     .replace(old=", \"is_immediate\": true", new="")
     .replace(old=", \"lexical_precedence\": 3", new="")

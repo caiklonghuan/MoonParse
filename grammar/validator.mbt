@@ -269,7 +269,7 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
 
   // 8. 模板规则实例化校验 & 普通引用不能引用模板规则
   // 同时校验 word 声明
-  let template_rules : Set[String] = Set::new()
+  let template_rules : Set[String] = Set([])
   for name, rule in grammar.rules {
     if !rule.params.is_empty() {
       template_rules.add(name)
@@ -360,7 +360,7 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
   }
 
   // 13. 非已废弃规则引用了 @deprecated 规则（警告）
-  let deprecated_names : Set[String] = Set::new()
+  let deprecated_names : Set[String] = Set([])
   for _, rule in grammar.rules {
     if rule.attributes.contains(RuleAttribute::Deprecated) {
       deprecated_names.add(rule.name)
@@ -384,7 +384,7 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
   }
 
   // 15. P1a token metadata 与 reserved sets。
-  let declaration_orders : Set[Int] = Set::new()
+  let declaration_orders : Set[Int] = Set([])
   for set_name, words in grammar.reserved_sets {
     if words.is_empty() {
       errors.push({
@@ -394,7 +394,7 @@ pub fn validate_grammar(grammar : Grammar) -> Array[ValidationError] {
         hint: None,
       })
     }
-    let seen : Set[String] = Set::new()
+    let seen : Set[String] = Set([])
     for word in words {
       if word.is_empty() || seen.contains(word) {
         errors.push({
@@ -526,7 +526,7 @@ fn collect_reserved_refs_into(
 ///|
 /// 递归收集 Pattern 中所有 RuleRef 名称（去重）
 fn collect_rule_refs(pattern : Pattern) -> Array[String] {
-  let seen : Set[String] = Set::new()
+  let seen : Set[String] = Set([])
   collect_rule_refs_into(pattern, seen)
   seen.to_array()
 }
@@ -573,7 +573,7 @@ fn is_trivially_nullable(pattern : Pattern) -> Bool {
 
 ///|
 fn first_rule_refs(pattern : Pattern) -> Array[String] {
-  let out : Set[String] = Set::new()
+  let out : Set[String] = Set([])
   first_rule_refs_into(pattern, out)
   out.to_array()
 }
@@ -619,8 +619,8 @@ fn detect_left_recursion(
   grammar : Grammar,
   errors : Array[ValidationError],
 ) -> Unit {
-  let visited : Set[String] = Set::new()
-  let on_path_set : Set[String] = Set::new()
+  let visited : Set[String] = Set([])
+  let on_path_set : Set[String] = Set([])
   let path_list : Array[String] = []
 
   for rule_name, _ in grammar.rules {

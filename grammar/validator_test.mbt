@@ -130,7 +130,7 @@ fn assert_has_kind(
 ) -> Unit raise {
   if !arr_string_contains(actual_kinds, expected_kind) {
     fail(
-      "missing validation kind [\{case_name}]: \{expected_kind}, actual=\{actual_kinds}",
+      "missing validation kind [\{case_name}]: \{expected_kind}, actual=\{to_repr(actual_kinds)}",
     )
   }
 }
@@ -143,7 +143,7 @@ fn assert_lacks_kind(
 ) -> Unit raise {
   if arr_string_contains(actual_kinds, unexpected_kind) {
     fail(
-      "unexpected validation kind [\{case_name}]: \{unexpected_kind}, actual=\{actual_kinds}",
+      "unexpected validation kind [\{case_name}]: \{unexpected_kind}, actual=\{to_repr(actual_kinds)}",
     )
   }
 }
@@ -158,7 +158,7 @@ fn run_validation_cases(cases : Array[ValidationCase]) -> Unit raise {
       Some(count) =>
         if errors.length() != count {
           fail(
-            "unexpected validation count [\{tc.name}]: expected \{count}, got \{errors.length()} kinds=\{actual_kinds}",
+            "unexpected validation count [\{tc.name}]: expected \{count}, got \{errors.length()} kinds=\{to_repr(actual_kinds)}",
           )
         }
       None => ()
@@ -200,7 +200,7 @@ fn run_lenient_validation_cases(
       Some(count) =>
         if errors.length() != count {
           fail(
-            "unexpected lenient validation count [\{tc.name}]: expected \{count}, got \{errors.length()} kinds=\{actual_kinds}",
+            "unexpected lenient validation count [\{tc.name}]: expected \{count}, got \{errors.length()} kinds=\{to_repr(actual_kinds)}",
           )
         }
       None => ()

@@ -564,14 +564,14 @@ pub fn grammar_from_json(json_str : String) -> ParseResult[Grammar] {
     }
 
     // rules
-    let rules : Map[String, Rule] = Map::new()
+    let rules : Map[String, Rule] = Map([])
     let rules_obj = gj_obj(gj_field(o, "rules"))
     for _name, rule_j in rules_obj {
       let rule = gj_rule(rule_j)
       rules.set(rule.name, rule)
     }
     let legacy_names : Array[String] = []
-    let used_orders : Set[Int] = Set::new()
+    let used_orders : Set[Int] = Set([])
     let mut next_order = 0
     for name, rule in rules {
       if rule.declaration_order < 0 {
@@ -623,7 +623,7 @@ pub fn grammar_from_json(json_str : String) -> ParseResult[Grammar] {
     // supertypes
     let supertypes = gj_arr(gj_field(o, "supertypes")).map(gj_str)
 
-    let reserved_sets : Map[String, Array[String]] = Map::new()
+    let reserved_sets : Map[String, Array[String]] = Map([])
     match o.get("reserved_sets") {
       Some(value) => {
         let sets = gj_obj(value)

@@ -135,7 +135,7 @@ test "p1a parses immediate lexical precedence reserved and alias visibility" {
   let identifier = grammar.rules["identifier"]
   assert_eq(identifier.lexical_precedence, -2)
   assert_eq(identifier.declaration_order, 1)
-  assert_eq(grammar.reserved_sets["global"], ["if", "else"])
+  assert_true(grammar.reserved_sets["global"] == ["if", "else"])
   assert_eq(pattern_variant(identifier.pattern), "Reserved")
 }
 
@@ -212,7 +212,7 @@ fn run_rule_meta_cases(cases : Array[RuleMetaCase]) -> Unit raise {
     let rule = assert_rule(grammar, tc.rule_name, tc.name)
     assert_eq(rule.is_named, tc.expected_is_named)
     assert_eq(rule.is_token, tc.expected_is_token)
-    assert_eq(rule.params, tc.expected_params)
+    assert_true(rule.params == tc.expected_params)
   }
 }
 
@@ -220,7 +220,7 @@ fn run_rule_meta_cases(cases : Array[RuleMetaCase]) -> Unit raise {
 fn run_start_cases(cases : Array[StartCase]) -> Unit raise {
   for tc in cases {
     let grammar = assert_parse_ok(tc.name, tc.dsl)
-    assert_eq(grammar.start, tc.expected_start)
+    assert_true(grammar.start == tc.expected_start)
   }
 }
 
@@ -228,7 +228,7 @@ fn run_start_cases(cases : Array[StartCase]) -> Unit raise {
 fn run_word_cases(cases : Array[WordCase]) -> Unit raise {
   for tc in cases {
     let grammar = assert_parse_ok(tc.name, tc.dsl)
-    assert_eq(grammar.word, tc.expected_word)
+    assert_true(grammar.word == tc.expected_word)
   }
 }
 
@@ -253,7 +253,7 @@ fn run_precedence_cases(cases : Array[PrecDeclCase]) -> Unit raise {
       let expected = tc.expected_precedences[i]
       assert_eq(actual.level, expected.level)
       assert_eq(actual.kind, expected.kind)
-      assert_eq(actual.rules, expected.rules)
+      assert_true(actual.rules == expected.rules)
     }
   }
 }
@@ -295,7 +295,7 @@ fn run_lenient_cases(cases : Array[LenientCase]) -> Unit raise {
     for rule_name in tc.expected_rules {
       assert_true(grammar.rules.contains(rule_name))
     }
-    assert_eq(grammar.duplicate_rule_names, tc.expected_duplicate_rules)
+    assert_true(grammar.duplicate_rule_names == tc.expected_duplicate_rules)
   }
 }
 

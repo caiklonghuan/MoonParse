@@ -126,7 +126,7 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           }
         }
         if j < len {
-          let regex = input[i + 1:j].to_string()
+          let regex = input[i + 1:j].to_owned()
           tokens.push({
             token: Token::RegexLiteral(regex),
             location: { line: start_line, column: start_col },
@@ -135,7 +135,7 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           column = column + 1
         } else {
           // 未关闭的正则：产生错误 token 而非静默丢弃
-          let partial = input[i + 1:len].to_string()
+          let partial = input[i + 1:len].to_owned()
           tokens.push({
             token: Token::RegexLiteral(partial),
             location: { line: start_line, column: start_col },
@@ -167,7 +167,7 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           j = j + 1
         }
         if j < len {
-          let literal = input[i + 1:j].to_string()
+          let literal = input[i + 1:j].to_owned()
           tokens.push({
             token: Token::StringLiteral(literal),
             location: { line: start_line, column: start_col },
@@ -176,7 +176,7 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           column = column + 1
         } else {
           // 未关闭的字符串：产生错误 token 而非静默丢弃
-          let partial = input[i + 1:len].to_string()
+          let partial = input[i + 1:len].to_owned()
           tokens.push({
             token: Token::StringLiteral(partial),
             location: { line: start_line, column: start_col },
@@ -233,7 +233,7 @@ fn tokenize(input : String) -> Array[TokenWithLocation] {
           column = column + 1
           continue
         }
-        let word = input[i:j].to_string()
+        let word = input[i:j].to_owned()
         if word == "rule" ||
           word == "start" ||
           word == "precedence" ||

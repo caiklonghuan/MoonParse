@@ -2,7 +2,7 @@
 pub fn Grammar::new() -> Grammar {
   {
     start: None,
-    rules: Map::new(),
+    rules: Map([]),
     precedences: [],
     extras: [],
     externals: [],
@@ -10,7 +10,7 @@ pub fn Grammar::new() -> Grammar {
     word: None,
     conflicts: [],
     supertypes: [],
-    reserved_sets: Map::new(),
+    reserved_sets: Map([]),
   }
 }
 

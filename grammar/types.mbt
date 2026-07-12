@@ -12,7 +12,7 @@ pub(all) enum PrecKind {
 } derive(Eq, Debug)
 
 ///|
-pub impl Show for PrecKind with output(self, logger) {
+pub impl Show for PrecKind with fn output(self, logger) {
   match self {
     Left => logger.write_string("Left")
     Right => logger.write_string("Right")
@@ -53,7 +53,7 @@ pub(all) enum TokenSpecificity {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for RuleAttribute with output(self, logger) {
+pub impl Show for RuleAttribute with fn output(self, logger) {
   match self {
     Inline => logger.write_string("Inline")
     Hide => logger.write_string("Hide")
