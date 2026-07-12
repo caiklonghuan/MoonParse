@@ -1,3 +1,4 @@
 import {
   "caiklonghuan/MoonParse/internal/model",
+  "moonbitlang/core/encoding/utf8",
 }

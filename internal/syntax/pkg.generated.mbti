@@ -3,6 +3,7 @@ package "caiklonghuan/MoonParse/internal/syntax"
 
 import {
   "caiklonghuan/MoonParse/internal/model",
+  "moonbitlang/core/debug",
 }
 
 // Values
@@ -10,6 +11,30 @@ import {
 // Errors
 
 // Types and methods
+pub(all) struct SourceIndex {
+  source : String
+  bytes : Bytes
+  line_starts : Array[Int]
+}
+pub fn SourceIndex::apply(Self, SourceTextEdit) -> Self?
+pub fn SourceIndex::apply_many(Self, Array[SourceTextEdit]) -> Self?
+pub fn SourceIndex::byte_at(Self, SourcePoint) -> Int?
+pub fn SourceIndex::byte_length(Self) -> Int
+pub fn SourceIndex::is_boundary(Self, Int) -> Bool
+pub fn SourceIndex::new(String) -> Self
+pub fn SourceIndex::point_at(Self, Int) -> SourcePoint?
+
+pub(all) struct SourcePoint {
+  row : Int
+  byte_column : Int
+} derive(Eq, @debug.Debug)
+
+pub(all) struct SourceTextEdit {
+  start_byte : Int
+  old_end_byte : Int
+  replacement : String
+} derive(Eq, @debug.Debug)
+
 pub(all) struct SyntaxModelLink {
   format : @model.PackFormatVersion
 }
