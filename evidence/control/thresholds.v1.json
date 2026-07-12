@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "promotion_gate": "M1-G02",
+  "change_policy": "threshold changes are standalone evidence changes with old/new raw data; failures never rewrite a baseline",
+  "thresholds": [
+    {"id": "native-local-edit-p95-100kb-ms", "operator": "<=", "value": 5, "unit": "ms", "status": "candidate"},
+    {"id": "browser-parse-highlight-p95-100kb-ms", "operator": "<=", "value": 16, "unit": "ms", "status": "candidate"},
+    {"id": "eligible-edit-reused-bytes-median", "operator": ">=", "value": 0.95, "unit": "ratio", "status": "candidate"},
+    {"id": "incremental-full-p95-ratio", "operator": "<=", "value": 0.2, "unit": "ratio", "status": "candidate"},
+    {"id": "rss-after-10k-over-1k", "operator": "<=", "value": 1.5, "unit": "ratio", "status": "candidate"},
+    {"id": "brotli-wasm-bytes", "operator": "<=", "value": 716800, "unit": "bytes", "status": "candidate"},
+    {"id": "brotli-moonbit-pack-bytes", "operator": "<=", "value": 331776, "unit": "bytes", "status": "candidate"},
+    {"id": "brotli-combined-bytes", "operator": "<=", "value": 1048576, "unit": "bytes", "status": "candidate"}
+  ]
+}

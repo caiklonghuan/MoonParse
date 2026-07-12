@@ -42,6 +42,7 @@ function commandsFor(gate, profile) {
   ];
   if (gate === "V02") return [
     declarationScope,
+    [process.execPath, [resolve(root, "tools/quality/control-verify.mjs")]],
     [moon, ["check", "spec.mbt", "compiler/spec.mbt", "--target", "all", "--deny-warn", ...warningArgs, "--frozen"]],
     [moon, ["check", "tests/contracts", "--target", "all", "--deny-warn", ...warningArgs, "--frozen"]],
   ];

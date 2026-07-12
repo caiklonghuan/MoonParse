@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "status": "planned",
+  "activation_work_package": "M3-C08",
+  "reference_profile": {
+    "machine_id": "cky-win-ultra5-v1",
+    "cpu": "Intel Core Ultra 5 225H, 14 cores",
+    "ram": "32 GiB",
+    "os": "Windows 11 x64",
+    "power": "AC, best-performance profile",
+    "warmup": 20,
+    "samples": 50,
+    "outlier_policy": "keep-all-raw-samples"
+  },
+  "sizes_bytes": [10240, 102400, 1048576],
+  "metrics": ["full-parse-median-p95", "local-edit-median-p95", "parse-highlight-median-p95", "reused-bytes-nodes", "incremental-full-ratio", "peak-rss-heap", "raw-brotli-size"]
+}

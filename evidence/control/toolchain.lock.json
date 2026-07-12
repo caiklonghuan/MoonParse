@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "moon": {
+    "version": "0.1.20260703",
+    "commit": "6fbf8c3",
+    "moonc_version": "0.10.3+16975d007"
+  },
+  "node": {
+    "ci_major": 22,
+    "purpose": "quality gates, deterministic Brotli, and WASM host"
+  },
+  "brotli": {
+    "quality": 11,
+    "lgwin": 22,
+    "mode": "generic"
+  },
+  "browser_receipt_requirement": "record exact browser version in every browser benchmark receipt"
+}

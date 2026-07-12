@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "status": "planned",
+  "activation_work_package": "M3-C08",
+  "rebuilds": {"pack_clean_processes": 3, "wasm_clean_builds": 2},
+  "components": ["raw-wasm", "brotli-wasm", "raw-pack", "brotli-pack", "combined-brotli"],
+  "compression": {"toolchain": "evidence/control/toolchain.lock.json", "quality": 11, "lgwin": 22, "mode": "generic"}
+}

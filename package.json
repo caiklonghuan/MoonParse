@@ -12,12 +12,14 @@
     "build:check": "node scripts/build-artifacts.mjs --check",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:docs": "node scripts/check-docs.mjs",
+    "check:control": "node tools/quality/control-verify.mjs",
     "check:api": "node scripts/api-snapshots.mjs --check",
     "check:wasm-abi": "node scripts/check-wasm-abi.mjs",
     "check:fixtures": "node scripts/compat-fixtures.mjs --check",
     "check:packs": "node scripts/embed-language-packs.mjs --check",
     "check:version": "node scripts/version.mjs --check",
     "test:scripts": "node --test --experimental-test-isolation=none scripts/*.test.mjs",
+    "test:quality": "node --test tools/quality/*.test.mjs",
     "test:wasm": "node examples/api_smoke/node-smoke.mjs",
     "test:generated-tools": "node scripts/generated-tools-smoke.mjs"
   }

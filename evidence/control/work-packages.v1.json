@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "format": "requirements-only; observed status belongs in same-SHA evidence receipts",
+  "packages": [
+    {"id": "M1-C01", "kind": "core", "depends_on": ["M0-C01", "M0-C07"], "gate": "V02"},
+    {"id": "M1-C02", "kind": "core", "depends_on": ["M1-C01"], "gate": "V02"},
+    {"id": "M1-C03", "kind": "core", "depends_on": ["M1-C01"], "gate": "V02"},
+    {"id": "M1-C04", "kind": "core", "depends_on": ["M1-C01"], "gate": "V02"},
+    {"id": "M1-C05", "kind": "core", "depends_on": ["M0-C02", "M1-C01"], "gate": "V02"},
+    {"id": "M1-C06", "kind": "core", "depends_on": ["M1-C02", "M1-C03"], "gate": "V02"},
+    {"id": "M1-C07", "kind": "evidence", "depends_on": ["M0-C05"], "gate": "V02"},
+    {"id": "M1-G01", "kind": "gate", "depends_on": ["M1-C01", "M1-C02", "M1-C03", "M1-C04", "M1-C05", "M1-C06", "M1-C07"], "gate": "V02"},
+    {"id": "M1-G02", "kind": "gate", "depends_on": ["M0-H00", "M1-C05", "M1-C07"], "gate": "threshold-freeze"}
+  ]
+}

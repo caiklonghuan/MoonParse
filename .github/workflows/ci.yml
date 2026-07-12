@@ -154,6 +154,8 @@ jobs:
       - name: Check architecture, API and documentation
         run: |
           npm run test:scripts
+          npm run test:quality
+          npm run check:control
           npm run check:boundaries
           npm run check:api
           npm run check:wasm-abi

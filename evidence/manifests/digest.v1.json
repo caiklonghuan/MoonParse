@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "status": "planned",
+  "activation_work_package": "M3-C03",
+  "encoding": "canonical-json-lines",
+  "hash_algorithm": "sha256",
+  "required_fields": ["digest-schema", "pack-fingerprint", "source-sha256", "tree", "diagnostics", "query-captures"],
+  "forbidden_fields": ["object-address", "green-id", "wasm-handle", "timing", "memory-address", "creation-timestamp", "localized-message", "map-iteration-order"],
+  "cross_backend_rule": "Native and WASM must have equal case count, schema, pack hash, and every digest line",
+  "cases": []
+}

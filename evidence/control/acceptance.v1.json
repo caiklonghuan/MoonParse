@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "status": "external_required",
+  "source_policy": "Each entry must be reconciled with the official competition material by DRI-A before M6; this file records requirements only, never observed state.",
+  "requirements": [
+    {"id": "H00", "kind": "hard", "phase": "prepublish", "claim": "valid registration and proposal/repository correspondence", "commands": ["V15A"], "artifact": "external://registration-receipt"},
+    {"id": "H01", "kind": "hard", "phase": "prepublish", "claim": "valid MoonBit project", "commands": ["V01", "V02"], "artifact": "repo://moon.mod"},
+    {"id": "H02", "kind": "hard", "phase": "prepublish", "claim": "MoonBit is the primary implementation language", "commands": ["V17"], "artifact": "evidence://source-stat"},
+    {"id": "H03", "kind": "hard", "phase": "prepublish", "claim": "public default branches point at the release SHA", "commands": ["V16C"], "artifact": "external://remote-receipt"},
+    {"id": "H04", "kind": "hard", "phase": "prepublish", "claim": "declared core functionality is complete", "commands": ["V15A"], "artifact": "evidence://proposal-mapping"},
+    {"id": "H05", "kind": "hard", "phase": "postpublish", "claim": "README installation and usage are reproducible", "commands": ["V16B"], "artifact": "evidence://clean-install"},
+    {"id": "H06", "kind": "hard", "phase": "prepublish", "claim": "release SHA CI covers check, build, and test", "commands": ["V01"], "artifact": "ci://strict-quality"},
+    {"id": "H07", "kind": "hard", "phase": "prepublish", "claim": "at least one runnable example exists", "commands": ["V13"], "artifact": "demo://champion-scenario"},
+    {"id": "H08", "kind": "hard", "phase": "prepublish", "claim": "core path test coverage is sufficient", "commands": ["V05B", "V07B"], "artifact": "evidence://differential"},
+    {"id": "H09", "kind": "hard", "phase": "postpublish", "claim": "Mooncakes package is published and installable", "commands": ["V16B"], "artifact": "registry://mooncakes"},
+    {"id": "H10", "kind": "hard", "phase": "prepublish", "claim": "license and third-party provenance are compliant", "commands": ["V15A"], "artifact": "repo://THIRD_PARTY"},
+    {"id": "H11", "kind": "hard", "phase": "prepublish", "claim": "repository has no prohibited build artifacts", "commands": ["V01"], "artifact": "repo://tracked-file-policy"},
+    {"id": "H12", "kind": "hard", "phase": "prepublish", "claim": "owner and contributor relationship is confirmed", "commands": ["V15A"], "artifact": "external://dri-attestation"},
+    {"id": "H13", "kind": "hard", "phase": "prepublish", "claim": "no severe correctness or performance issue remains", "commands": ["V04", "V07B", "V08A"], "artifact": "evidence://quality-suite"},
+    {"id": "H14", "kind": "hard", "phase": "prepublish", "claim": "all proposal promises are materially complete", "commands": ["V15A"], "artifact": "evidence://proposal-contract"},
+    {"id": "H15", "kind": "hard", "phase": "postpublish", "claim": "tags, release assets, remotes, and demo have matching SHA/hash", "commands": ["V16C", "V15B"], "artifact": "evidence://release-manifest"},
+    {"id": "C01", "kind": "contribution", "phase": "prepublish", "claim": "contest-period contributions are traceable", "commands": ["V00"], "artifact": "evidence://history"},
+    {"id": "E01", "kind": "ecosystem", "phase": "prepublish", "claim": "project has independent MoonBit ecosystem value", "commands": ["V14"], "artifact": "docs://contest/prior-art.md"}
+  ]
+}

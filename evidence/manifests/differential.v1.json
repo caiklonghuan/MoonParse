@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "status": "planned",
+  "activation_work_packages": ["M2-C19", "M3-C04"],
+  "generator_version": "differential-v1",
+  "profiles": {
+    "pr": {"minimum_edits": 20000},
+    "nightly": {"minimum_edits": 1000000},
+    "release": {"minimum_edits": 1000000}
+  },
+  "operations": ["insert", "delete", "replace", "paste", "utf8-multibyte", "error-edit"],
+  "required_comparisons": ["tree", "diagnostics", "query-captures"],
+  "failure_artifacts": ["seed", "initial-source", "complete-edit-trace", "minimized-sample", "full-digest", "incremental-digest"],
+  "hard_zeroes": ["mismatch", "crash", "timeout", "resource_violation", "unreproducible_failure"],
+  "sequences": []
+}
