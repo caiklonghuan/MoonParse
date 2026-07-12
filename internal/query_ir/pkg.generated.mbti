@@ -3,16 +3,80 @@ package "caiklonghuan/MoonParse/internal/query_ir"
 
 import {
   "caiklonghuan/MoonParse/internal/model",
+  "moonbitlang/core/debug",
 }
 
 // Values
+pub fn compile_query(String, QuerySchema) -> CompiledQueryIr raise QueryCompileError
 
 // Errors
+pub(all) suberror QueryCompileError {
+  ParseError(Int, String)
+  UnsupportedFeature(String)
+  UnknownNode(String)
+  UnknownField(String)
+  UnknownCapture(String)
+}
 
 // Types and methods
+pub(all) struct CompiledQueryIr {
+  patterns : Array[QueryPattern]
+  bytecode : Bytes
+}
+pub fn CompiledQueryIr::bytecode(Self) -> Bytes
+pub fn CompiledQueryIr::pattern_count(Self) -> Int
+pub fn CompiledQueryIr::patterns(Self) -> Array[QueryPattern]
+
+pub(all) struct QueryChild {
+  field_id : Int?
+  field_name : String?
+  expr : QueryExpr
+  quantifier : QueryQuantifier
+  capture_index : Int?
+  anchor_before : Bool
+  anchor_after : Bool
+} derive(Eq, @debug.Debug)
+
+pub(all) enum QueryExpr {
+  Named(Int, String, Array[QueryChild])
+  Anonymous(String)
+  Wildcard
+  Alternation(Array[QueryExpr])
+} derive(Eq, @debug.Debug)
+
 pub(all) struct QueryIrModelLink {
   format : @model.PackFormatVersion
 }
+
+pub(all) struct QueryPattern {
+  index : Int
+  root : QueryExpr
+  root_capture_index : Int?
+  capture_names : Array[String]
+  predicates : Array[QueryPredicate]
+} derive(Eq, @debug.Debug)
+
+pub(all) enum QueryPredicate {
+  Eq(String, String)
+  NotEq(String, String)
+  Match(String, String)
+  NotMatch(String, String)
+  AnyOf(String, Array[String])
+} derive(Eq, @debug.Debug)
+
+pub(all) enum QueryQuantifier {
+  One
+  ZeroOrOne
+  ZeroOrMore
+  OneOrMore
+} derive(Eq, @debug.Debug)
+
+pub(all) struct QuerySchema {
+  nodes : Array[String]
+  fields : Array[String]
+  anonymous_tokens : Array[String]
+}
+pub fn QuerySchema::new(Array[String], Array[String], anonymous_tokens? : Array[String]) -> Self
 
 // Type aliases
 
