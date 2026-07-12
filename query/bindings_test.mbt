@@ -82,54 +82,54 @@ test "capture_role/unknown" {
 
 ///|
 test "symbol_kind_from_str/known" {
-  assert_eq(symbol_kind_from_str("variable"), Some(Variable))
-  assert_eq(symbol_kind_from_str("constant"), Some(Constant))
-  assert_eq(symbol_kind_from_str("function"), Some(Function))
-  assert_eq(symbol_kind_from_str("method"), Some(Method))
-  assert_eq(symbol_kind_from_str("type"), Some(Type))
-  assert_eq(symbol_kind_from_str("struct"), Some(Struct))
-  assert_eq(symbol_kind_from_str("enum"), Some(Enum))
-  assert_eq(symbol_kind_from_str("trait"), Some(Trait))
-  assert_eq(symbol_kind_from_str("field"), Some(Field))
-  assert_eq(symbol_kind_from_str("enum_member"), Some(EnumMember))
-  assert_eq(symbol_kind_from_str("parameter"), Some(Parameter))
-  assert_eq(symbol_kind_from_str("type_parameter"), Some(TypeParameter))
-  assert_eq(symbol_kind_from_str("rule"), Some(Rule))
-  assert_eq(symbol_kind_from_str("token"), Some(Token))
+  assert_true(symbol_kind_from_str("variable") == Some(Variable))
+  assert_true(symbol_kind_from_str("constant") == Some(Constant))
+  assert_true(symbol_kind_from_str("function") == Some(Function))
+  assert_true(symbol_kind_from_str("method") == Some(Method))
+  assert_true(symbol_kind_from_str("type") == Some(Type))
+  assert_true(symbol_kind_from_str("struct") == Some(Struct))
+  assert_true(symbol_kind_from_str("enum") == Some(Enum))
+  assert_true(symbol_kind_from_str("trait") == Some(Trait))
+  assert_true(symbol_kind_from_str("field") == Some(Field))
+  assert_true(symbol_kind_from_str("enum_member") == Some(EnumMember))
+  assert_true(symbol_kind_from_str("parameter") == Some(Parameter))
+  assert_true(symbol_kind_from_str("type_parameter") == Some(TypeParameter))
+  assert_true(symbol_kind_from_str("rule") == Some(Rule))
+  assert_true(symbol_kind_from_str("token") == Some(Token))
 }
 
 ///|
 test "symbol_kind_from_str/unknown" {
-  assert_eq(symbol_kind_from_str("unknown"), None)
-  assert_eq(symbol_kind_from_str(""), None)
+  assert_true(symbol_kind_from_str("unknown") == None)
+  assert_true(symbol_kind_from_str("") == None)
 }
 
 ///|
 test "ns_from_kind/mapping" {
-  assert_eq(ns_from_kind(Variable), Value)
-  assert_eq(ns_from_kind(Constant), Value)
-  assert_eq(ns_from_kind(Function), Value)
-  assert_eq(ns_from_kind(Method), Value)
-  assert_eq(ns_from_kind(Parameter), Value)
-  assert_eq(ns_from_kind(EnumMember), Value)
-  assert_eq(ns_from_kind(Type), Type)
-  assert_eq(ns_from_kind(Struct), Type)
-  assert_eq(ns_from_kind(Enum), Type)
-  assert_eq(ns_from_kind(Trait), Type)
-  assert_eq(ns_from_kind(TypeParameter), Type)
-  assert_eq(ns_from_kind(Field), Member)
-  assert_eq(ns_from_kind(Rule), Rule)
-  assert_eq(ns_from_kind(Token), Rule)
+  assert_true(ns_from_kind(Variable) == Value)
+  assert_true(ns_from_kind(Constant) == Value)
+  assert_true(ns_from_kind(Function) == Value)
+  assert_true(ns_from_kind(Method) == Value)
+  assert_true(ns_from_kind(Parameter) == Value)
+  assert_true(ns_from_kind(EnumMember) == Value)
+  assert_true(ns_from_kind(Type) == Type)
+  assert_true(ns_from_kind(Struct) == Type)
+  assert_true(ns_from_kind(Enum) == Type)
+  assert_true(ns_from_kind(Trait) == Type)
+  assert_true(ns_from_kind(TypeParameter) == Type)
+  assert_true(ns_from_kind(Field) == Member)
+  assert_true(ns_from_kind(Rule) == Rule)
+  assert_true(ns_from_kind(Token) == Rule)
 }
 
 ///|
 test "ns_from_scope_kind/mapping" {
-  assert_eq(ns_from_scope_kind(Module), Value)
-  assert_eq(ns_from_scope_kind(Function), Value)
-  assert_eq(ns_from_scope_kind(Block), Value)
-  assert_eq(ns_from_scope_kind(Loop), Value)
-  assert_eq(ns_from_scope_kind(Class), Type)
-  assert_eq(ns_from_scope_kind(Rule), Rule)
+  assert_true(ns_from_scope_kind(Module) == Value)
+  assert_true(ns_from_scope_kind(Function) == Value)
+  assert_true(ns_from_scope_kind(Block) == Value)
+  assert_true(ns_from_scope_kind(Loop) == Value)
+  assert_true(ns_from_scope_kind(Class) == Type)
+  assert_true(ns_from_scope_kind(Rule) == Rule)
 }
 
 // ── build_binding_graph 端到端测试 ──

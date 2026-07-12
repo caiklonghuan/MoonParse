@@ -81,8 +81,8 @@ test "compile/node_with_child" {
           assert_eq(name, "binary_expr")
           assert_eq(children.length(), 1)
           assert_true(children[0].pattern is NodePattern("identifier", _))
-          assert_eq(children[0].field, None)
-          assert_eq(children[0].capture, None)
+          assert_true(children[0].field == None)
+          assert_true(children[0].capture == None)
         }
         _ => fail("expected NodePattern")
       }
@@ -99,7 +99,7 @@ test "compile/capture_annotation" {
       let (pat, top_cap) = q.patterns[0]
       assert_true(pat is NodePattern("identifier", _))
       // 顶层 @capture 存入 tuple 的第二元素
-      assert_eq(top_cap, Some("name"))
+      assert_true(top_cap == Some("name"))
     }
     Err(e) => fail("unexpected error: \{e}")
   }
@@ -113,8 +113,8 @@ test "compile/field_constraint" {
       match pat {
         NodePattern(_, children) => {
           assert_eq(children.length(), 2)
-          assert_eq(children[0].field, Some("left"))
-          assert_eq(children[1].field, Some("right"))
+          assert_true(children[0].field == Some("left"))
+          assert_true(children[1].field == Some("right"))
         }
         _ => fail("expected NodePattern")
       }
@@ -131,8 +131,8 @@ test "compile/capture_in_child" {
       match pat {
         NodePattern(_, children) => {
           assert_eq(children.length(), 2)
-          assert_eq(children[0].capture, Some("lhs"))
-          assert_eq(children[1].capture, Some("rhs"))
+          assert_true(children[0].capture == Some("lhs"))
+          assert_true(children[1].capture == Some("rhs"))
         }
         _ => fail("expected NodePattern")
       }

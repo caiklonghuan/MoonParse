@@ -159,7 +159,7 @@ pub(all) enum BindingCaptureRole {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for BindingCaptureRole with output(self, logger) {
+pub impl Show for BindingCaptureRole with fn output(self, logger) {
   match self {
     Scope(Some(k)) => logger.write_string("Scope(Some(\{k}))")
     Scope(None) => logger.write_string("Scope(None)")
@@ -176,7 +176,7 @@ pub impl Show for BindingCaptureRole with output(self, logger) {
 }
 
 ///|
-pub impl Show for ScopeKind with output(self, logger) {
+pub impl Show for ScopeKind with fn output(self, logger) {
   match self {
     Module => logger.write_string("Module")
     Function => logger.write_string("Function")
@@ -188,7 +188,7 @@ pub impl Show for ScopeKind with output(self, logger) {
 }
 
 ///|
-pub impl Show for SymbolKind with output(self, logger) {
+pub impl Show for SymbolKind with fn output(self, logger) {
   match self {
     Variable => logger.write_string("Variable")
     Constant => logger.write_string("Constant")
@@ -208,7 +208,7 @@ pub impl Show for SymbolKind with output(self, logger) {
 }
 
 ///|
-pub impl Show for NameSpace with output(self, logger) {
+pub impl Show for NameSpace with fn output(self, logger) {
   match self {
     Value => logger.write_string("Value")
     Type => logger.write_string("Type")
@@ -227,7 +227,7 @@ pub fn capture_role(name : String) -> BindingCaptureRole {
     return Scope(None)
   }
   if str_starts_with(name, "scope.") {
-    let sub = name[6:].to_string()
+    let sub = name[6:].to_owned()
     let k = scope_kind_from_str(sub)
     return Scope(k)
   }
@@ -237,7 +237,7 @@ pub fn capture_role(name : String) -> BindingCaptureRole {
     return Definition(None)
   }
   if str_starts_with(name, "definition.") {
-    let sub = name[11:].to_string()
+    let sub = name[11:].to_owned()
     let k = symbol_kind_from_str(sub)
     return Definition(k)
   }
@@ -250,12 +250,12 @@ pub fn capture_role(name : String) -> BindingCaptureRole {
     return Reference(None, false)
   }
   if str_starts_with(name, "reference.soft.") {
-    let sub = name[15:].to_string()
+    let sub = name[15:].to_owned()
     let k = symbol_kind_from_str(sub)
     return Reference(k, false)
   }
   if str_starts_with(name, "reference.") {
-    let sub = name[10:].to_string()
+    let sub = name[10:].to_owned()
     let k = symbol_kind_from_str(sub)
     return Reference(k, true)
   }
@@ -265,7 +265,7 @@ pub fn capture_role(name : String) -> BindingCaptureRole {
     return Symbol(None)
   }
   if str_starts_with(name, "symbol.") {
-    let sub = name[7:].to_string()
+    let sub = name[7:].to_owned()
     let k = symbol_kind_from_str(sub)
     return Symbol(k)
   }
@@ -278,7 +278,7 @@ pub fn capture_role(name : String) -> BindingCaptureRole {
     return Definition(Some(Variable))
   }
   if str_starts_with(name, "local.definition.") {
-    let sub = name[17:].to_string()
+    let sub = name[17:].to_owned()
     let k = symbol_kind_from_str(sub)
     return Definition(k)
   }
@@ -448,7 +448,7 @@ pub fn build_binding_graph(
 
   // @symbol.* 通常是顶层 capture，执行顺序晚于其子 definition capture，
   // 因此先独立收集，再构造 definition。
-  let symbol_ranges : Map[Int, (SymbolKind, Int, Int)] = Map::new()
+  let symbol_ranges : Map[Int, (SymbolKind, Int, Int)] = Map([])
   for c in captures {
     match capture_role(c.capture_name) {
       Symbol(kind_opt) => {

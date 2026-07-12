@@ -33,7 +33,7 @@ pub(all) enum Quantifier {
 } derive(Debug, Eq)
 
 ///|
-pub impl Show for Quantifier with output(self, logger) {
+pub impl Show for Quantifier with fn output(self, logger) {
   match self {
     One => logger.write_string("One")
     ZeroOrOne => logger.write_string("ZeroOrOne")
@@ -114,7 +114,7 @@ pub(all) enum QueryError {
 } derive(Debug)
 
 ///|
-pub impl Show for QueryError with output(self, logger) {
+pub impl Show for QueryError with fn output(self, logger) {
   match self {
     ParseError(pos, msg) => logger.write_string("ParseError(\{pos}, \{msg})")
   }
@@ -186,7 +186,7 @@ pub fn node_type_name(
 /// 从原始输入字符串中切取节点对应的文本（UTF-8 字节切片）
 pub fn node_text(node : @runtime.CstNode, input : String) -> String {
   if node.start_byte <= node.end_byte && node.end_byte <= input.length() {
-    input[node.start_byte:node.end_byte].to_string()
+    input[node.start_byte:node.end_byte].to_owned()
   } else {
     ""
   }
