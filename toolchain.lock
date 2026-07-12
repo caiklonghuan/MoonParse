@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "moon": {
+    "moon": "0.1.20260703+6fbf8c3",
+    "moonc": "0.10.3+16975d007",
+    "moonrun": "0.1.20260703+6fbf8c3"
+  },
+  "node": {
+    "ci_major": 22,
+    "package_manager": "npm"
+  }
+}

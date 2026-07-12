@@ -21,7 +21,7 @@ jobs:
       - name: Set up MoonBit baseline
         uses: hustcer/setup-moonbit@v1
         with:
-          version: 0.1.20260417+8650a31
+          version: 0.1.20260703+6fbf8c3
       - name: Check and test MoonBit packages
         run: |
           moon version --all
@@ -56,7 +56,7 @@ jobs:
       - name: Set up MoonBit baseline
         uses: hustcer/setup-moonbit@v1
         with:
-          version: 0.1.20260417+8650a31
+          version: 0.1.20260703+6fbf8c3
       - name: Verify WASM release and tests
         run: |
           npm run build:check
@@ -91,7 +91,7 @@ jobs:
       - name: Set up MoonBit baseline
         uses: hustcer/setup-moonbit@v1
         with:
-          version: 0.1.20260417+8650a31
+          version: 0.1.20260703+6fbf8c3
       - run: moon build --target wasm-gc wasm
       - run: npm ci
         working-directory: website
