@@ -9,6 +9,14 @@ import {
 // Values
 
 // Errors
+pub(all) suberror GreenBuildError {
+  InvalidKind(Int)
+  InvalidProduction(Int)
+  InvalidField(Int)
+  UnknownChild(GreenId)
+  MissingElementHasWidth
+  WidthOverflow
+} derive(Eq, @debug.Debug)
 
 // Types and methods
 pub(all) struct EditMap {
@@ -27,6 +35,59 @@ pub(all) struct EditMapSegment {
   new_end : Int
   changed : Bool
 }
+
+pub struct GreenArena {
+  records : Array[GreenRecord]
+  buckets : Array[Array[Int]]
+}
+pub fn GreenArena::byte_width(Self, GreenId) -> Int?
+pub fn GreenArena::element_count(Self) -> Int
+pub fn GreenArena::get(Self, GreenId) -> GreenElement?
+pub fn GreenArena::intern_node(Self, Int, Int, Array[GreenChild], flags? : GreenFlags) -> GreenId raise GreenBuildError
+pub fn GreenArena::intern_token(Self, Int, String, flags? : GreenFlags) -> GreenId raise GreenBuildError
+pub fn GreenArena::lossless_text(Self, GreenId) -> String?
+pub fn GreenArena::new(bucket_count? : Int) -> Self
+
+pub(all) struct GreenChild {
+  green : GreenId
+  field_id : Int?
+} derive(Eq, @debug.Debug)
+
+pub(all) enum GreenElement {
+  Token(GreenToken)
+  Node(GreenNode)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct GreenFlags {
+  named : Bool
+  extra : Bool
+  error : Bool
+  missing : Bool
+  fragile_left : Bool
+  fragile_right : Bool
+} derive(Eq, @debug.Debug)
+pub fn GreenFlags::plain(named? : Bool) -> Self
+
+pub(all) struct GreenId {
+  value : Int
+} derive(Eq, @debug.Debug)
+
+pub(all) struct GreenNode {
+  kind_id : Int
+  production_id : Int
+  children : Array[GreenChild]
+  byte_width : Int
+  flags : GreenFlags
+} derive(Eq, @debug.Debug)
+
+type GreenRecord
+
+pub(all) struct GreenToken {
+  kind_id : Int
+  text : String
+  byte_width : Int
+  flags : GreenFlags
+} derive(Eq, @debug.Debug)
 
 pub(all) struct SourceIndex {
   source : String
