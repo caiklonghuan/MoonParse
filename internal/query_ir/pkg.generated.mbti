@@ -1,0 +1,20 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/internal/query_ir"
+
+import {
+  "caiklonghuan/MoonParse/internal/model",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct QueryIrModelLink {
+  format : @model.PackFormatVersion
+}
+
+// Type aliases
+
+// Traits
+

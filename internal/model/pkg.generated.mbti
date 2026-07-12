@@ -1,0 +1,43 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/internal/model"
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct PackFormatVersion {
+  major : Int
+  minor : Int
+  runtime_abi : Int
+}
+
+pub(all) struct PackResourceLimits {
+  pack_bytes : Int
+  sections : Int
+  strings : Int
+  symbols : Int
+  parser_states : Int
+  productions : Int
+  query_programs : Int
+  query_bytecode_bytes : Int
+  scanner_states : Int
+}
+
+pub(all) enum PackSectionKind {
+  Manifest
+  Strings
+  SymbolsFields
+  Lexer
+  Parser
+  Recovery
+  QueryIndex
+  QueryBytecode
+  ScannerBytecode
+  DebugMap
+}
+
+// Type aliases
+
+// Traits
+

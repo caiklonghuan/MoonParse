@@ -1,0 +1,22 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/internal/engine"
+
+import {
+  "caiklonghuan/MoonParse/internal/model",
+  "caiklonghuan/MoonParse/internal/syntax",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct EngineModelLink {
+  format : @model.PackFormatVersion
+  syntax : @syntax.SyntaxModelLink
+}
+
+// Type aliases
+
+// Traits
+

@@ -1,0 +1,20 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/internal/regex"
+
+import {
+  "caiklonghuan/MoonParse/internal/model",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct RegexModelLink {
+  format : @model.PackFormatVersion
+}
+
+// Type aliases
+
+// Traits
+

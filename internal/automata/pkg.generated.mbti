@@ -1,0 +1,24 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/internal/automata"
+
+import {
+  "caiklonghuan/MoonParse/internal/grammar",
+  "caiklonghuan/MoonParse/internal/model",
+  "caiklonghuan/MoonParse/internal/regex",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct AutomataModelLink {
+  format : @model.PackFormatVersion
+  grammar : @grammar.GrammarModelLink
+  regex : @regex.RegexModelLink
+}
+
+// Type aliases
+
+// Traits
+

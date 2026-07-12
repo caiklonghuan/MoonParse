@@ -1,0 +1,24 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/internal/query_runtime"
+
+import {
+  "caiklonghuan/MoonParse/internal/model",
+  "caiklonghuan/MoonParse/internal/query_ir",
+  "caiklonghuan/MoonParse/internal/syntax",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct QueryRuntimeModelLink {
+  format : @model.PackFormatVersion
+  query_ir : @query_ir.QueryIrModelLink
+  syntax : @syntax.SyntaxModelLink
+}
+
+// Type aliases
+
+// Traits
+
