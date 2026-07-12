@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "product": "MoonParse",
+  "claims": [
+    {
+      "id": "pure-moonbit-semantic-core",
+      "implementation": ["compiler", "internal/pack", "internal/engine", "internal/query_runtime"],
+      "gates": ["V01", "V02", "V03", "V17"],
+      "demo": "one-moonbit-runtime"
+    },
+    {
+      "id": "deterministic-mpack-abi",
+      "implementation": ["compiler/PackSource", "docs/spec/MPACK_V1.md"],
+      "gates": ["V03", "V09"],
+      "demo": "pack-fingerprint"
+    },
+    {
+      "id": "incremental-semantic-equivalence",
+      "implementation": ["Parser.reparse", "Parser.reparse_many", "Query"],
+      "gates": ["V05A", "V05B", "V07A", "V07B"],
+      "demo": "changed-range-and-reuse"
+    },
+    {
+      "id": "cross-backend-reproducibility",
+      "implementation": ["canonical-digest-v1", "wasm-thin-abi"],
+      "gates": ["V06", "V08A", "V08B", "V11"],
+      "demo": "native-wasm-digest"
+    }
+  ],
+  "prohibited_claims": [
+    "replaces-tree-sitter",
+    "universally-faster",
+    "universally-more-complete",
+    "visual-only-incrementality"
+  ]
+}
