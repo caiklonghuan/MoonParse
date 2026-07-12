@@ -136,7 +136,7 @@ fn validate_section_semantics(
 
   for
     envelope in [
-      (manifest, 8, 0),
+      (manifest, 10, 0),
       (strings, 8, 0),
       (symbols, 12, 0),
       (lexer, 16, 1),
@@ -173,6 +173,12 @@ fn validate_section_semantics(
         Ok(_) => ()
       }
     None => ()
+  }
+
+  match
+    validate_manifest_json(bytes, manifest.offset + 8, manifest.length - 8) {
+    Err(error) => return Err(error)
+    Ok(_) => ()
   }
 
   let string_count = match read_limited_count(bytes, strings, 4, 1_000_000) {

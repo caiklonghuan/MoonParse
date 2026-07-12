@@ -1,6 +1,7 @@
 ///|
 fn semantic_sections(
   manifest_capabilities? : Int = 0,
+  manifest_json? : Bytes = b"{}",
   lexer_capabilities? : Int = 0,
   query_ranges? : Array[(Int, Int)] = [],
   query_code? : Bytes,
@@ -9,6 +10,12 @@ fn semantic_sections(
   let sections = test_sections(false)
   let manifest = sections[0].payload.to_array()
   patch_u32(manifest, 4, manifest_capabilities.reinterpret_as_uint())
+  while manifest.length() > 8 {
+    ignore(manifest.pop())
+  }
+  for byte in manifest_json {
+    manifest.push(byte)
+  }
   sections[0] = {
     ..sections[0],
     payload: Bytes::makei(manifest.length(), fn(index) { manifest[index] }),

@@ -41,7 +41,12 @@ fn section_payload(kind : Int) -> Bytes {
   write_u16(out, 1)
   write_u16(out, if kind == 4 || kind == 7 { 1 } else { 0 })
   match kind {
-    1 | 2 => write_u32(out, 0)
+    1 => {
+      write_u32(out, 0)
+      out.push(b'{')
+      out.push(b'}')
+    }
+    2 => write_u32(out, 0)
     3 => {
       write_u32(out, 0)
       write_u32(out, 0)

@@ -23,6 +23,11 @@ pub(all) enum PackValidationError {
   InconsistentSectionCount(Int, Int)
   InvalidProgramRange(Int, Int)
   OverlappingProgramRanges(Int, Int)
+  InvalidManifestJson
+  InvalidManifestUtf8
+  DuplicateManifestKey
+  NonCanonicalManifestJson
+  InvalidManifestNumber
 } derive(Debug, Eq)
 
 ///|
