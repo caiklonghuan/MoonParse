@@ -78,62 +78,36 @@ pub fn SourceIndex::point_at(self : SourceIndex, offset : Int) -> SourcePoint? {
   if !is_utf8_boundary(self.bytes, offset) {
     return None
   }
-  let mut row = 0
-  let mut column = 0
-  let mut cursor = 0
-  while cursor < offset {
-    let byte = byte_at(self.bytes, cursor)
-    if byte == 0x0A {
-      row = row + 1
-      column = 0
-    } else if byte == 0x0D &&
-      (
-        cursor + 1 == self.bytes.length() ||
-        byte_at(self.bytes, cursor + 1) != 0x0A
-      ) {
-      row = row + 1
-      column = 0
+  let mut low = 0
+  let mut high = self.line_starts.length()
+  while low + 1 < high {
+    let middle = low + (high - low) / 2
+    if self.line_starts[middle] <= offset {
+      low = middle
     } else {
-      column = column + 1
+      high = middle
     }
-    cursor = cursor + 1
   }
-  Some({ row, byte_column: column })
+  Some({ row: low, byte_column: offset - self.line_starts[low] })
 }
 
 ///|
 pub fn SourceIndex::byte_at(self : SourceIndex, point : SourcePoint) -> Int? {
-  if point.row < 0 || point.byte_column < 0 {
+  if point.row < 0 ||
+    point.row >= self.line_starts.length() ||
+    point.byte_column < 0 {
     return None
   }
-  let mut row = 0
-  let mut column = 0
-  let mut cursor = 0
-  while cursor < self.bytes.length() {
-    if row == point.row && column == point.byte_column {
-      return Some(cursor)
-    }
-    let byte = byte_at(self.bytes, cursor)
-    if byte == 0x0A {
-      row = row + 1
-      column = 0
-    } else if byte == 0x0D &&
-      (
-        cursor + 1 == self.bytes.length() ||
-        byte_at(self.bytes, cursor + 1) != 0x0A
-      ) {
-      row = row + 1
-      column = 0
-    } else {
-      column = column + 1
-    }
-    cursor = cursor + 1
-  }
-  if row == point.row && column == point.byte_column {
-    Some(cursor)
+  let offset = self.line_starts[point.row] + point.byte_column
+  let limit = if point.row + 1 < self.line_starts.length() {
+    self.line_starts[point.row + 1]
   } else {
-    None
+    self.bytes.length() + 1
   }
+  if offset >= limit || !is_utf8_boundary(self.bytes, offset) {
+    return None
+  }
+  Some(offset)
 }
 
 ///|

@@ -11,6 +11,23 @@ import {
 // Errors
 
 // Types and methods
+pub(all) struct EditMap {
+  old_length : Int
+  new_length : Int
+  segments : Array[EditMapSegment]
+}
+pub fn EditMap::from_edit(Int, SourceTextEdit) -> Self?
+pub fn EditMap::new_to_old(Self, Int) -> Int?
+pub fn EditMap::old_to_new(Self, Int) -> Int?
+
+pub(all) struct EditMapSegment {
+  old_start : Int
+  old_end : Int
+  new_start : Int
+  new_end : Int
+  changed : Bool
+}
+
 pub(all) struct SourceIndex {
   source : String
   bytes : Bytes
