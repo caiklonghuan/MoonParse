@@ -24,5 +24,6 @@ todo/*
 !todo/plan.md
 website/public/moonparse.js
 website/public/moonparse.wasm
+website/public/tree-sitter/
 website/src/data/precompiledTables.js
 .tmp/
