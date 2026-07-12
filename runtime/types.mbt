@@ -169,14 +169,14 @@ pub(all) struct CstNode {
 } derive(Debug)
 
 ///|
-pub impl Show for CstNode with output(self, logger) {
+pub impl Show for CstNode with fn output(self, logger) {
   if self.children.is_empty() {
     logger.write_string(
       "CstNode(symbol: \{self.symbol}, is_named: \{self.is_named}, start_byte: \{self.start_byte}, end_byte: \{self.end_byte}, extra: \{self.extra}, is_missing: \{self.is_missing}, is_error: \{self.is_error})",
     )
   } else {
     logger.write_string(
-      "CstNode(symbol: \{self.symbol}, is_named: \{self.is_named}, start_byte: \{self.start_byte}, end_byte: \{self.end_byte}, field_names: \{self.field_names}, children: \{self.children}, extra: \{self.extra}, is_missing: \{self.is_missing}, is_error: \{self.is_error})",
+      "CstNode(symbol: \{self.symbol}, is_named: \{self.is_named}, start_byte: \{self.start_byte}, end_byte: \{self.end_byte}, field_names: \{to_repr(self.field_names)}, children: \{to_repr(self.children)}, extra: \{self.extra}, is_missing: \{self.is_missing}, is_error: \{self.is_error})",
     )
   }
 }
@@ -420,7 +420,7 @@ pub(all) struct ParseError {
 } derive(Debug)
 
 ///|
-pub impl Show for ParseError with output(self, logger) {
+pub impl Show for ParseError with fn output(self, logger) {
   logger.write_string(
     "ParseError(position: \{self.position}, point: (\{self.point.row}, \{self.point.column}), message: \{self.message})",
   )

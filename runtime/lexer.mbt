@@ -15,8 +15,8 @@ pub type ExternalScanner = (String, Int, Array[Int]) -> (Int, Int)?
 /// 用于在 GLR 分支时复制一份独立的扫描器状态。
 /// clone_scanner 返回 &StatefulScanner 以保持 trait object-safe。
 pub(open) trait StatefulScanner {
-  scan(Self, String, Int, Array[Int]) -> (Int, Int)?
-  clone_scanner(Self) -> &StatefulScanner
+  fn scan(Self, String, Int, Array[Int]) -> (Int, Int)?
+  fn clone_scanner(Self) -> &StatefulScanner
 }
 
 ///|
@@ -29,12 +29,17 @@ pub struct ExternalScannerState {
 }
 
 ///|
-impl StatefulScanner for ExternalScannerState with scan(self, input, pos, tids) {
+impl StatefulScanner for ExternalScannerState with fn scan(
+  self,
+  input,
+  pos,
+  tids,
+) {
   (self.func)(input, pos, tids)
 }
 
 ///|
-impl StatefulScanner for ExternalScannerState with clone_scanner(self) {
+impl StatefulScanner for ExternalScannerState with fn clone_scanner(self) {
   { func: self.func } as &StatefulScanner
 }
 
@@ -177,7 +182,7 @@ pub fn LexerEngine::next_token(
 ) -> (Token?, Int) {
   // 计算本状态下合法的终结符集合
   // valid_tokens[state] + extras
-  let valid : Set[Int] = Set::new()
+  let valid : Set[Int] = Set([])
   match table.lexer_dfa.valid_tokens.get(state) {
     Some(ts) =>
       for t in ts {
@@ -334,7 +339,7 @@ fn LexerEngine::run_dfa(
     match table.word_token {
       Some(word_tid) =>
         if tid != word_tid {
-          let text = input[pos:end_pos].to_string()
+          let text = input[pos:end_pos].to_owned()
           match table.keyword_map.get(text) {
             Some(keyword_tid) =>
               if keyword_tid == tid &&
@@ -428,7 +433,7 @@ fn LexerEngine::run_dfa(
   // 两阶段 keyword 检查：
   // 若文法声明了 word_token，仅在 best_tid == word_token 时触发关键字提升（O(1) 查表）；
   // 否则回退到线性扫描（兼容无 word 声明的旧文法，O(|valid|)）。
-  let matched_text = input[pos:best_pos].to_string()
+  let matched_text = input[pos:best_pos].to_owned()
   let mut final_tid = best_tid
   let mut is_keyword = false
   match table.word_token {

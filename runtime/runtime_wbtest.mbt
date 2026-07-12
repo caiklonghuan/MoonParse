@@ -308,9 +308,9 @@ fn replace_range(
   old_end_byte : Int,
   replacement : String,
 ) -> String {
-  old_input[0:start_byte].to_string() +
+  old_input[0:start_byte].to_owned() +
   replacement +
-  old_input[old_end_byte:old_input.length()].to_string()
+  old_input[old_end_byte:old_input.length()].to_owned()
 }
 
 ///|
@@ -425,7 +425,7 @@ fn write_named_sexp(
     buf.write_char('"')
     let text = if node.start_byte <= node.end_byte &&
       node.end_byte <= input.length() {
-      input[node.start_byte:node.end_byte].to_string()
+      input[node.start_byte:node.end_byte].to_owned()
     } else {
       ""
     }
@@ -2876,7 +2876,12 @@ struct CountingScanner {
 }
 
 ///|
-impl StatefulScanner for CountingScanner with scan(self, _input, pos, ext_tids) {
+impl StatefulScanner for CountingScanner with fn scan(
+  self,
+  _input,
+  pos,
+  ext_tids,
+) {
   self.count = self.count + 1
   if ext_tids.length() > 0 {
     Some((ext_tids[0], pos))
@@ -2886,7 +2891,7 @@ impl StatefulScanner for CountingScanner with scan(self, _input, pos, ext_tids) 
 }
 
 ///|
-impl StatefulScanner for CountingScanner with clone_scanner(self) {
+impl StatefulScanner for CountingScanner with fn clone_scanner(self) {
   ({ count: self.count } : CountingScanner) as &StatefulScanner
 }
 
@@ -2918,11 +2923,11 @@ test "9.2 ExternalScannerState adapter（无状态包装）" {
   }
   let ss = external_scanner_to_stateful(func)
   // scan 正常工作
-  assert_eq(ss.scan("hello", 0, [42]), Some((42, 1)))
-  assert_eq(ss.scan("hello", 5, [42]), None)
+  assert_true(ss.scan("hello", 0, [42]) == Some((42, 1)))
+  assert_true(ss.scan("hello", 5, [42]) == None)
   // clone 后行为一致
   let ss2 = ss.clone_scanner()
-  assert_eq(ss2.scan("hello", 2, [42]), Some((42, 3)))
+  assert_true(ss2.scan("hello", 2, [42]) == Some((42, 3)))
 }
 
 ///|
@@ -2955,7 +2960,7 @@ struct SepScanner {
 }
 
 ///|
-impl StatefulScanner for SepScanner with scan(self, input, pos, ext_tids) {
+impl StatefulScanner for SepScanner with fn scan(self, input, pos, ext_tids) {
   self.count = self.count + 1
   if pos < input.length() && input[pos] == ',' {
     let mut found = false
@@ -2976,7 +2981,7 @@ impl StatefulScanner for SepScanner with scan(self, input, pos, ext_tids) {
 }
 
 ///|
-impl StatefulScanner for SepScanner with clone_scanner(self) {
+impl StatefulScanner for SepScanner with fn clone_scanner(self) {
   ({ count: self.count, sep_id: self.sep_id } : SepScanner) as &StatefulScanner
 }
 

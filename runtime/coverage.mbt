@@ -21,8 +21,8 @@ fn GrammarCoverage::new(
   {
     production_hits: Array::make(table.productions.length(), 0),
     branch_hits: Array::make(table.productions.length(), 0),
-    rule_hits: Map::new(),
-    token_hits: Map::new(),
+    rule_hits: Map([]),
+    token_hits: Map([]),
     error_nodes: 0,
     missing_nodes: 0,
     parse_failures: 0,
@@ -100,7 +100,7 @@ fn production_label(
 ///|
 fn branch_labels(table : @tablegen.ParseTable) -> Array[String] {
   let labels : Array[String] = Array::make(table.productions.length(), "")
-  let seen : Map[String, Int] = Map::new()
+  let seen : Map[String, Int] = Map([])
   for prod in table.productions {
     let idx = match seen.get(prod.rule_name) {
       Some(n) => n

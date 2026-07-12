@@ -112,9 +112,9 @@ fn GlrEngine::new(lexer : LexerEngine, config : ParseConfig) -> GlrEngine {
     gss_nodes: [sentinel],
     active_tops: [0],
     lexer,
-    error_status: Map::new(),
+    error_status: Map([]),
     config,
-    scanner_states: Map::new(),
+    scanner_states: Map([]),
     old_tree: None,
     byte_delta: 0,
     edit_start: 0,
@@ -248,7 +248,7 @@ fn GlrEngine::run(
     // 计算所有活跃状态的合法 token 并集
     // GLR 中多条路径处于同一位置，词法器需对所有路径的合法符号取并集，
     // 确保任意路径在当前位置认为合法的 token 都能被识别。
-    let valid : Set[Int] = Set::new()
+    let valid : Set[Int] = Set([])
     for top_ref in self.active_tops {
       let state = self.gss_nodes[top_ref].state
       match table.lexer_dfa.valid_tokens.get(state) {
@@ -1224,7 +1224,7 @@ fn GlrEngine::insert_missing_and_relex(
                         let _ = self.active_tops.pop()
                       }
                       self.active_tops.push(new_ref)
-                      let new_valid : Set[Int] = Set::new()
+                      let new_valid : Set[Int] = Set([])
                       for t2 in self.active_tops {
                         let st2 = self.gss_nodes[t2].state
                         match table.lexer_dfa.valid_tokens.get(st2) {
