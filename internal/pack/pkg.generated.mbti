@@ -36,6 +36,18 @@ pub(all) struct PackSection {
   payload : Bytes
 }
 
+pub(all) struct PackSemantics {
+  string_count : Int
+  symbol_count : Int
+  parser_state_count : Int
+  production_count : Int
+  query_program_count : Int
+  query_bytecode_bytes : Int
+  scanner_program_count : Int
+  scanner_state_count : Int
+  scanner_capabilities : Int
+}
+
 pub(all) struct PackTocEntry {
   kind : Int
   flags : Int
@@ -60,11 +72,19 @@ pub(all) enum PackValidationError {
   InvalidSectionRange(Int)
   OverlappingSections(Int, Int)
   NonZeroPadding(Int)
+  InvalidSectionPayload(Int)
+  UnsupportedSectionAbi(Int, Int)
+  ResourceLimitExceeded(Int, Int)
+  MissingRelatedSection(Int, Int)
+  InconsistentSectionCount(Int, Int)
+  InvalidProgramRange(Int, Int)
+  OverlappingProgramRanges(Int, Int)
 } derive(Eq, @debug.Debug)
 
 pub(all) struct ValidatedPack {
   header : PackHeader
   sections : Array[PackTocEntry]
+  semantics : PackSemantics
 }
 
 // Type aliases

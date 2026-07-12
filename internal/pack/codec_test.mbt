@@ -29,29 +29,37 @@ fn bytes_with_crc(raw : Array[Byte]) -> Bytes {
 
 ///|
 fn structural_pack() -> Bytes {
-  let out : Array[Byte] = [0x4D, 0x50, 0x41, 0x43, 0x4B, 0x0D, 0x0A, 0x1A]
+  match encode_pack(test_sections(false)) {
+    Ok(bytes) => bytes
+    Err(error) => abort("fixture encode failed: \{to_repr(error)}")
+  }
+}
+
+///|
+fn section_payload(kind : Int) -> Bytes {
+  let out : Array[Byte] = []
   write_u16(out, 1)
-  write_u16(out, 0)
-  write_u16(out, 1)
-  write_u16(out, 0)
-  write_u32(out, 169)
-  write_u16(out, 7)
-  write_u16(out, 0)
-  write_u32(out, 32)
-  write_u32(out, 0)
-  for kind in 1..<=7 {
-    write_u16(out, kind)
-    write_u16(out, 1)
-    write_u32(out, (112 + kind * 8).reinterpret_as_uint())
-    write_u32(out, 1)
+  write_u16(out, if kind == 4 || kind == 7 { 1 } else { 0 })
+  match kind {
+    1 | 2 => write_u32(out, 0)
+    3 => {
+      write_u32(out, 0)
+      write_u32(out, 0)
+    }
+    4 => {
+      write_u32(out, 0)
+      write_u32(out, 0)
+      write_u32(out, 0)
+    }
+    5 => {
+      write_u32(out, 0)
+      write_u32(out, 0)
+    }
+    6 => ()
+    7 => write_u32(out, 0)
+    _ => abort("unsupported test section")
   }
-  while out.length() < 169 {
-    out.push(0)
-  }
-  for kind in 1..<=7 {
-    out[112 + kind * 8] = kind.to_byte()
-  }
-  bytes_with_crc(out)
+  Bytes::makei(out.length(), fn(index) { out[index] })
 }
 
 ///|
@@ -74,7 +82,7 @@ test "mpack v1 rejects bad magic and stale CRC" {
   })
   assert_true(validate_pack(bad_magic) is Err(BadMagic))
   let bad_crc = structural_pack().to_array()
-  bad_crc[168] = 0xFF
+  bad_crc[bad_crc.length() - 1] = 0xFF
   let bad_crc = Bytes::makei(bad_crc.length(), fn(index) { bad_crc[index] })
   assert_true(validate_pack(bad_crc) is Err(ChecksumMismatch))
 }
@@ -115,19 +123,11 @@ fn test_sections(reverse : Bool) -> Array[PackSection] {
   let sections : Array[PackSection] = []
   if reverse {
     for kind = 7; kind >= 1; kind = kind - 1 {
-      sections.push({
-        kind,
-        flags: 1,
-        payload: Bytes::makei(kind, fn(index) { (kind + index).to_byte() }),
-      })
+      sections.push({ kind, flags: 1, payload: section_payload(kind) })
     }
   } else {
     for kind in 1..<=7 {
-      sections.push({
-        kind,
-        flags: 1,
-        payload: Bytes::makei(kind, fn(index) { (kind + index).to_byte() }),
-      })
+      sections.push({ kind, flags: 1, payload: section_payload(kind) })
     }
   }
   sections

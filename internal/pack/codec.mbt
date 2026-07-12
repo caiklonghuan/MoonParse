@@ -16,6 +16,13 @@ pub(all) enum PackValidationError {
   InvalidSectionRange(Int)
   OverlappingSections(Int, Int)
   NonZeroPadding(Int)
+  InvalidSectionPayload(Int)
+  UnsupportedSectionAbi(Int, Int)
+  ResourceLimitExceeded(Int, Int)
+  MissingRelatedSection(Int, Int)
+  InconsistentSectionCount(Int, Int)
+  InvalidProgramRange(Int, Int)
+  OverlappingProgramRanges(Int, Int)
 } derive(Debug, Eq)
 
 ///|
@@ -41,6 +48,7 @@ pub(all) struct PackTocEntry {
 pub(all) struct ValidatedPack {
   header : PackHeader
   sections : Array[PackTocEntry]
+  semantics : PackSemantics
 }
 
 ///|
@@ -313,6 +321,10 @@ pub fn validate_pack(
       return Err(MissingSection(index + 1))
     }
   }
+  let semantics = match validate_section_semantics(bytes, sections) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
   Ok({
     header: {
       format_major: major,
@@ -324,5 +336,6 @@ pub fn validate_pack(
       payload_crc32: expected_crc,
     },
     sections,
+    semantics,
   })
 }
