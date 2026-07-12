@@ -109,3 +109,43 @@ test "mpack v1 rejects overlap nonzero padding and unknown required sections" {
     validate_pack(bytes_with_crc(unknown)) is Err(UnknownRequiredSection(11)),
   )
 }
+
+///|
+fn test_sections(reverse : Bool) -> Array[PackSection] {
+  let sections : Array[PackSection] = []
+  if reverse {
+    for kind = 7; kind >= 1; kind = kind - 1 {
+      sections.push({
+        kind,
+        flags: 1,
+        payload: Bytes::makei(kind, fn(index) { (kind + index).to_byte() }),
+      })
+    }
+  } else {
+    for kind in 1..<=7 {
+      sections.push({
+        kind,
+        flags: 1,
+        payload: Bytes::makei(kind, fn(index) { (kind + index).to_byte() }),
+      })
+    }
+  }
+  sections
+}
+
+///|
+test "mpack v1 encoder is canonical across input section order" {
+  let first = match encode_pack(test_sections(false)) {
+    Ok(bytes) => bytes
+    Err(error) => return fail("encode failed: \{to_repr(error)}")
+  }
+  let second = match encode_pack(test_sections(true)) {
+    Ok(bytes) => bytes
+    Err(error) => return fail("encode failed: \{to_repr(error)}")
+  }
+  assert_true(first == second)
+  match validate_pack(first) {
+    Ok(pack) => assert_eq(pack.sections.length(), 7)
+    Err(error) => fail("round trip failed: \{to_repr(error)}")
+  }
+}

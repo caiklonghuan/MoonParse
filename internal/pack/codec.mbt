@@ -44,6 +44,132 @@ pub(all) struct ValidatedPack {
 }
 
 ///|
+pub(all) struct PackSection {
+  kind : Int
+  flags : Int
+  payload : Bytes
+}
+
+///|
+fn encode_write_u16(out : Array[Byte], value : Int) -> Unit {
+  out.push((value & 0xFF).to_byte())
+  out.push(((value >> 8) & 0xFF).to_byte())
+}
+
+///|
+fn encode_write_u32(out : Array[Byte], value : UInt) -> Unit {
+  out.push((value & 0xFF).to_byte())
+  out.push(((value >> 8) & 0xFF).to_byte())
+  out.push(((value >> 16) & 0xFF).to_byte())
+  out.push(((value >> 24) & 0xFF).to_byte())
+}
+
+///|
+fn encode_patch_u32(out : Array[Byte], offset : Int, value : UInt) -> Unit {
+  out[offset] = (value & 0xFF).to_byte()
+  out[offset + 1] = ((value >> 8) & 0xFF).to_byte()
+  out[offset + 2] = ((value >> 16) & 0xFF).to_byte()
+  out[offset + 3] = ((value >> 24) & 0xFF).to_byte()
+}
+
+///|
+fn align_eight(value : Int) -> Int {
+  (value + 7) / 8 * 8
+}
+
+///|
+fn canonical_sections(
+  input : Array[PackSection],
+) -> Result[Array[PackSection], PackValidationError] {
+  if input.length() > 64 {
+    return Err(TooManySections(input.length()))
+  }
+  let result = input.copy()
+  for index in 1..<result.length() {
+    let value = result[index]
+    let mut cursor = index
+    while cursor > 0 && result[cursor - 1].kind > value.kind {
+      result[cursor] = result[cursor - 1]
+      cursor = cursor - 1
+    }
+    result[cursor] = value
+  }
+  let mut previous = -1
+  for section in result {
+    if section.kind == previous {
+      return Err(DuplicateSection(section.kind))
+    }
+    if section.kind <= 0 || (section.flags != 0 && section.flags != 1) {
+      return Err(InvalidSectionFlags(section.flags))
+    }
+    previous = section.kind
+  }
+  Ok(result)
+}
+
+///|
+pub fn encode_pack(
+  input : Array[PackSection],
+) -> Result[Bytes, PackValidationError] {
+  let sections = match canonical_sections(input) {
+    Ok(value) => value
+    Err(error) => return Err(error)
+  }
+  let required = Array::make(7, false)
+  for section in sections {
+    if section.kind >= 1 && section.kind <= 7 {
+      required[section.kind - 1] = true
+    }
+  }
+  for index in 0..<7 {
+    if !required[index] {
+      return Err(MissingSection(index + 1))
+    }
+  }
+  let offsets : Array[Int] = []
+  let mut cursor = 32 + sections.length() * 12
+  for section in sections {
+    cursor = align_eight(cursor)
+    if section.payload.length() > 67_108_864 - cursor {
+      return Err(InvalidFileLength(cursor + section.payload.length()))
+    }
+    offsets.push(cursor)
+    cursor = cursor + section.payload.length()
+  }
+  let out : Array[Byte] = [0x4D, 0x50, 0x41, 0x43, 0x4B, 0x0D, 0x0A, 0x1A]
+  encode_write_u16(out, 1)
+  encode_write_u16(out, 0)
+  encode_write_u16(out, 1)
+  encode_write_u16(out, 0)
+  encode_write_u32(out, cursor.reinterpret_as_uint())
+  encode_write_u16(out, sections.length())
+  encode_write_u16(out, 0)
+  encode_write_u32(out, 32)
+  encode_write_u32(out, 0)
+  for index, section in sections {
+    encode_write_u16(out, section.kind)
+    encode_write_u16(out, section.flags)
+    encode_write_u32(out, offsets[index].reinterpret_as_uint())
+    encode_write_u32(out, section.payload.length().reinterpret_as_uint())
+  }
+  for index, section in sections {
+    while out.length() < offsets[index] {
+      out.push(0)
+    }
+    for byte in section.payload {
+      out.push(byte)
+    }
+  }
+  let provisional = Bytes::makei(out.length(), fn(index) { out[index] })
+  encode_patch_u32(out, 28, crc32_iso_hdlc(provisional[32:]))
+  let encoded = Bytes::makei(out.length(), fn(index) { out[index] })
+  match validate_pack(encoded) {
+    Ok(_) => Ok(encoded)
+    Err(error) => Err(error)
+  }
+}
+
+///|
 fn read_u16_le(bytes : Bytes, offset : Int) -> Int {
   bytes[offset].to_int() | (bytes[offset + 1].to_int() << 8)
 }

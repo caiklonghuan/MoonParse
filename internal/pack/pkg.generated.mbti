@@ -9,6 +9,8 @@ import {
 // Values
 pub fn crc32_iso_hdlc(BytesView) -> UInt
 
+pub fn encode_pack(Array[PackSection]) -> Result[Bytes, PackValidationError]
+
 pub fn validate_pack(Bytes) -> Result[ValidatedPack, PackValidationError]
 
 // Errors
@@ -26,6 +28,12 @@ pub(all) struct PackHeader {
 
 pub(all) struct PackModelLink {
   format : @model.PackFormatVersion
+}
+
+pub(all) struct PackSection {
+  kind : Int
+  flags : Int
+  payload : Bytes
 }
 
 pub(all) struct PackTocEntry {
