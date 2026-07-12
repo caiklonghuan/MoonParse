@@ -291,6 +291,18 @@ pub fn GreenArena::element_count(self : GreenArena) -> Int {
 }
 
 ///|
+fn GreenArena::snapshot_copy(self : GreenArena) -> GreenArena {
+  let records = self.records.map(fn(record) {
+    let element = match record.element {
+      Token(token) => Token(token)
+      Node(node) => Node({ ..node, children: node.children.copy() })
+    }
+    { element, canonical_key: record.canonical_key }
+  })
+  { records, buckets: self.buckets.map(fn(bucket) { bucket.copy() }) }
+}
+
+///|
 fn GreenArena::append_text(
   self : GreenArena,
   id : GreenId,

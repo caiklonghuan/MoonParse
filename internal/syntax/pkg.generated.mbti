@@ -89,6 +89,29 @@ pub(all) struct GreenToken {
   flags : GreenFlags
 } derive(Eq, @debug.Debug)
 
+pub struct RedNode {
+  tree : SyntaxTree
+  green : GreenId
+  start_byte : Int
+  path : Array[Int]
+  field_id : Int?
+}
+pub fn RedNode::byte_width(Self) -> Int
+pub fn RedNode::child(Self, Int) -> Self?
+pub fn RedNode::child_by_field_id(Self, Int) -> Self?
+pub fn RedNode::child_count(Self) -> Int
+pub fn RedNode::end_byte(Self) -> Int
+pub fn RedNode::field_id(Self) -> Int?
+pub fn RedNode::flags(Self) -> GreenFlags?
+pub fn RedNode::green_id(Self) -> GreenId
+pub fn RedNode::kind_id(Self) -> Int
+pub fn RedNode::parent(Self) -> Self?
+pub fn RedNode::path(Self) -> Array[Int]
+pub fn RedNode::production_id(Self) -> Int?
+pub fn RedNode::span(Self) -> SyntaxSpan?
+pub fn RedNode::start_byte(Self) -> Int
+pub fn RedNode::text(Self) -> String
+
 pub(all) struct SourceIndex {
   source : String
   bytes : Bytes
@@ -116,6 +139,32 @@ pub(all) struct SourceTextEdit {
 pub(all) struct SyntaxModelLink {
   format : @model.PackFormatVersion
 }
+
+pub(all) struct SyntaxSpan {
+  start_byte : Int
+  end_byte : Int
+  start_point : SourcePoint
+  end_point : SourcePoint
+} derive(Eq, @debug.Debug)
+
+pub struct SyntaxTree {
+  source : SourceIndex
+  arena : GreenArena
+  root : GreenId
+}
+pub fn SyntaxTree::new(String, GreenArena, GreenId) -> Self?
+pub fn SyntaxTree::root(Self) -> RedNode
+pub fn SyntaxTree::source_length(Self) -> Int
+
+pub struct TreeCursor {
+  tree : SyntaxTree
+  path : Array[Int]
+}
+pub fn TreeCursor::goto_first_child(Self) -> Bool
+pub fn TreeCursor::goto_next_sibling(Self) -> Bool
+pub fn TreeCursor::goto_parent(Self) -> Bool
+pub fn TreeCursor::new(SyntaxTree) -> Self
+pub fn TreeCursor::node(Self) -> RedNode
 
 // Type aliases
 
