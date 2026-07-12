@@ -245,7 +245,7 @@ pub fn cursor_node_text(cursor_id : Int) -> String {
           let node = cursor.current
           if node.start_byte <= node.end_byte &&
             node.end_byte <= te.input.length() {
-            te.input[node.start_byte:node.end_byte].to_string()
+            te.input[node.start_byte:node.end_byte].to_owned()
           } else {
             ""
           }

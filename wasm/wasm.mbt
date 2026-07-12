@@ -55,7 +55,7 @@ fn write_sexp(
     buf.write_char('"')
     let text = if node.start_byte <= node.end_byte &&
       node.end_byte <= input.length() {
-      input[node.start_byte:node.end_byte].to_string()
+      input[node.start_byte:node.end_byte].to_owned()
     } else {
       ""
     }
@@ -105,7 +105,7 @@ fn write_tree_text(
   if node.children.is_empty() {
     let text = if node.start_byte < node.end_byte &&
       node.end_byte <= input.length() {
-      input[node.start_byte:node.end_byte].to_string()
+      input[node.start_byte:node.end_byte].to_owned()
     } else {
       ""
     }
@@ -130,7 +130,7 @@ fn write_tree_text(
 ///|
 fn pretty_node_text(node : @runtime.CstNode, input : String) -> String {
   if node.start_byte < node.end_byte && node.end_byte <= input.length() {
-    input[node.start_byte:node.end_byte].to_string()
+    input[node.start_byte:node.end_byte].to_owned()
   } else {
     ""
   }

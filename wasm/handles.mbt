@@ -18,7 +18,7 @@ priv struct Registry[T] {
 
 ///|
 fn[T] Registry::new() -> Registry[T] {
-  { next_id: 1, entries: Map::new() }
+  { next_id: 1, entries: Map([]) }
 }
 
 ///|

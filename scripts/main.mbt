@@ -50,7 +50,7 @@ fn help_for(subcommand : String?) -> String {
 ///|
 fn main {
   let all_args = @env.args()
-  let argv = if all_args.is_empty() { [] } else { all_args[1:].to_array() }
+  let argv = if all_args.is_empty() { [] } else { all_args[1:].to_owned() }
 
   let code = if argv.is_empty() {
     println(global_usage())
@@ -70,13 +70,13 @@ fn main {
         println(global_usage())
         0
       }
-      "fuzz-json" => run_fuzz_json(argv[1:].to_array())
-      "mutate-input" => run_mutate_input(argv[1:].to_array())
-      "fuzz-incremental" => run_fuzz_incremental(argv[1:].to_array())
-      "bench-parse" => run_bench_parse(argv[1:].to_array())
-      "bench-incremental" => run_bench_incremental(argv[1:].to_array())
-      "bench-serialize" => run_bench_serialize(argv[1:].to_array())
-      "bench-lexer" => run_bench_lexer(argv[1:].to_array())
+      "fuzz-json" => run_fuzz_json(argv[1:].to_owned())
+      "mutate-input" => run_mutate_input(argv[1:].to_owned())
+      "fuzz-incremental" => run_fuzz_incremental(argv[1:].to_owned())
+      "bench-parse" => run_bench_parse(argv[1:].to_owned())
+      "bench-incremental" => run_bench_incremental(argv[1:].to_owned())
+      "bench-serialize" => run_bench_serialize(argv[1:].to_owned())
+      "bench-lexer" => run_bench_lexer(argv[1:].to_owned())
       other => {
         println("unknown subcommand '\{other}'")
         println("")

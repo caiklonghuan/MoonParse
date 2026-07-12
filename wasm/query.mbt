@@ -27,7 +27,7 @@ fn capture_to_json(c : @query.CaptureResult, tree : TreeEntry) -> String {
 
   let text = if node.start_byte <= node.end_byte &&
     node.end_byte <= tree.input.length() {
-    tree.input[node.start_byte:node.end_byte].to_string()
+    tree.input[node.start_byte:node.end_byte].to_owned()
   } else {
     ""
   }

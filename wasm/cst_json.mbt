@@ -113,7 +113,7 @@ fn write_node(
     buf.write_char(',')
     let text = if node.start_byte <= node.end_byte &&
       node.end_byte <= input.length() {
-      input[node.start_byte:node.end_byte].to_string()
+      input[node.start_byte:node.end_byte].to_owned()
     } else {
       ""
     }

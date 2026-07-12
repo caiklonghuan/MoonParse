@@ -1,12 +1,12 @@
 import {
   "caiklonghuan/MoonParse/grammar",
-  "caiklonghuan/MoonParse/grammars" @grammars,
-  "caiklonghuan/MoonParse/languagepack" @languagepack,
-  "caiklonghuan/MoonParse/query" @query,
+  "caiklonghuan/MoonParse/grammars",
+  "caiklonghuan/MoonParse/languagepack",
+  "caiklonghuan/MoonParse/query",
   "caiklonghuan/MoonParse/runtime",
   "caiklonghuan/MoonParse/tablegen",
-  "moonbitlang/core/json" @json,
-  "moonbitlang/core/encoding/utf8" @utf8,
+  "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
 }
 
 options(

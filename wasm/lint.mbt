@@ -4,7 +4,7 @@ suberror LintWireError {
 } derive(Debug)
 
 ///|
-impl Show for LintWireError with output(self, logger) {
+impl Show for LintWireError with fn output(self, logger) {
   match self {
     InvalidLintOptions(message) => logger.write_string(message)
   }

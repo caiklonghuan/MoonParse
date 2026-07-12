@@ -4,7 +4,7 @@ suberror PackWireError {
 } derive(Debug)
 
 ///|
-impl Show for PackWireError with output(self, logger) {
+impl Show for PackWireError with fn output(self, logger) {
   match self {
     InvalidWire(message) => logger.write_string(message)
   }
