@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "hash_algorithm": "sha256",
+  "entries": [
+    {
+      "id": "moonbit-valid-baseline",
+      "path": "languages/moonbit/corpus/valid.txt",
+      "sha256": "3ad3eb0006aafe9d6a360da583a7304e071f249ccf7dc5e12edc121873d9910b",
+      "cases": 8,
+      "origin": "repository-authored minimal syntax fixtures",
+      "license": "project Apache-2.0",
+      "disposition": "production-candidate; promotion requires M3 corpus expansion and clean-rate gate"
+    },
+    {
+      "id": "json-valid-fixtures",
+      "path": "languages/json/corpus/valid.txt",
+      "sha256": "c077b6d8677b1c878997c5b9592be921ba72076b9d19d8c105f344c6997ebf14",
+      "cases": 10,
+      "origin": "repository-authored minimal syntax fixtures",
+      "license": "project Apache-2.0",
+      "disposition": "experimental oracle fixture"
+    },
+    {
+      "id": "python-functions-fixture",
+      "path": "languages/python/corpus/functions.txt",
+      "sha256": "4ca10e9a29fecf139704d13607b7a933f8f2af5d19991669ccdcca0d87f8bea0",
+      "cases": 2,
+      "origin": "repository-authored minimal syntax fixtures",
+      "license": "project Apache-2.0",
+      "disposition": "experimental only"
+    },
+    {
+      "id": "c-declarations-fixture",
+      "path": "grammars/corpus/c/declarations.txt",
+      "sha256": "dde0777a4056676404d0bf3c12c81a7af4d3dfc83fffe9260c0fc6840ccbd232",
+      "cases": 2,
+      "origin": "repository-authored minimal syntax fixtures",
+      "license": "project Apache-2.0",
+      "disposition": "experimental only"
+    },
+    {
+      "id": "json5-valid-fixtures",
+      "path": "grammars/corpus/json5/valid.txt",
+      "sha256": "a099fb816b92644198b6cdf061e9ff2c67f7579b2dd7240826e294f570f0955c",
+      "cases": 10,
+      "origin": "repository-authored minimal syntax fixtures",
+      "license": "project Apache-2.0",
+      "disposition": "experimental only"
+    }
+  ],
+  "admission_rule": "Any new corpus input must add upstream_url when externally sourced, plus source_hash, license and release disposition before it can participate in a production gate."
+}
