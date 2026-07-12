@@ -8,7 +8,7 @@
 fn build_shift_prec_map(
   grammar : AugmentedGrammar,
 ) -> Map[TerminalId, (Int, @grammar.PrecKind?)] {
-  let m : Map[TerminalId, (Int, @grammar.PrecKind?)] = Map::new()
+  let m : Map[TerminalId, (Int, @grammar.PrecKind?)] = Map([])
   // 产生式内联 prec：记录优先级，结合性留 None（来自产生式自身，不代表终结符 assoc）
   for prod in grammar.productions {
     match prod.prec {
@@ -305,7 +305,7 @@ pub fn resolve_conflicts(
   grammar : AugmentedGrammar,
 ) -> (ParseTable, Array[ConflictReport]) {
   let reports : Array[ConflictReport] = []
-  let new_action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
+  let new_action : Map[(StateId, TerminalId), Array[Action]] = Map([])
   // 预构建 shift 优先级查找表（O(P×B) 一次，后续每格 O(1)）
   let shift_map = build_shift_prec_map(grammar)
 

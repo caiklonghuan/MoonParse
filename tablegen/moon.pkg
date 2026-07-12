@@ -1,4 +1,4 @@
 import {
-  "caiklonghuan/MoonParse/grammar" @grammar,
+  "caiklonghuan/MoonParse/grammar",
   "moonbitlang/core/json",
 }

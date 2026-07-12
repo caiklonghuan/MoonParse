@@ -252,7 +252,7 @@ test "serialize/deserialize preserves terminal_names" {
       assert_eq(t2.terminal_names.length(), table.terminal_names.length())
       // 同一 TerminalId 名称一致
       for tid, name in table.terminal_names {
-        assert_eq(t2.terminal_names.get(tid), Some(name))
+        assert_true(t2.terminal_names.get(tid) == Some(name))
       }
     }
   }
@@ -437,7 +437,7 @@ test "serialize_table v4 roundtrip: goto table entries" {
       Ok(t2) => {
         assert_eq(t2.goto_table.length(), table.goto_table.length())
         for key, target in table.goto_table {
-          assert_eq(t2.goto_table.get(key), Some(target))
+          assert_true(t2.goto_table.get(key) == Some(target))
         }
       }
     }
@@ -535,7 +535,7 @@ test "serialize/deserialize preserves keyword_map" {
     Ok(t2) => {
       assert_eq(t2.keyword_map.length(), table.keyword_map.length())
       for text, tid in table.keyword_map {
-        assert_eq(t2.keyword_map.get(text), Some(tid))
+        assert_true(t2.keyword_map.get(text) == Some(tid))
       }
     }
   }
@@ -545,11 +545,11 @@ test "serialize/deserialize preserves keyword_map" {
 test "serialize/deserialize: word_token None preserved" {
   // 无 word 声明的文法：word_token 应为 None，往返后仍为 None
   let (table, _) = gen_ok("start s\nrule s: \"a\"")
-  assert_eq(table.word_token, None)
+  assert_true(table.word_token == None)
   let b = serialize_table(table)
   match deserialize_table(b) {
     Err(msg) => assert_eq(msg, "")
-    Ok(t2) => assert_eq(t2.word_token, None)
+    Ok(t2) => assert_true(t2.word_token == None)
   }
 }
 
@@ -586,7 +586,7 @@ test "serialize/deserialize preserves production prec and assoc" {
       }
     }
   }
-  assert_eq(orig_prec, Some(2))
+  assert_true(orig_prec == Some(2))
   assert_eq(orig_has_left, true)
   let b = serialize_table(table)
   match deserialize_table(b) {
@@ -596,7 +596,7 @@ test "serialize/deserialize preserves production prec and assoc" {
       for prod in t2.productions {
         if prod.rule_name == "e" && prod.body.length() == 3 {
           found = true
-          assert_eq(prod.prec, orig_prec)
+          assert_true(prod.prec == orig_prec)
           assert_eq(
             match prod.assoc {
               Some(@grammar.PrecKind::Left) => true
@@ -644,7 +644,7 @@ test "serialize_table v4 preserves terminal metadata reserved sets and alias vis
     Ok(value) => value
     Err(message) => abort(message)
   }
-  assert_eq(restored.reserved_words["global"], ["if", "else"])
+  assert_true(restored.reserved_words["global"] == ["if", "else"])
   let identifier_tid = restored.word_token.unwrap_or(-1)
   // This grammar has no word declaration; locate the metadata-bearing token.
   let mut found = false
@@ -653,7 +653,7 @@ test "serialize_table v4 preserves terminal metadata reserved sets and alias vis
       found = true
       assert_true(metadata.is_immediate)
       assert_eq(metadata.declaration_order, 0)
-      assert_eq(metadata.reserved_set, Some("global"))
+      assert_true(metadata.reserved_set == Some("global"))
       assert_true(metadata.specificity == @grammar.TokenSpecificity::Regex)
     }
   }
@@ -663,7 +663,7 @@ test "serialize_table v4 preserves terminal metadata reserved sets and alias vis
   for production in restored.productions {
     if production.alias_name == Some("name") {
       anonymous_alias = true
-      assert_eq(production.alias_is_named, Some(false))
+      assert_true(production.alias_is_named == Some(false))
     }
   }
   assert_true(anonymous_alias)
@@ -671,7 +671,7 @@ test "serialize_table v4 preserves terminal metadata reserved sets and alias vis
     Ok(value) => value
     Err(message) => abort(message)
   }
-  assert_eq(json_restored.reserved_words["global"], ["if", "else"])
+  assert_true(json_restored.reserved_words["global"] == ["if", "else"])
 }
 
 ///|

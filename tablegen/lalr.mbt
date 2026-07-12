@@ -49,7 +49,7 @@ fn compute_lalr_lookaheads(
   let n = item_sets.length()
 
   // (1) 构建反向 goto：(target_state, sym) → [src_states]
-  let rev_goto : Map[(StateId, Symbol), Array[StateId]] = Map::new()
+  let rev_goto : Map[(StateId, Symbol), Array[StateId]] = Map([])
   for key, tgt in goto_map {
     let (src, sym) = key
     let rk = (tgt, sym)
@@ -60,14 +60,14 @@ fn compute_lalr_lookaheads(
   }
 
   // (2) 初始化所有规约项目的前瞻集合为空
-  let la : Map[(StateId, ProductionId), Set[TerminalId]] = Map::new()
+  let la : Map[(StateId, ProductionId), Set[TerminalId]] = Map([])
   for i in 0..<n {
     for item in item_sets[i] {
       let prod = grammar.productions[item.prod]
       if item.dot == prod.body.length() {
         let key = (i, item.prod)
         if la.get(key) == None {
-          la.set(key, Set::new())
+          la.set(key, Set([]))
         }
       }
     }
@@ -75,7 +75,8 @@ fn compute_lalr_lookaheads(
 
   // (3) 传播边：prop[(src_state, src_prod)] = [(dst_state, dst_prod)]
   //     含义：LA(dst) ⊇ LA(src)
-  let prop : Map[(StateId, ProductionId), Array[(StateId, ProductionId)]] = Map::new()
+  let prop : Map[(StateId, ProductionId), Array[(StateId, ProductionId)]] = Map([],
+  )
 
   // (4) 对每个规约项目 [A→α•] in state i 建立自发前瞻与传播边
   for i in 0..<n {
@@ -122,7 +123,7 @@ fn compute_lalr_lookaheads(
               let fg = first_seq(grammar, gamma_syms)
               let dst_set = match la.get((i, prod.id)) {
                 None => {
-                  let s : Set[TerminalId] = Set::new()
+                  let s : Set[TerminalId] = Set([])
                   la.set((i, prod.id), s)
                   s
                 }
@@ -190,7 +191,7 @@ fn compute_lalr_lookaheads(
           for dst_key in dsts {
             let dst_set = match la.get(dst_key) {
               None => {
-                let s : Set[TerminalId] = Set::new()
+                let s : Set[TerminalId] = Set([])
                 la.set(dst_key, s)
                 s
               }
@@ -220,8 +221,8 @@ pub fn build_lalr_table(
   item_sets : Array[Set[LRItem]],
   goto_map : Map[(StateId, Symbol), StateId],
 ) -> ParseTable {
-  let action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
-  let goto_table : Map[(StateId, NonTerminalId), StateId] = Map::new()
+  let action : Map[(StateId, TerminalId), Array[Action]] = Map([])
+  let goto_table : Map[(StateId, NonTerminalId), StateId] = Map([])
 
   // Step 1：从 goto_map 填充 Shift 与 goto
   for key, target in goto_map {
@@ -251,7 +252,7 @@ pub fn build_lalr_table(
           // 普通产生式 — LALR(1) 精确前瞻（经前瞻约束过滤）
           let la = match lalr_la.get((state, item.prod)) {
             Some(s) => s
-            None => Set::new()
+            None => Set([])
           }
           for t in la {
             let ok = match prod.lookahead {
@@ -322,7 +323,7 @@ pub fn build_lalr_table(
   }
 
   // Step 4：桩 LexerDfa（Phase 1 不生成词法 DFA）
-  let stub_dfa : LexerDfa = { states: [], start: 0, valid_tokens: Map::new() }
+  let stub_dfa : LexerDfa = { states: [], start: 0, valid_tokens: Map([]) }
 
   {
     states: item_sets.length(),
@@ -334,10 +335,10 @@ pub fn build_lalr_table(
     terminal_patterns: grammar.terminal_patterns,
     terminal_metadata: grammar.terminal_metadata,
     reserved_words: grammar.reserved_words,
-    terminal_names: Map::new(), // 由 generate_parse_table() 在 augment 后填充
+    terminal_names: Map([]), // 由 generate_parse_table() 在 augment 后填充
     extras: [], // 由 generate_parse_table() 从 aug.extras 填充
     external_token_ids: [], // 由 generate_parse_table() 从 aug.external_ids 填充
     word_token: None, // 由 generate_parse_table() 从 aug.word_token 填充
-    keyword_map: Map::new(), // 由 generate_parse_table() 构建
+    keyword_map: Map([]), // 由 generate_parse_table() 构建
   }
 }

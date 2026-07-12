@@ -22,7 +22,7 @@ pub fn generate_parse_table(
   let reports = enrich_conflict_reports(raw_reports, item_sets, goto_map)
   let real_dfa = build_lexer_dfa(aug, resolved_table)
   // 从 aug.terminals（名称→ID）反转得到 terminal_names（ID→名称）
-  let terminal_names : Map[TerminalId, String] = Map::new()
+  let terminal_names : Map[TerminalId, String] = Map([])
   for name, tid in aug.terminals {
     match terminal_names.get(tid) {
       Some(old) if !is_internal_terminal_name(old) &&
@@ -31,7 +31,7 @@ pub fn generate_parse_table(
     }
   }
   // 构建 keyword_map：所有 Literal 终结符的文本 → TerminalId 映射（O(1) 关键字查表）
-  let keyword_map : Map[String, TerminalId] = Map::new()
+  let keyword_map : Map[String, TerminalId] = Map([])
   for tid, def in aug.terminal_patterns {
     match def {
       TerminalDef::Literal(s) => keyword_map.set(s, tid)

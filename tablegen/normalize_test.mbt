@@ -245,7 +245,7 @@ test "augment_grammar / 终结符注册正确" {
     let ag = augment_grammar(g)
     if !has_terminal_keys(ag, case.expected_terminals) {
       fail(
-        "[\{case.name}] 缺少预期终结符，期望: \{case.expected_terminals}",
+        "[\{case.name}] 缺少预期终结符，期望: \{to_repr(case.expected_terminals)}",
       )
     }
   }
@@ -392,17 +392,21 @@ test "augment_grammar / TerminalDef 类型正确" {
   let ag = augment_grammar(g)
   match ag.terminals.get("lit:lit") {
     Some(id) =>
-      assert_eq(ag.terminal_patterns.get(id), Some(TerminalDef::Literal("lit")))
+      assert_true(
+        ag.terminal_patterns.get(id) == Some(TerminalDef::Literal("lit")),
+      )
     None => fail("缺少 Literal terminal")
   }
   match ag.terminals.get("re:re+") {
     Some(id) =>
-      assert_eq(ag.terminal_patterns.get(id), Some(TerminalDef::Regex("re+")))
+      assert_true(
+        ag.terminal_patterns.get(id) == Some(TerminalDef::Regex("re+")),
+      )
     None => fail("缺少 Regex terminal")
   }
   match ag.terminals.get("\u00b7") {
     Some(id) =>
-      assert_eq(ag.terminal_patterns.get(id), Some(TerminalDef::AnyChar))
+      assert_true(ag.terminal_patterns.get(id) == Some(TerminalDef::AnyChar))
     None => fail("缺少 AnyChar terminal")
   }
 }
@@ -419,7 +423,7 @@ test "augment_grammar / extras 透传到 AugmentedGrammar" {
   assert_eq(ag.extras.length(), 1)
   // extras terminal 应被注册到 terminal_patterns
   let tid = ag.extras[0]
-  assert_eq(ag.terminal_patterns.get(tid), Some(TerminalDef::Regex("\\s+")))
+  assert_true(ag.terminal_patterns.get(tid) == Some(TerminalDef::Regex("\\s+")))
 }
 
 ///|

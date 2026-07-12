@@ -31,15 +31,15 @@ fn NormCtx::new() -> NormCtx {
     nt_next: 0,
     prod_next: 0,
     helper_next: 0,
-    terminals: Map::new(),
-    term_patterns: Map::new(),
-    term_metadata: Map::new(),
-    nonterminals: Map::new(),
+    terminals: Map([]),
+    term_patterns: Map([]),
+    term_metadata: Map([]),
+    nonterminals: Map([]),
     nt_metas: [],
     productions: [],
-    template_rules: Map::new(),
-    rule_app_cache: Map::new(),
-    inline_patterns: Map::new(),
+    template_rules: Map([]),
+    rule_app_cache: Map([]),
+    inline_patterns: Map([]),
   }
 }
 
@@ -816,8 +816,8 @@ pub fn augment_grammar(grammar : @grammar.Grammar) -> AugmentedGrammar {
   }
 
   // 从 grammar.precedences 构建 prec_table，并补标产生式的 prec/assoc
-  let prec_table : Map[TerminalId, (Int, @grammar.PrecKind)] = Map::new()
-  let nt_prec_map : Map[NonTerminalId, (Int, @grammar.PrecKind)] = Map::new()
+  let prec_table : Map[TerminalId, (Int, @grammar.PrecKind)] = Map([])
+  let nt_prec_map : Map[NonTerminalId, (Int, @grammar.PrecKind)] = Map([])
   for pd in grammar.precedences {
     for rule_name in pd.rules {
       match ctx.nonterminals.get(rule_name) {

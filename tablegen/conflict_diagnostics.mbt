@@ -75,7 +75,7 @@ fn build_conflict_predecessors(
   if state_count <= 0 {
     return predecessors
   }
-  let adjacency : Map[StateId, Array[ConflictStatePathStep]] = Map::new()
+  let adjacency : Map[StateId, Array[ConflictStatePathStep]] = Map([])
   for key, target in goto_map {
     let (source, symbol) = key
     if source >= 0 &&

@@ -65,11 +65,11 @@ test "Literal 精确接受且拒绝前缀/超长/无关词" {
   let (aug, table, _) = build_resolved("start s\nrule s: \"if\"")
   let dfa = build_lexer_dfa(aug, table)
   let tid = term_id(aug, "lit:if")
-  assert_eq(dfa_run(dfa, "if"), Some(tid))
-  assert_eq(dfa_run(dfa, ""), None) // 空串：start 状态不接受
-  assert_eq(dfa_run(dfa, "i"), None) // 前缀：接受状态在第 2 跳后
-  assert_eq(dfa_run(dfa, "iff"), None) // 超长：接受后无 transition
-  assert_eq(dfa_run(dfa, "hello"), None) // 无关词
+  assert_true(dfa_run(dfa, "if") == Some(tid))
+  assert_true(dfa_run(dfa, "") == None) // 空串：start 状态不接受
+  assert_true(dfa_run(dfa, "i") == None) // 前缀：接受状态在第 2 跳后
+  assert_true(dfa_run(dfa, "iff") == None) // 超长：接受后无 transition
+  assert_true(dfa_run(dfa, "hello") == None) // 无关词
 }
 
 ///|
@@ -79,10 +79,10 @@ test "多 Literal 终结符各自独立接受" {
   let id_if = term_id(aug, "lit:if")
   let id_else = term_id(aug, "lit:else")
   assert_true(id_if != id_else)
-  assert_eq(dfa_run(dfa, "if"), Some(id_if))
-  assert_eq(dfa_run(dfa, "else"), Some(id_else))
-  assert_eq(dfa_run(dfa, "elsif"), None)
-  assert_eq(dfa_run(dfa, ""), None)
+  assert_true(dfa_run(dfa, "if") == Some(id_if))
+  assert_true(dfa_run(dfa, "else") == Some(id_else))
+  assert_true(dfa_run(dfa, "elsif") == None)
+  assert_true(dfa_run(dfa, "") == None)
 }
 
 // nfa_from_any
@@ -93,11 +93,11 @@ test "AnyChar 接受任意单字符，拒绝空串和多字符" {
   let (aug, table, _) = build_resolved("start s\nrule s: .")
   let dfa = build_lexer_dfa(aug, table)
   let tid = term_id(aug, "\u00b7")
-  assert_eq(dfa_run(dfa, "a"), Some(tid))
-  assert_eq(dfa_run(dfa, "Z"), Some(tid))
-  assert_eq(dfa_run(dfa, "0"), Some(tid))
-  assert_eq(dfa_run(dfa, ""), None) // 空串不接受
-  assert_eq(dfa_run(dfa, "ab"), None) // 接受一字符后无 transition
+  assert_true(dfa_run(dfa, "a") == Some(tid))
+  assert_true(dfa_run(dfa, "Z") == Some(tid))
+  assert_true(dfa_run(dfa, "0") == Some(tid))
+  assert_true(dfa_run(dfa, "") == None) // 空串不接受
+  assert_true(dfa_run(dfa, "ab") == None) // 接受一字符后无 transition
 }
 
 // parse_char_class_trans
@@ -107,12 +107,12 @@ test "Regex 字符类 [0-9]+ 接受数字序列" {
   let (aug, table, _) = build_resolved("start s\nrule s: /[0-9]+/")
   let dfa = build_lexer_dfa(aug, table)
   let tid = term_id(aug, "re:[0-9]+")
-  assert_eq(dfa_run(dfa, "0"), Some(tid))
-  assert_eq(dfa_run(dfa, "42"), Some(tid))
-  assert_eq(dfa_run(dfa, "999"), Some(tid))
-  assert_eq(dfa_run(dfa, ""), None)
-  assert_eq(dfa_run(dfa, "abc"), None)
-  assert_eq(dfa_run(dfa, "1a"), None) // 数字后跟非数字，DFA 无 transition
+  assert_true(dfa_run(dfa, "0") == Some(tid))
+  assert_true(dfa_run(dfa, "42") == Some(tid))
+  assert_true(dfa_run(dfa, "999") == Some(tid))
+  assert_true(dfa_run(dfa, "") == None)
+  assert_true(dfa_run(dfa, "abc") == None)
+  assert_true(dfa_run(dfa, "1a") == None) // 数字后跟非数字，DFA 无 transition
 }
 
 ///|
@@ -120,9 +120,9 @@ test "Regex 字符类 [a-z]+ 接受小写字母序列" {
   let dfa = lexer_for("start s\nrule s: /[a-z]+/")
   assert_true(dfa_run(dfa, "hello") is Some(_))
   assert_true(dfa_run(dfa, "x") is Some(_))
-  assert_eq(dfa_run(dfa, ""), None)
-  assert_eq(dfa_run(dfa, "Hello"), None) // 'H' 不在字母表中
-  assert_eq(dfa_run(dfa, "0"), None)
+  assert_true(dfa_run(dfa, "") == None)
+  assert_true(dfa_run(dfa, "Hello") == None) // 'H' 不在字母表中
+  assert_true(dfa_run(dfa, "0") == None)
 }
 
 // parse_escape_trans
@@ -133,7 +133,7 @@ test "Regex \\f 转义匹配 form feed 而非字面 f" {
   let dfa = lexer_for("start s\nrule s: /[\\f]+/")
   let ff = String::make(1, (0x0C).unsafe_to_char())
   assert_true(dfa_run(dfa, ff) is Some(_))
-  assert_eq(dfa_run(dfa, "f"), None)
+  assert_true(dfa_run(dfa, "f") == None)
 }
 
 ///|
@@ -142,10 +142,10 @@ test "Regex 转义 \\d+ 等同 [0-9]+" {
   let (aug, table, _) = build_resolved("start s\nrule s: /\\d+/")
   let dfa = build_lexer_dfa(aug, table)
   let tid = term_id(aug, "re:\\d+")
-  assert_eq(dfa_run(dfa, "0"), Some(tid))
-  assert_eq(dfa_run(dfa, "99"), Some(tid))
-  assert_eq(dfa_run(dfa, "abc"), None)
-  assert_eq(dfa_run(dfa, ""), None)
+  assert_true(dfa_run(dfa, "0") == Some(tid))
+  assert_true(dfa_run(dfa, "99") == Some(tid))
+  assert_true(dfa_run(dfa, "abc") == None)
+  assert_true(dfa_run(dfa, "") == None)
 }
 
 // 量词 * + ?
@@ -167,7 +167,7 @@ test "Regex 量词 表驱动（* + ?）" {
       assert_true(dfa_run(dfa, s) is Some(_))
     }
     for s in item.2 {
-      assert_eq(dfa_run(dfa, s), None)
+      assert_true(dfa_run(dfa, s) == None)
     }
   }
 }
@@ -179,9 +179,9 @@ test "Regex 交替 a|b — 接受各分支，拒绝拼接和其他字符" {
   let dfa = lexer_for("start s\nrule s: /a|b/")
   assert_true(dfa_run(dfa, "a") is Some(_))
   assert_true(dfa_run(dfa, "b") is Some(_))
-  assert_eq(dfa_run(dfa, "c"), None) // 'c' 不在字母表
-  assert_eq(dfa_run(dfa, "ab"), None) // 接受后无 transition
-  assert_eq(dfa_run(dfa, ""), None) // 空串不接受
+  assert_true(dfa_run(dfa, "c") == None) // 'c' 不在字母表
+  assert_true(dfa_run(dfa, "ab") == None) // 接受后无 transition
+  assert_true(dfa_run(dfa, "") == None) // 空串不接受
 }
 
 // terminal_priority
@@ -193,10 +193,10 @@ test "接受优先级 Literal(tid) < Regex(10000+tid)，Literal 胜出" {
   let lit_id = term_id(aug, "lit:if")
   let re_id = term_id(aug, "re:[a-z]+")
   // "if" 同时被 Literal 和 Regex 接受，Literal priority = tid < 10000+tid
-  assert_eq(dfa_run(dfa, "if"), Some(lit_id))
+  assert_true(dfa_run(dfa, "if") == Some(lit_id))
   // "hello" / "from" 仅 Regex 接受
-  assert_eq(dfa_run(dfa, "hello"), Some(re_id))
-  assert_eq(dfa_run(dfa, "from"), Some(re_id))
+  assert_true(dfa_run(dfa, "hello") == Some(re_id))
+  assert_true(dfa_run(dfa, "from") == Some(re_id))
 }
 
 ///|
@@ -206,10 +206,10 @@ test "接受优先级 AnyChar(20000+tid) < Literal(tid)，Literal 胜出" {
   let lit_id = term_id(aug, "lit:x")
   let any_id = term_id(aug, "\u00b7")
   // "x" 两路都能接受，Literal priority 更低，胜出
-  assert_eq(dfa_run(dfa, "x"), Some(lit_id))
+  assert_true(dfa_run(dfa, "x") == Some(lit_id))
   // 其他单字符仅 AnyChar 接受
-  assert_eq(dfa_run(dfa, "a"), Some(any_id))
-  assert_eq(dfa_run(dfa, "0"), Some(any_id))
+  assert_true(dfa_run(dfa, "a") == Some(any_id))
+  assert_true(dfa_run(dfa, "0") == Some(any_id))
 }
 
 // Unicode charset range
@@ -220,8 +220,8 @@ test "Regex Unicode range [α-ω] accepts Greek letters" {
   assert_true(dfa_run(dfa, "α") is Some(_))
   assert_true(dfa_run(dfa, "ω") is Some(_))
   assert_true(dfa_run(dfa, "λ") is Some(_))
-  assert_eq(dfa_run(dfa, "a"), None) // ASCII letter outside range
-  assert_eq(dfa_run(dfa, ""), None)
+  assert_true(dfa_run(dfa, "a") == None) // ASCII letter outside range
+  assert_true(dfa_run(dfa, "") == None)
 }
 
 ///|
@@ -229,8 +229,8 @@ test "Regex Unicode range [中-龥] accepts CJK characters" {
   let dfa = lexer_for("start s\nrule s: /[中-龥]+/")
   assert_true(dfa_run(dfa, "中") is Some(_))
   assert_true(dfa_run(dfa, "文") is Some(_))
-  assert_eq(dfa_run(dfa, "a"), None)
-  assert_eq(dfa_run(dfa, "α"), None)
+  assert_true(dfa_run(dfa, "a") == None)
+  assert_true(dfa_run(dfa, "α") == None)
 }
 
 // 否定字符类 [^...] 与否定转义 \D \W \S
@@ -256,7 +256,7 @@ test "Regex 否定字符类与否定转义 表驱动" {
       assert_true(dfa_run(dfa, s) is Some(_))
     }
     for s in item.2 {
-      assert_eq(dfa_run(dfa, s), None)
+      assert_true(dfa_run(dfa, s) == None)
     }
   }
 }
@@ -292,9 +292,9 @@ test "最小化后 DFA start 仍为 0，正确性不变" {
   assert_true(dfa.states.length() >= 6)
   let (aug, _, _) = build_resolved("start s\nrule s: \"hello\"")
   let tid = term_id(aug, "lit:hello")
-  assert_eq(dfa_run(dfa, "hello"), Some(tid))
-  assert_eq(dfa_run(dfa, "hell"), None)
-  assert_eq(dfa_run(dfa, "helloo"), None)
+  assert_true(dfa_run(dfa, "hello") == Some(tid))
+  assert_true(dfa_run(dfa, "hell") == None)
+  assert_true(dfa_run(dfa, "helloo") == None)
 }
 
 ///|
@@ -308,11 +308,11 @@ test "最小化 DFA：/ab|cb/ 合并相同后缀接受状态" {
   assert_true(dfa.states.length() <= 4)
   let (aug, _, _) = build_resolved("start s\nrule s: /ab|cb/")
   let tid = term_id(aug, "re:ab|cb")
-  assert_eq(dfa_run(dfa, "ab"), Some(tid))
-  assert_eq(dfa_run(dfa, "cb"), Some(tid))
-  assert_eq(dfa_run(dfa, "db"), None)
-  assert_eq(dfa_run(dfa, "a"), None)
-  assert_eq(dfa_run(dfa, "c"), None)
+  assert_true(dfa_run(dfa, "ab") == Some(tid))
+  assert_true(dfa_run(dfa, "cb") == Some(tid))
+  assert_true(dfa_run(dfa, "db") == None)
+  assert_true(dfa_run(dfa, "a") == None)
+  assert_true(dfa_run(dfa, "c") == None)
 }
 
 // 正向转义 \w \s
@@ -324,9 +324,9 @@ test "Regex 正向转义 \\w 接受单词字符，拒绝空白和符号" {
   assert_true(dfa_run(dfa, "Hello") is Some(_))
   assert_true(dfa_run(dfa, "X") is Some(_))
   assert_true(dfa_run(dfa, "test_123") is Some(_))
-  assert_eq(dfa_run(dfa, " "), None)
-  assert_eq(dfa_run(dfa, "!"), None)
-  assert_eq(dfa_run(dfa, ""), None)
+  assert_true(dfa_run(dfa, " ") == None)
+  assert_true(dfa_run(dfa, "!") == None)
+  assert_true(dfa_run(dfa, "") == None)
 }
 
 ///|
@@ -336,9 +336,9 @@ test "Regex 正向转义 \\s 接受空白字符，拒绝非空白" {
   assert_true(dfa_run(dfa, "\t") is Some(_))
   assert_true(dfa_run(dfa, "\n") is Some(_))
   assert_true(dfa_run(dfa, "   ") is Some(_))
-  assert_eq(dfa_run(dfa, "a"), None)
-  assert_eq(dfa_run(dfa, "0"), None)
-  assert_eq(dfa_run(dfa, ""), None)
+  assert_true(dfa_run(dfa, "a") == None)
+  assert_true(dfa_run(dfa, "0") == None)
+  assert_true(dfa_run(dfa, "") == None)
 }
 
 // 分组 (...)
@@ -349,10 +349,10 @@ test "Regex 分组 (ab)+ 接受重复分组，拒绝不完整分组" {
   assert_true(dfa_run(dfa, "ab") is Some(_))
   assert_true(dfa_run(dfa, "abab") is Some(_))
   assert_true(dfa_run(dfa, "ababab") is Some(_))
-  assert_eq(dfa_run(dfa, ""), None)
-  assert_eq(dfa_run(dfa, "a"), None) // 不完整分组
-  assert_eq(dfa_run(dfa, "b"), None) // 不匹配分组起始
-  assert_eq(dfa_run(dfa, "aba"), None) // 末尾 'a' 无后续完整分组
+  assert_true(dfa_run(dfa, "") == None)
+  assert_true(dfa_run(dfa, "a") == None) // 不完整分组
+  assert_true(dfa_run(dfa, "b") == None) // 不匹配分组起始
+  assert_true(dfa_run(dfa, "aba") == None) // 末尾 'a' 无后续完整分组
 }
 
 ///|
@@ -360,8 +360,8 @@ test "Regex 分组 (a|b)c 接受多路选择后接续字符" {
   let dfa = lexer_for("start s\nrule s: /(a|b)c/")
   assert_true(dfa_run(dfa, "ac") is Some(_))
   assert_true(dfa_run(dfa, "bc") is Some(_))
-  assert_eq(dfa_run(dfa, "c"), None) // 缺少分组前缀
-  assert_eq(dfa_run(dfa, "a"), None) // 缺少 c
-  assert_eq(dfa_run(dfa, "abc"), None) // 超长
-  assert_eq(dfa_run(dfa, ""), None)
+  assert_true(dfa_run(dfa, "c") == None) // 缺少分组前缀
+  assert_true(dfa_run(dfa, "a") == None) // 缺少 c
+  assert_true(dfa_run(dfa, "abc") == None) // 超长
+  assert_true(dfa_run(dfa, "") == None)
 }

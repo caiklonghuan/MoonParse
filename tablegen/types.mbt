@@ -31,7 +31,7 @@ pub(all) enum Symbol {
 } derive(Eq, Hash, Debug)
 
 ///|
-pub impl Show for Symbol with output(self, logger) {
+pub impl Show for Symbol with fn output(self, logger) {
   match self {
     Terminal(id) => logger.write_string("Terminal(\{id})")
     NonTerminal(id) => logger.write_string("NonTerminal(\{id})")
@@ -87,7 +87,7 @@ pub(all) enum TerminalDef {
 } derive(Eq, Debug)
 
 ///|
-pub impl Show for TerminalDef with output(self, logger) {
+pub impl Show for TerminalDef with fn output(self, logger) {
   match self {
     Literal(s) => logger.write_string("Literal(\{s})")
     Regex(s) => logger.write_string("Regex(\{s})")
@@ -172,7 +172,7 @@ pub(all) enum Action {
 } derive(Eq, Debug)
 
 ///|
-pub impl Show for Action with output(self, logger) {
+pub impl Show for Action with fn output(self, logger) {
   match self {
     Shift(state) => logger.write_string("Shift(\{state})")
     Reduce(prod) => logger.write_string("Reduce(\{prod})")

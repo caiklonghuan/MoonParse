@@ -33,7 +33,7 @@ fn body_is_nullable(
 ///|
 /// 不动点迭代：计算 AugmentedGrammar 中所有非终结符的 nullable 标志。
 fn compute_nullable(grammar : AugmentedGrammar) -> Map[NonTerminalId, Bool] {
-  let nm : Map[NonTerminalId, Bool] = Map::new()
+  let nm : Map[NonTerminalId, Bool] = Map([])
   for _, id in grammar.nonterminals {
     nm.set(id, false)
   }
@@ -60,9 +60,9 @@ fn compute_first(
   grammar : AugmentedGrammar,
   nm : Map[NonTerminalId, Bool],
 ) -> Map[NonTerminalId, Set[TerminalId]] {
-  let fm : Map[NonTerminalId, Set[TerminalId]] = Map::new()
+  let fm : Map[NonTerminalId, Set[TerminalId]] = Map([])
   for _, id in grammar.nonterminals {
-    fm.set(id, Set::new())
+    fm.set(id, Set([]))
   }
   let mut changed = true
   while changed {
@@ -71,7 +71,7 @@ fn compute_first(
       let head_set = match fm.get(prod.head) {
         Some(s) => s
         None => {
-          let s : Set[TerminalId] = Set::new()
+          let s : Set[TerminalId] = Set([])
           fm.set(prod.head, s)
           s
         }
@@ -126,9 +126,9 @@ fn compute_follow(
   nm : Map[NonTerminalId, Bool],
   fm : Map[NonTerminalId, Set[TerminalId]],
 ) -> Map[NonTerminalId, Set[TerminalId]] {
-  let fow : Map[NonTerminalId, Set[TerminalId]] = Map::new()
+  let fow : Map[NonTerminalId, Set[TerminalId]] = Map([])
   for _, id in grammar.nonterminals {
-    fow.set(id, Set::new())
+    fow.set(id, Set([]))
   }
   let mut changed = true
   while changed {
@@ -141,7 +141,7 @@ fn compute_follow(
             let b_fow = match fow.get(b_nt) {
               Some(s) => s
               None => {
-                let s : Set[TerminalId] = Set::new()
+                let s : Set[TerminalId] = Set([])
                 fow.set(b_nt, s)
                 s
               }
@@ -234,12 +234,12 @@ pub fn nullable(grammar : AugmentedGrammar, seq : Array[Symbol]) -> Bool {
 pub fn first_set(grammar : AugmentedGrammar, sym : Symbol) -> Set[TerminalId] {
   match sym {
     Terminal(t) => {
-      let s : Set[TerminalId] = Set::new()
+      let s : Set[TerminalId] = Set([])
       s.add(t)
       s
     }
     EndOfInput => {
-      let s : Set[TerminalId] = Set::new()
+      let s : Set[TerminalId] = Set([])
       s.add(eoi_id)
       s
     }
@@ -248,7 +248,7 @@ pub fn first_set(grammar : AugmentedGrammar, sym : Symbol) -> Set[TerminalId] {
       let fm = compute_first(grammar, nm)
       match fm.get(nt) {
         Some(s) => s
-        None => Set::new()
+        None => Set([])
       }
     }
   }
@@ -262,7 +262,7 @@ pub fn first_seq(
 ) -> Set[TerminalId] {
   let nm = compute_nullable(grammar)
   let fm = compute_first(grammar, nm)
-  let result : Set[TerminalId] = Set::new()
+  let result : Set[TerminalId] = Set([])
   let mut cont = true
   let mut i = 0
   while cont && i < seq.length() {
@@ -305,6 +305,6 @@ pub fn follow_set(
   let fow = compute_follow(grammar, nm, fm)
   match fow.get(nt) {
     Some(s) => s
-    None => Set::new()
+    None => Set([])
   }
 }

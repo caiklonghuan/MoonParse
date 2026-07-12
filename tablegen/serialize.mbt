@@ -859,7 +859,7 @@ fn read_terminal_metadata(
   r : BinReader,
 ) -> Map[TerminalId, TerminalMetadata] raise BinError {
   let count = r.read_u32_le()
-  let result : Map[TerminalId, TerminalMetadata] = Map::new()
+  let result : Map[TerminalId, TerminalMetadata] = Map([])
   for _ in 0..<count {
     let tid = r.read_u16_le()
     let lexical_precedence = r.read_u32_le()
@@ -915,7 +915,7 @@ fn write_reserved_words(
 fn read_reserved_words(
   r : BinReader,
 ) -> Map[String, Array[String]] raise BinError {
-  let result : Map[String, Array[String]] = Map::new()
+  let result : Map[String, Array[String]] = Map([])
   let count = r.read_u16_le()
   for _ in 0..<count {
     let name = r.read_str()
@@ -978,7 +978,7 @@ fn write_dfa_state(w : BinWriter, state : DfaState) -> Unit {
 fn read_dfa_state(r : BinReader, version : Int) -> DfaState raise BinError {
   let id = r.read_u16_le()
   let trans_count = r.read_u16_le()
-  let transitions : Map[Char, DfaStateId] = Map::new()
+  let transitions : Map[Char, DfaStateId] = Map([])
   for _ in 0..<trans_count {
     let ch_code = r.read_u16_le()
     let tgt = r.read_u16_le()
@@ -1037,7 +1037,7 @@ fn read_lexer_dfa(r : BinReader, version : Int) -> LexerDfa raise BinError {
   }
   let start = r.read_u16_le()
   let vt_count = r.read_u32_le()
-  let valid_tokens : Map[StateId, Array[TerminalId]] = Map::new()
+  let valid_tokens : Map[StateId, Array[TerminalId]] = Map([])
   for _ in 0..<vt_count {
     let state_id = r.read_u16_le()
     let tid_count = r.read_u16_le()
@@ -1056,7 +1056,7 @@ fn read_lexer_dfa(r : BinReader, version : Int) -> LexerDfa raise BinError {
 fn legacy_terminal_metadata(
   patterns : Map[TerminalId, TerminalDef],
 ) -> Map[TerminalId, TerminalMetadata] {
-  let result : Map[TerminalId, TerminalMetadata] = Map::new()
+  let result : Map[TerminalId, TerminalMetadata] = Map([])
   for tid, def in patterns {
     let specificity = match def {
       Literal(_) => @grammar.TokenSpecificity::String
@@ -1098,7 +1098,7 @@ fn read_terminal_patterns(
   r : BinReader,
 ) -> Map[TerminalId, TerminalDef] raise BinError {
   let count = r.read_u32_le()
-  let patterns : Map[TerminalId, TerminalDef] = Map::new()
+  let patterns : Map[TerminalId, TerminalDef] = Map([])
   for _ in 0..<count {
     let tid = r.read_u16_le()
     let td = read_terminal_def(r)
@@ -1246,7 +1246,7 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       read_compressed_action(r, states)
     } else {
       // version 1/2: flat sparse list
-      let act_map : Map[(StateId, TerminalId), Array[Action]] = Map::new()
+      let act_map : Map[(StateId, TerminalId), Array[Action]] = Map([])
       let act_count = r.read_u32_le()
       for _ in 0..<act_count {
         let state = r.read_u16_le()
@@ -1269,7 +1269,7 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
       read_compressed_goto(r, states)
     } else {
       // version 1/2: flat sparse list
-      let gt_map : Map[(StateId, NonTerminalId), StateId] = Map::new()
+      let gt_map : Map[(StateId, NonTerminalId), StateId] = Map([])
       let goto_count = r.read_u32_le()
       for _ in 0..<goto_count {
         let state = r.read_u16_le()
@@ -1302,7 +1302,7 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
 
     // [8] terminal_names
     let tn_count = r.read_u32_le()
-    let terminal_names : Map[TerminalId, String] = Map::new()
+    let terminal_names : Map[TerminalId, String] = Map([])
     for _ in 0..<tn_count {
       let tid = r.read_u16_le()
       let name = r.read_str()
@@ -1336,7 +1336,7 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
     }
 
     // [12] keyword_map（仅版本 2+ 存在；版本 1 从 terminal_patterns 重建）
-    let keyword_map : Map[String, TerminalId] = Map::new()
+    let keyword_map : Map[String, TerminalId] = Map([])
     if version >= 2 {
       let km_count = r.read_u32_le()
       for _ in 0..<km_count {
@@ -1361,7 +1361,7 @@ pub fn deserialize_table(bytes : Bytes) -> Result[ParseTable, String] {
     let reserved_words = if version >= 4 {
       read_reserved_words(r)
     } else {
-      Map::new()
+      Map([])
     }
 
     Ok({
@@ -1413,7 +1413,7 @@ fn jfield(obj : Map[String, Json], key : String) -> Json raise JsonTableError {
 fn jint(j : Json) -> Int raise JsonTableError {
   match j {
     Number(n, ..) => n.to_int()
-    _ => raise JBadType("expected number, got \{j}")
+    _ => raise JBadType("expected number, got \{to_repr(j)}")
   }
 }
 
@@ -1422,7 +1422,7 @@ fn jint(j : Json) -> Int raise JsonTableError {
 fn jstr_v(j : Json) -> String raise JsonTableError {
   match j {
     String(s) => s
-    _ => raise JBadType("expected string, got \{j}")
+    _ => raise JBadType("expected string, got \{to_repr(j)}")
   }
 }
 
@@ -1432,7 +1432,7 @@ fn jbool(j : Json) -> Bool raise JsonTableError {
   match j {
     True => true
     False => false
-    _ => raise JBadType("expected bool, got \{j}")
+    _ => raise JBadType("expected bool, got \{to_repr(j)}")
   }
 }
 
@@ -1441,7 +1441,7 @@ fn jbool(j : Json) -> Bool raise JsonTableError {
 fn jarr(j : Json) -> Array[Json] raise JsonTableError {
   match j {
     Array(a) => a
-    _ => raise JBadType("expected array, got \{j}")
+    _ => raise JBadType("expected array, got \{to_repr(j)}")
   }
 }
 
@@ -1450,7 +1450,7 @@ fn jarr(j : Json) -> Array[Json] raise JsonTableError {
 fn jobj_v(j : Json) -> Map[String, Json] raise JsonTableError {
   match j {
     Object(o) => o
-    _ => raise JBadType("expected object, got \{j}")
+    _ => raise JBadType("expected object, got \{to_repr(j)}")
   }
 }
 
@@ -1587,7 +1587,7 @@ fn json_to_terminal_metadata(
 fn json_to_dfa_state(j : Json) -> DfaState raise JsonTableError {
   let o = jobj_v(j)
   let id = jint(jfield(o, "id"))
-  let transitions : Map[Char, DfaStateId] = Map::new()
+  let transitions : Map[Char, DfaStateId] = Map([])
   for pair_j in jarr(jfield(o, "tr")) {
     let pair = jarr(pair_j)
     guard pair.length() == 2 else { raise JBadType("dfa_state tr pair") }
@@ -1615,7 +1615,7 @@ fn json_to_lexer_dfa(j : Json) -> LexerDfa raise JsonTableError {
   let o = jobj_v(j)
   let states = jarr(jfield(o, "states")).map(json_to_dfa_state)
   let start = jint(jfield(o, "start"))
-  let valid_tokens : Map[StateId, Array[TerminalId]] = Map::new()
+  let valid_tokens : Map[StateId, Array[TerminalId]] = Map([])
   for pair_j in jarr(jfield(o, "vt")) {
     let pair = jarr(pair_j)
     guard pair.length() == 2 else { raise JBadType("lexer_dfa vt pair") }
@@ -1649,7 +1649,7 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
     let productions = jarr(jfield(root, "productions")).map(json_to_production)
 
     // action table
-    let action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
+    let action : Map[(StateId, TerminalId), Array[Action]] = Map([])
     for entry_j in jarr(jfield(root, "action")) {
       let o = jobj_v(entry_j)
       let state = jint(jfield(o, "state"))
@@ -1659,7 +1659,7 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
     }
 
     // goto table
-    let goto_table : Map[(StateId, NonTerminalId), StateId] = Map::new()
+    let goto_table : Map[(StateId, NonTerminalId), StateId] = Map([])
     for entry_j in jarr(jfield(root, "goto")) {
       let o = jobj_v(entry_j)
       let state = jint(jfield(o, "state"))
@@ -1683,7 +1683,7 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
     }
 
     // terminal_patterns
-    let terminal_patterns : Map[TerminalId, TerminalDef] = Map::new()
+    let terminal_patterns : Map[TerminalId, TerminalDef] = Map([])
     for entry_j in jarr(jfield(root, "terminal_patterns")) {
       let o = jobj_v(entry_j)
       let id = jint(jfield(o, "id"))
@@ -1691,7 +1691,7 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
       terminal_patterns.set(id, def)
     }
     let terminal_metadata = if schema_version >= 4 {
-      let result : Map[TerminalId, TerminalMetadata] = Map::new()
+      let result : Map[TerminalId, TerminalMetadata] = Map([])
       for entry in jarr(jfield(root, "terminal_metadata")) {
         let (tid, metadata) = json_to_terminal_metadata(entry)
         if result.contains(tid) {
@@ -1703,7 +1703,7 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
     } else {
       legacy_terminal_metadata(terminal_patterns)
     }
-    let reserved_words : Map[String, Array[String]] = Map::new()
+    let reserved_words : Map[String, Array[String]] = Map([])
     if schema_version >= 4 {
       for entry in jarr(jfield(root, "reserved_words")) {
         let object = jobj_v(entry)
@@ -1714,7 +1714,7 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
     }
 
     // terminal_names
-    let terminal_names : Map[TerminalId, String] = Map::new()
+    let terminal_names : Map[TerminalId, String] = Map([])
     for entry_j in jarr(jfield(root, "terminal_names")) {
       let o = jobj_v(entry_j)
       let id = jint(jfield(o, "id"))
@@ -1745,7 +1745,7 @@ pub fn table_from_json(json_str : String) -> Result[ParseTable, String] {
     }
 
     // keyword_map（可选字段；旧格式无此字段时从 terminal_patterns 重建）
-    let keyword_map : Map[String, TerminalId] = Map::new()
+    let keyword_map : Map[String, TerminalId] = Map([])
     match root.get("keyword_map") {
       Some(arr_j) =>
         for entry_j in jarr(arr_j) {
@@ -2030,7 +2030,7 @@ fn read_compressed_action(
     vl.push(r.read_u16_le())
   }
   let ovf_cnt = r.read_u32_le()
-  let overflow : Map[(Int, Int), Array[Action]] = Map::new()
+  let overflow : Map[(Int, Int), Array[Action]] = Map([])
   for _ in 0..<ovf_cnt {
     let state = r.read_u16_le()
     let sym = r.read_u16_le()
@@ -2042,7 +2042,7 @@ fn read_compressed_action(
     overflow.set((state, sym), acts)
   }
   // Reconstruct: scan packed array; sym = pos - disp[state].
-  let action : Map[(StateId, TerminalId), Array[Action]] = Map::new()
+  let action : Map[(StateId, TerminalId), Array[Action]] = Map([])
   for pos in 0..<packed_len {
     let state = ck[pos]
     if state != cmp_check_empty {
@@ -2123,7 +2123,7 @@ fn read_compressed_goto(
   for _ in 0..<packed_len {
     vl.push(r.read_u16_le())
   }
-  let goto_table : Map[(StateId, NonTerminalId), StateId] = Map::new()
+  let goto_table : Map[(StateId, NonTerminalId), StateId] = Map([])
   for pos in 0..<packed_len {
     let state = ck[pos]
     if state != cmp_check_empty {

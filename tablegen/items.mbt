@@ -23,7 +23,7 @@ fn item_set_key(items : Set[LRItem]) -> String {
 ///|
 /// 预构建 NonTerminalId → [ProductionId] 索引
 fn build_head_prods_index(grammar : AugmentedGrammar) -> Map[Int, Array[Int]] {
-  let idx : Map[Int, Array[Int]] = Map::new()
+  let idx : Map[Int, Array[Int]] = Map([])
   for p in grammar.productions {
     match idx.get(p.head) {
       None => idx.set(p.head, [p.id])
@@ -40,7 +40,7 @@ fn closure_fast(
   items : Set[LRItem],
   head_prods : Map[Int, Array[Int]],
 ) -> Set[LRItem] {
-  let result : Set[LRItem] = Set::new()
+  let result : Set[LRItem] = Set([])
   let queue : Array[LRItem] = []
   for item in items {
     if result.add_and_check(item) {
@@ -80,7 +80,7 @@ fn goto_set_fast(
   sym : Symbol,
   head_prods : Map[Int, Array[Int]],
 ) -> Set[LRItem] {
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   for item in items {
     let prod = grammar.productions[item.prod]
     if item.dot < prod.body.length() && prod.body[item.dot].symbol == sym {
@@ -88,7 +88,7 @@ fn goto_set_fast(
     }
   }
   if kernel.is_empty() {
-    Set::new()
+    Set([])
   } else {
     closure_fast(grammar, kernel, head_prods)
   }
@@ -128,7 +128,7 @@ pub fn goto_set(
 pub fn build_item_sets(grammar : AugmentedGrammar) -> Array[Set[LRItem]] {
   let states : Array[Set[LRItem]] = []
   // key → StateId，用于去重
-  let seen : Map[String, StateId] = Map::new()
+  let seen : Map[String, StateId] = Map([])
 
   // 预构建 head→productions 索引（只构建一次，供所有 closure_fast 调用共享）
   let head_prods = build_head_prods_index(grammar)
@@ -142,7 +142,7 @@ pub fn build_item_sets(grammar : AugmentedGrammar) -> Array[Set[LRItem]] {
     }
   }
   let init_item : LRItem = { prod: start_prod_id, dot: 0 }
-  let init_set : Set[LRItem] = Set::new()
+  let init_set : Set[LRItem] = Set([])
   init_set.add(init_item)
   let s0 = closure_fast(grammar, init_set, head_prods)
   let s0_key = item_set_key(s0)
@@ -156,7 +156,7 @@ pub fn build_item_sets(grammar : AugmentedGrammar) -> Array[Set[LRItem]] {
     qi = qi + 1
 
     // 收集该状态 dot 处出现的所有符号（去重）
-    let syms : Set[Symbol] = Set::new()
+    let syms : Set[Symbol] = Set([])
     for item in state {
       let prod = grammar.productions[item.prod]
       if item.dot < prod.body.length() {
@@ -192,18 +192,18 @@ pub fn build_goto_map(
   let head_prods = build_head_prods_index(grammar)
 
   // 先建立 key → StateId 索引，O(n)
-  let key_to_id : Map[String, StateId] = Map::new()
+  let key_to_id : Map[String, StateId] = Map([])
   let mut sid = 0
   for state in item_sets {
     key_to_id.set(item_set_key(state), sid)
     sid = sid + 1
   }
 
-  let goto_map : Map[(StateId, Symbol), StateId] = Map::new()
+  let goto_map : Map[(StateId, Symbol), StateId] = Map([])
   let mut from_id = 0
   for state in item_sets {
     // 收集 dot 处符号
-    let syms : Set[Symbol] = Set::new()
+    let syms : Set[Symbol] = Set([])
     for item in state {
       let prod = grammar.productions[item.prod]
       if item.dot < prod.body.length() {

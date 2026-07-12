@@ -271,7 +271,7 @@ fn parse_char_class_trans(p : RexParse) -> Array[NfaTrans] {
   }
   // 否定类：计算 range_chars 上的补集
   if negated {
-    let pos_set : Set[Char] = Set::new()
+    let pos_set : Set[Char] = Set([])
     for t in result {
       match t {
         Ch(c) => pos_set.add(c)
@@ -565,7 +565,7 @@ fn collect_regex_alphabet(re : String, set : Set[Char]) -> Unit {
 ///|
 /// 从 terminal_patterns 收集词法器字母表
 fn collect_alphabet(grammar : AugmentedGrammar) -> Array[Char] {
-  let set : Set[Char] = Set::new()
+  let set : Set[Char] = Set([])
   for _, def in grammar.terminal_patterns {
     match def {
       Literal(s) =>
@@ -588,7 +588,7 @@ fn collect_alphabet(grammar : AugmentedGrammar) -> Array[Char] {
 ///|
 /// NFA 状态集合的 ε-closure（BFS）；返回已排序的去重状态数组
 fn eps_closure(ctx : NfaCtx, init : Array[Int]) -> Array[Int] {
-  let visited : Set[Int] = Set::new()
+  let visited : Set[Int] = Set([])
   let worklist : Array[Int] = []
   for s in init {
     if visited.add_and_check(s) {
@@ -676,7 +676,7 @@ fn subset_construct(
 ) -> Array[DfaState] {
   // DFA state = (sorted, deduped) NFA state array, keyed by string
   let dfa_nfa_sets : Array[Array[Int]] = []
-  let key_to_dfa : Map[String, DfaStateId] = Map::new()
+  let key_to_dfa : Map[String, DfaStateId] = Map([])
   // trans[dfa_id] = [(char, target_dfa)]
   let dfa_trans : Array[Array[(Char, DfaStateId)]] = []
 
@@ -739,7 +739,7 @@ fn subset_construct(
     }
     let accept : TerminalId? = if best_tid >= 0 { Some(best_tid) } else { None }
     accepts.sort_by(fn(a, b) { a.compare(b) })
-    let transitions : Map[Char, DfaStateId] = Map::new()
+    let transitions : Map[Char, DfaStateId] = Map([])
     for tp in dfa_trans[did] {
       let (ch, tid2) = tp
       transitions.set(ch, tid2)
@@ -777,7 +777,7 @@ fn minimize_dfa(
   for _ in 0..<n {
     class_of.push(0)
   }
-  let accept_to_class : Map[String, Int] = Map::new()
+  let accept_to_class : Map[String, Int] = Map([])
   let mut num_classes = 0
   for i in 0..<n {
     let key = dfa[i].accepts.map(fn(tid) { tid.to_string() }).join(",")
@@ -794,7 +794,7 @@ fn minimize_dfa(
   let mut changed = true
   while changed && num_classes < n {
     changed = false
-    let sig_to_class : Map[String, Int] = Map::new()
+    let sig_to_class : Map[String, Int] = Map([])
     let new_class_of : Array[Int] = []
     for _ in 0..<n {
       new_class_of.push(0)
@@ -883,7 +883,7 @@ fn minimize_dfa(
     let (new_id, old_c) = pair
     let r = rep[old_c]
     let orig = dfa[r]
-    let new_trans : Map[Char, DfaStateId] = Map::new()
+    let new_trans : Map[Char, DfaStateId] = Map([])
     for ch, t in orig.transitions {
       new_trans.set(ch, remap[class_of[t]])
     }
@@ -905,14 +905,14 @@ fn build_valid_tokens(
   grammar : AugmentedGrammar,
   table : ParseTable,
 ) -> Map[StateId, Array[TerminalId]] {
-  let extras_set : Set[TerminalId] = Set::new()
+  let extras_set : Set[TerminalId] = Set([])
   for t in grammar.extras {
     extras_set.add(t)
   }
-  let result : Map[StateId, Array[TerminalId]] = Map::new()
+  let result : Map[StateId, Array[TerminalId]] = Map([])
   let mut s = 0
   while s < table.states {
-    let tids : Set[TerminalId] = Set::new()
+    let tids : Set[TerminalId] = Set([])
     for _, t in grammar.terminals {
       match table.action.get((s, t)) {
         Some(acts) => if acts.length() > 0 { tids.add(t) }
@@ -961,7 +961,7 @@ pub fn build_lexer_dfa(
   let super_start = NfaCtx::mk(ctx)
 
   // accept_info: NFA 接受态 → (TerminalId, priority)
-  let accept_info : Map[Int, (TerminalId, Int)] = Map::new()
+  let accept_info : Map[Int, (TerminalId, Int)] = Map([])
 
   for tid, def in grammar.terminal_patterns {
     let (ns, na) = match def {

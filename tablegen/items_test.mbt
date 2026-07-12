@@ -39,7 +39,7 @@ test "closure / 单条产生式、dot 在末尾时不扩展" {
   // 找 $accept 产生式
   let accept_prod = ag.productions[0]
   // kernel: dot = 1（dot 处为 EndOfInput）
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   kernel.add({ prod: accept_prod.id, dot: 1 })
   let cl = closure(ag, kernel)
   // 无 NT 在 dot 处，所以 closure 不增加项目
@@ -52,7 +52,7 @@ test "closure / dot 处为 NT 时展开出该 NT 的所有产生式" {
   // closure 应包含 [s → • "a"]
   let ag = build_ag_i("start s\nrule s: \"a\"")
   let accept_prod = ag.productions[0]
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   kernel.add({ prod: accept_prod.id, dot: 0 })
   let cl = closure(ag, kernel)
   // 应含 [$accept → • s $] 和 [s → • "a"]
@@ -67,7 +67,7 @@ test "closure / Choice NT 展开出所有分支的 dot=0 项目" {
   // $accept → • kw $，closure 应含 [kw→•"if"] 和 [kw→•"else"]
   let ag = build_ag_i("start kw\nrule kw: \"if\" | \"else\"")
   let accept_prod = ag.productions[0]
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   kernel.add({ prod: accept_prod.id, dot: 0 })
   let cl = closure(ag, kernel)
   // $accept 自身 + kw 的两条产生式
@@ -81,7 +81,7 @@ test "closure / 传递闭包：NT 引用链" {
   // closure 应链式展开：[$accept→•expr $] → [expr→•num] → [num→•/d+/]
   let ag = build_ag_i("start expr\nrule expr: num\nrule num: /d+/")
   let accept_prod = ag.productions[0]
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   kernel.add({ prod: accept_prod.id, dot: 0 })
   let cl = closure(ag, kernel)
   // 至少 3 个 dot=0 的项目
@@ -95,7 +95,7 @@ test "closure / Repeat 左递归：闭包包含递归项目本身" {
   // closure 应含 [items→•] 和 [items→•items "x"]
   let ag = build_ag_i("start items\nrule items: \"x\"*")
   let accept_prod = ag.productions[0]
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   kernel.add({ prod: accept_prod.id, dot: 0 })
   let cl = closure(ag, kernel)
   // items 有两条产生式（ε 和左递归），都应出现 dot=0
@@ -124,7 +124,7 @@ test "goto_set / dot 越过终结符后前进一步" {
     Some(t) => t
     None => fail("terminal lit:a 未找到")
   }
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   kernel.add({ prod: s_prod_id, dot: 0 })
   let cl = closure(ag, kernel)
   let next = goto_set(ag, cl, Symbol::Terminal(t))
@@ -136,7 +136,7 @@ test "goto_set / dot 越过终结符后前进一步" {
 ///|
 test "goto_set / 符号不在 dot 处时返回空集" {
   let ag = build_ag_i("start s\nrule s: \"a\"")
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   kernel.add({ prod: ag.productions[0].id, dot: 0 })
   let cl = closure(ag, kernel)
   // 用 "b"（不存在）来 GOTO，应返回空集
@@ -149,7 +149,7 @@ test "goto_set / GOTO(NT) 越过非终结符" {
   // $accept → • s $，GOTO(s) 应得到 [$accept → s • $]
   let ag = build_ag_i("start s\nrule s: \"a\"")
   let accept_prod = ag.productions[0]
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   kernel.add({ prod: accept_prod.id, dot: 0 })
   let cl = closure(ag, kernel)
   let s_id = match ag.nonterminals.get("s") {
@@ -228,7 +228,7 @@ test "build_item_sets / 结构不变式" {
     }
 
     // 4. 状态无重复（去重正确）
-    let seen_keys : Map[String, Bool] = Map::new()
+    let seen_keys : Map[String, Bool] = Map([])
     for state in sets {
       let arr = state.to_array()
       arr.sort_by(fn(a, b) { a.compare(b) })
@@ -355,7 +355,7 @@ test "build_goto_map / 结构不变式" {
 ///|
 test "closure / 空 kernel 返回空集" {
   let ag = build_ag_i("start s\nrule s: \"a\"")
-  let empty : Set[LRItem] = Set::new()
+  let empty : Set[LRItem] = Set([])
   let cl = closure(ag, empty)
   assert_eq(cl.is_empty(), true)
 }
@@ -368,7 +368,7 @@ test "goto_set / GOTO(EndOfInput) 越过 $ 到达接受项目" {
   let ag = build_ag_i("start s\nrule s: \"a\"")
   let accept_prod = ag.productions[0]
   // 构造只含 {dot=1} 的 kernel，closure 不会再展开（dot 处为 EndOfInput）
-  let kernel : Set[LRItem] = Set::new()
+  let kernel : Set[LRItem] = Set([])
   kernel.add({ prod: accept_prod.id, dot: 1 })
   let cl = closure(ag, kernel)
   let next = goto_set(ag, cl, Symbol::EndOfInput)
