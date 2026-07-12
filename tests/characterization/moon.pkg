@@ -1,0 +1,6 @@
+import {
+  "caiklonghuan/MoonParse" @moonparse,
+  "caiklonghuan/MoonParse/languagepack",
+  "caiklonghuan/MoonParse/query",
+  "moonbitlang/core/encoding/utf8",
+} for "test"
