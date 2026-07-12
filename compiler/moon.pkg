@@ -1,0 +1,2 @@
+// The v1 compiler contract is intentionally dependency-free. M2 implementations
+// may depend only on approved internal compiler layers, never on a host.

@@ -3,9 +3,12 @@ package "caiklonghuan/MoonParse/tests/contracts"
 
 import {
   "caiklonghuan/MoonParse",
+  "caiklonghuan/MoonParse/compiler",
 }
 
 // Values
+pub fn compiler_v1_surface_is_visible() -> @compiler.CompileOutput
+
 pub fn root_v1_surface_is_visible(@MoonParse.Source, @MoonParse.Language, @MoonParse.Query, @MoonParse.Snapshot, @MoonParse.Node, @MoonParse.FieldId) -> (@MoonParse.Parser, @MoonParse.Query?, @MoonParse.ByteRange) raise @MoonParse.QueryError
 
 // Errors

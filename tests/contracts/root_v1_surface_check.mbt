@@ -23,3 +23,21 @@ pub fn root_v1_surface_is_visible(
   ignore(@moonparse.Query::compile(language, "(root)"))
   (parser, language.query(@moonparse.QueryRole::Highlights), range)
 }
+
+///|
+pub fn compiler_v1_surface_is_visible() -> @compiler.CompileOutput {
+  let manifest = @compiler.PackManifest::new(
+    name="example",
+    version="1.0.0",
+    license="Apache-2.0",
+  )
+  let source = @compiler.PackSource::new(
+    manifest,
+    grammar_name="grammar/main.moon",
+    grammar="start document",
+  ).with_highlights(source_name="queries/highlights.scm", query="(document)")
+  let output = @compiler.compile_pack(source)
+  ignore(output.artifact())
+  ignore(output.diagnostics())
+  output
+}

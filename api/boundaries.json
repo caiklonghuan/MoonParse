@@ -4,6 +4,7 @@
   "ignoredDirectories": [".git", "_build", "build", "dist", "node_modules", "out"],
   "packages": {
     ".": {"name": "root", "layer": "stable-public", "allow": ["grammar", "tablegen", "runtime", "grammars"]},
+    "compiler": {"name": "compiler", "layer": "offline", "allow": []},
     "grammar": {"name": "grammar", "layer": "stable-public", "allow": []},
     "tablegen": {"name": "tablegen", "layer": "advanced", "allow": ["grammar"]},
     "runtime": {"name": "runtime", "layer": "stable-public", "allow": ["grammar", "tablegen"]},
@@ -16,7 +17,7 @@
     "scripts": {"name": "scripts", "layer": "internal", "allow": ["grammar", "tablegen", "runtime", "grammars"]},
     "examples/api_smoke": {"name": "api-smoke", "layer": "compatibility-test", "allow": [".", "grammar", "tablegen", "runtime", "query"]},
     "tests/characterization": {"name": "characterization", "layer": "compatibility-test", "allow": [".", "languagepack", "query"]},
-    "tests/contracts": {"name": "v1-contract-consumer", "layer": "compatibility-test", "allow": ["."]}
+    "tests/contracts": {"name": "v1-contract-consumer", "layer": "compatibility-test", "allow": [".", "compiler"]}
   },
   "v1Contract": {
     "name": "MoonParse-v1-architecture",

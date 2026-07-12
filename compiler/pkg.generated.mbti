@@ -1,0 +1,53 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "caiklonghuan/MoonParse/compiler"
+
+// Values
+pub fn compile_pack(PackSource) -> CompileOutput
+
+// Errors
+
+// Types and methods
+pub type CompileDiagnostic
+pub fn CompileDiagnostic::code(Self) -> String
+pub fn CompileDiagnostic::message(Self) -> String
+pub fn CompileDiagnostic::notes(Self) -> ReadOnlyArray[String]
+pub fn CompileDiagnostic::severity(Self) -> CompileSeverity
+pub fn CompileDiagnostic::span(Self) -> CompileSpan?
+
+pub type CompileOutput
+pub fn CompileOutput::artifact(Self) -> PackArtifact?
+pub fn CompileOutput::diagnostics(Self) -> ReadOnlyArray[CompileDiagnostic]
+pub fn CompileOutput::has_errors(Self) -> Bool
+
+pub(all) enum CompileSeverity {
+  Information
+  Warning
+  Error
+}
+
+pub(all) struct CompileSpan {
+  source_name : String
+  start_byte : Int
+  end_byte : Int
+}
+
+pub type PackArtifact
+pub fn PackArtifact::bytes(Self) -> Bytes
+pub fn PackArtifact::fingerprint(Self) -> String
+
+pub type PackManifest
+pub fn PackManifest::new(name~ : String, version~ : String, license~ : String) -> Self
+pub fn PackManifest::with_source(Self, repository~ : String, commit~ : String) -> Self
+
+pub type PackSource
+pub fn PackSource::new(PackManifest, grammar_name~ : String, grammar~ : String) -> Self
+pub fn PackSource::with_folds(Self, source_name~ : String, query~ : String) -> Self
+pub fn PackSource::with_highlights(Self, source_name~ : String, query~ : String) -> Self
+pub fn PackSource::with_locals(Self, source_name~ : String, query~ : String) -> Self
+pub fn PackSource::with_outline(Self, source_name~ : String, query~ : String) -> Self
+pub fn PackSource::with_scanner(Self, source_name~ : String, scanner~ : String) -> Self
+
+// Type aliases
+
+// Traits
+
