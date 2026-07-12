@@ -5,11 +5,22 @@ import {
   "caiklonghuan/MoonParse/internal/model",
   "caiklonghuan/MoonParse/internal/query_ir",
   "caiklonghuan/MoonParse/internal/syntax",
+  "moonbitlang/core/debug",
 }
 
 // Values
+pub fn adapt_green_tree(@syntax.GreenArena, @syntax.GreenId, start_byte? : Int) -> RuntimeNode raise QueryRuntimeError
+
+pub fn adapt_red_tree(@syntax.RedNode) -> RuntimeNode
+
+pub fn execute_query(@query_ir.CompiledQueryIr, RuntimeNode, String, within? : RuntimeByteRange, match_limit? : Int) -> Array[RuntimeCapture] raise QueryRuntimeError
 
 // Errors
+pub(all) suberror QueryRuntimeError {
+  InvalidTree(String)
+  InvalidRange
+  MatchLimitExceeded(Int)
+}
 
 // Types and methods
 pub(all) struct QueryRuntimeModelLink {
@@ -17,6 +28,33 @@ pub(all) struct QueryRuntimeModelLink {
   query_ir : @query_ir.QueryIrModelLink
   syntax : @syntax.SyntaxModelLink
 }
+
+pub(all) struct RuntimeByteRange {
+  start_byte : Int
+  end_byte : Int
+} derive(Eq, @debug.Debug)
+
+pub(all) struct RuntimeCapture {
+  name : String
+  kind_id : Int
+  start_byte : Int
+  end_byte : Int
+  pattern_index : Int
+  capture_declaration_index : Int
+  match_key : Bytes
+  node_preorder_path : Array[Int]
+} derive(Eq, @debug.Debug)
+
+pub(all) struct RuntimeNode {
+  kind_id : Int
+  named : Bool
+  anonymous_token : String?
+  text : String
+  start_byte : Int
+  end_byte : Int
+  children : Array[RuntimeNode]
+  child_fields : Array[Int?]
+} derive(Eq, @debug.Debug)
 
 // Type aliases
 
