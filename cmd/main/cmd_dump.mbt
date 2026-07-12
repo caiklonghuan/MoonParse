@@ -130,17 +130,17 @@ fn dump_automaton(input : String) -> Int {
   let goto_map = @tablegen.build_goto_map(aug, item_sets)
 
   // 构建 id → name 反向映射
-  let nt_id_to_name : Map[Int, String] = Map::new()
+  let nt_id_to_name : Map[Int, String] = Map([])
   for name, id in aug.nonterminals {
     nt_id_to_name.set(id, name)
   }
-  let term_id_to_name : Map[Int, String] = Map::new()
+  let term_id_to_name : Map[Int, String] = Map([])
   for name, id in aug.terminals {
     term_id_to_name.set(id, name)
   }
 
   // 按 state id 预先整理 goto 表
-  let state_gotos : Map[Int, Array[(String, Int)]] = Map::new()
+  let state_gotos : Map[Int, Array[(String, Int)]] = Map([])
   for key, next_state in goto_map {
     let (state_id, sym) = key
     let sym_name = dump_sym_name(sym, nt_id_to_name, term_id_to_name)

@@ -9,7 +9,7 @@ fn node_text(node : @runtime.CstNode, input : String) -> String {
   let s = node.start_byte
   let e = node.end_byte
   if s <= e && e <= input.length() {
-    input[s:e].to_string()
+    input[s:e].to_owned()
   } else {
     ""
   }
@@ -121,7 +121,7 @@ fn basename(path : String) -> String {
   if pos < 0 {
     path
   } else {
-    path[pos + 1:path.length()].to_string()
+    path[pos + 1:path.length()].to_owned()
   }
 }
 

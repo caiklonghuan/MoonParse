@@ -26,7 +26,7 @@ fn print_captures_text(
     let ec = node.end_point.column + 1
     let text = if node.start_byte <= node.end_byte &&
       node.end_byte <= input.length() {
-      input[node.start_byte:node.end_byte].to_string()
+      input[node.start_byte:node.end_byte].to_owned()
     } else {
       ""
     }
@@ -50,7 +50,7 @@ fn print_captures_json(
     let node = r.node
     let text = if node.start_byte <= node.end_byte &&
       node.end_byte <= input.length() {
-      input[node.start_byte:node.end_byte].to_string()
+      input[node.start_byte:node.end_byte].to_owned()
     } else {
       ""
     }

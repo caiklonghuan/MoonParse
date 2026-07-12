@@ -17,13 +17,13 @@ fn split_lines(s : String) -> Array[String] {
   let mut line_start = 0
   for i in 0..<n {
     if s[i] == '\n' {
-      result.push(s[line_start:i].to_string())
+      result.push(s[line_start:i].to_owned())
       line_start = i + 1
     }
   }
   // 最后一行（可能没有末尾 '\n'）
   if line_start <= n {
-    result.push(s[line_start:n].to_string())
+    result.push(s[line_start:n].to_owned())
   }
   result
 }
@@ -46,7 +46,7 @@ fn join_lines(lines : Array[String]) -> String {
 /// 判断一行是否是 tree-sitter corpus 分隔线（三个以上 '=' 字符）
 fn strip_cr(line : String) -> String {
   if line.length() > 0 && line[line.length() - 1] == '\r' {
-    line[0:line.length() - 1].to_string()
+    line[0:line.length() - 1].to_owned()
   } else {
     line
   }
@@ -79,7 +79,7 @@ fn trim_blank_lines(s : String) -> String {
   while end > start && lines[end - 1].length() == 0 {
     end = end - 1
   }
-  join_lines(lines[start:end].to_array())
+  join_lines(lines[start:end].to_owned())
 }
 
 ///|
@@ -223,8 +223,8 @@ fn parse_test_spec(spec : String) -> (String, String) {
   let n = spec.length()
   for i in 0..<n {
     if spec[i] == ':' && i != 1 {
-      let grammar = spec[0:i].to_string()
-      let corpus = spec[i + 1:n].to_string()
+      let grammar = spec[0:i].to_owned()
+      let corpus = spec[i + 1:n].to_owned()
       return (grammar, corpus)
     }
   }
@@ -246,7 +246,7 @@ fn derive_corpus_grammar_path(corpus_path : String) -> String {
     }
   }
   if dot_pos < n {
-    corpus_path[0:dot_pos].to_string() + ".grammar"
+    corpus_path[0:dot_pos].to_owned() + ".grammar"
   } else {
     corpus_path + ".grammar"
   }

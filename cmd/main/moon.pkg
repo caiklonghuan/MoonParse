@@ -1,20 +1,23 @@
 import {
-  "caiklonghuan/MoonParse/grammar" @grammar,
-  "caiklonghuan/MoonParse/tablegen" @tablegen,
-  "caiklonghuan/MoonParse/runtime" @runtime,
-  "caiklonghuan/MoonParse/query" @query,
-  "caiklonghuan/MoonParse/languagepack" @languagepack,
-  "caiklonghuan/MoonParse/grammars" @grammars,
-  "caiklonghuan/MoonParse/treesitterinterop" @treesitterinterop,
-  "moonbitlang/core/buffer" @buffer,
-  "moonbitlang/core/encoding/utf8" @utf8,
-  "moonbitlang/core/env" @env,
+  "caiklonghuan/MoonParse/grammar",
+  "caiklonghuan/MoonParse/tablegen",
+  "caiklonghuan/MoonParse/runtime",
+  "caiklonghuan/MoonParse/query",
+  "caiklonghuan/MoonParse/languagepack",
+  "caiklonghuan/MoonParse/grammars",
+  "caiklonghuan/MoonParse/treesitterinterop",
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/env",
 }
 
 options(
   "is-main": true,
   targets: {
     "cmd_pack.mbt": [ "native", "llvm", "wasm", "wasm-gc" ],
+    "cmd_pack_js_stub.mbt": [ "js" ],
+    "cmd_wbtest.mbt": [ "native", "llvm", "wasm", "wasm-gc" ],
+    "io_js.mbt": [ "js" ],
     "io_native.mbt": [ "native", "llvm" ],
     "io_wasm.mbt": [
       "or",

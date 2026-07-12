@@ -9,7 +9,7 @@ fn main {
 
   // 获取命令行参数（跳过程序名，即第一个元素）
   let all_args = @env.args()
-  let argv = if all_args.is_empty() { [] } else { all_args[1:].to_array() }
+  let argv = if all_args.is_empty() { [] } else { all_args[1:].to_owned() }
 
   // 解析参数
   let code = match parse_args(argv) {

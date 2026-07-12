@@ -229,61 +229,61 @@ pub enum Command {
 } derive(Debug)
 
 ///|
-pub impl Show for GenerateArgs with output(self, logger) {
+pub impl Show for GenerateArgs with fn output(self, logger) {
   logger.write_string(
-    "GenerateArgs(grammar_file: \{self.grammar_file}, output: \{self.output}, json: \{self.json}, diagnostic: \{self.diagnostic}, force: \{self.force})",
+    "GenerateArgs(grammar_file: \{self.grammar_file}, output: \{to_repr(self.output)}, json: \{self.json}, diagnostic: \{self.diagnostic}, force: \{self.force})",
   )
 }
 
 ///|
-pub impl Show for ParseArgs with output(self, logger) {
+pub impl Show for ParseArgs with fn output(self, logger) {
   logger.write_string(
-    "ParseArgs(grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, bundle_file: \{self.bundle_file}, input_file: \{self.input_file}, format: \{self.format}, output: \{self.output}, outdir: \{self.outdir}, tokens: \{self.tokens}, error_summary: \{self.error_summary})",
+    "ParseArgs(grammar_file: \{to_repr(self.grammar_file)}, table_file: \{to_repr(self.table_file)}, bundle_file: \{to_repr(self.bundle_file)}, input_file: \{to_repr(self.input_file)}, format: \{self.format}, output: \{to_repr(self.output)}, outdir: \{to_repr(self.outdir)}, tokens: \{self.tokens}, error_summary: \{self.error_summary})",
   )
 }
 
 ///|
-pub impl Show for CheckArgs with output(self, logger) {
+pub impl Show for CheckArgs with fn output(self, logger) {
   logger.write_string(
     "CheckArgs(grammar_file: \{self.grammar_file}, conflict_detail: \{self.conflict_detail})",
   )
 }
 
 ///|
-pub impl Show for FmtArgs with output(self, logger) {
+pub impl Show for FmtArgs with fn output(self, logger) {
   logger.write_string(
     "FmtArgs(grammar_file: \{self.grammar_file}, check: \{self.check}, stdout: \{self.stdout})",
   )
 }
 
 ///|
-pub impl Show for QueryArgs with output(self, logger) {
+pub impl Show for QueryArgs with fn output(self, logger) {
   logger.write_string(
-    "QueryArgs(pattern: \{self.pattern}, input_file: \{self.input_file}, grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, bundle_file: \{self.bundle_file}, json: \{self.json}, count: \{self.count})",
+    "QueryArgs(pattern: \{to_repr(self.pattern)}, input_file: \{to_repr(self.input_file)}, grammar_file: \{to_repr(self.grammar_file)}, table_file: \{to_repr(self.table_file)}, bundle_file: \{to_repr(self.bundle_file)}, json: \{self.json}, count: \{to_repr(self.count)})",
   )
 }
 
 ///|
-pub impl Show for TestArgs with output(self, logger) {
-  logger.write_string("TestArgs(test_dir: \{self.test_dir})")
+pub impl Show for TestArgs with fn output(self, logger) {
+  logger.write_string("TestArgs(test_dir: \{to_repr(self.test_dir)})")
 }
 
 ///|
-pub impl Show for BuildArgs with output(self, logger) {
+pub impl Show for BuildArgs with fn output(self, logger) {
   logger.write_string(
-    "BuildArgs(input: \{self.input}, outdir: \{self.outdir}, wasm: \{self.wasm}, conflict_detail: \{self.conflict_detail})",
+    "BuildArgs(input: \{self.input}, outdir: \{to_repr(self.outdir)}, wasm: \{self.wasm}, conflict_detail: \{self.conflict_detail})",
   )
 }
 
 ///|
-pub impl Show for WasmArgs with output(self, logger) {
+pub impl Show for WasmArgs with fn output(self, logger) {
   logger.write_string(
-    "WasmArgs(grammar_file: \{self.grammar_file}, table_file: \{self.table_file}, outdir: \{self.outdir})",
+    "WasmArgs(grammar_file: \{to_repr(self.grammar_file)}, table_file: \{to_repr(self.table_file)}, outdir: \{to_repr(self.outdir)})",
   )
 }
 
 ///|
-pub impl Show for DumpTarget with output(self, logger) {
+pub impl Show for DumpTarget with fn output(self, logger) {
   match self {
     Ir => logger.write_string("Ir")
     Table => logger.write_string("Table")
@@ -292,17 +292,17 @@ pub impl Show for DumpTarget with output(self, logger) {
 }
 
 ///|
-pub impl Show for DumpArgs with output(self, logger) {
+pub impl Show for DumpArgs with fn output(self, logger) {
   logger.write_string("DumpArgs(target: \{self.target}, input: \{self.input})")
 }
 
 ///|
-pub impl Show for CleanArgs with output(self, logger) {
+pub impl Show for CleanArgs with fn output(self, logger) {
   logger.write_string("CleanArgs(force: \{self.force})")
 }
 
 ///|
-pub impl Show for OutputFormat with output(self, logger) {
+pub impl Show for OutputFormat with fn output(self, logger) {
   match self {
     Sexp => logger.write_string("Sexp")
     Json => logger.write_string("Json")
@@ -312,7 +312,7 @@ pub impl Show for OutputFormat with output(self, logger) {
 }
 
 ///|
-pub impl Show for Command with output(self, logger) {
+pub impl Show for Command with fn output(self, logger) {
   match self {
     Generate(args) => logger.write_string("Generate(\{args})")
     Parse(args) => logger.write_string("Parse(\{args})")
@@ -325,7 +325,7 @@ pub impl Show for Command with output(self, logger) {
     Dump(args) => logger.write_string("Dump(\{args})")
     Clean(args) => logger.write_string("Clean(\{args})")
     Pack(_) => logger.write_string("Pack")
-    Help(sub) => logger.write_string("Help(\{sub})")
+    Help(sub) => logger.write_string("Help(\{to_repr(sub)})")
     Version => logger.write_string("Version")
   }
 }

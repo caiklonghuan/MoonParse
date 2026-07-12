@@ -16,7 +16,7 @@ fn derive_output_path(grammar_file : String) -> String {
       }
     }
     if matches {
-      return grammar_file[0:n - sl].to_string() + ".parse_table"
+      return grammar_file[0:n - sl].to_owned() + ".parse_table"
     }
   }
   grammar_file + ".parse_table"

@@ -264,7 +264,7 @@ fn list_files_impl(path : String) -> Result[Array[String], String] {
     wasm_list_files(string_to_extern_ffi(path)),
   )
   if !files.is_empty() && files[0].has_prefix("ffi_error:") {
-    Err("cannot list directory: " + path + ": " + files[0][10:].to_string())
+    Err("cannot list directory: " + path + ": " + files[0][10:].to_owned())
   } else {
     Ok(files)
   }

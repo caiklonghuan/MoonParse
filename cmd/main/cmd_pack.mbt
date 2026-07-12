@@ -26,7 +26,7 @@ fn pack_parent(path : String) -> String {
   if slash < 0 {
     "."
   } else {
-    value[:slash].to_string()
+    value[:slash].to_owned()
   }
 }
 
@@ -35,7 +35,7 @@ fn pack_relative(root : String, path : String) -> String {
   let r = pack_slashes(root).trim_end(chars=['/'])
   let p = pack_slashes(path)
   if p.has_prefix(r + "/") {
-    p[r.length() + 1:].to_string()
+    p[r.length() + 1:].to_owned()
   } else {
     p
   }
@@ -48,18 +48,18 @@ fn pack_relative_from_list_root(root : String, path : String) -> String {
   if direct != p {
     return direct
   }
-  let r = pack_slashes(root).trim_end(chars=['/']).to_string()
+  let r = pack_slashes(root).trim_end(chars=['/']).to_owned()
   let marker = "/" + r + "/"
   if p.has_prefix(r + "/") {
-    return p[r.length() + 1:].to_string()
+    return p[r.length() + 1:].to_owned()
   }
   if p.has_suffix("/" + r) {
     return ""
   }
   if p.length() >= marker.length() {
     for i in 0..<(p.length() - marker.length() + 1) {
-      if p[i:i + marker.length()].to_string() == marker {
-        return p[i + marker.length():].to_string()
+      if p[i:i + marker.length()].to_owned() == marker {
+        return p[i + marker.length():].to_owned()
       }
     }
   }
@@ -102,7 +102,7 @@ fn load_pack_source_from_dir(
       actual_root = pack_parent(path)
     }
   }
-  let files : Map[String, Bytes] = Map::new()
+  let files : Map[String, Bytes] = Map([])
   for path in paths {
     let relative = pack_relative(actual_root, path)
     if relative != "language-pack.json" {
@@ -298,8 +298,8 @@ fn cmd_pack_test(args : PackTestArgs) -> Int {
   }
   let provider = pack_provider(bundle)
   let diagnostics : Array[@languagepack.PackDiagnostic] = []
-  let updates : Map[String, Array[@languagepack.CorpusSnapshotUpdate]] = Map::new()
-  let local_indices : Map[String, Int] = Map::new()
+  let updates : Map[String, Array[@languagepack.CorpusSnapshotUpdate]] = Map([])
+  let local_indices : Map[String, Int] = Map([])
   for case in pack.corpus {
     let local_index = local_indices.get(case.path).unwrap_or(0)
     local_indices[case.path] = local_index + 1
@@ -402,7 +402,7 @@ fn cmd_pack_test(args : PackTestArgs) -> Int {
   }
   let artifacts : Array[String] = []
   if args.update {
-    let rewrites : Map[String, String] = Map::new()
+    let rewrites : Map[String, String] = Map([])
     updates.each(fn(relative, file_updates) {
       let full = pack_join(args.directory, relative)
       match read_file(full) {
@@ -652,7 +652,7 @@ fn read_optional_pack_file(path : String) -> String? {
 
 ///|
 fn pack_basename(path : String) -> String {
-  let value = pack_slashes(path).trim_end(chars=['/']).to_string()
+  let value = pack_slashes(path).trim_end(chars=['/']).to_owned()
   let mut slash = -1
   for i in 0..<value.length() {
     if value[i] == '/' {
@@ -662,7 +662,7 @@ fn pack_basename(path : String) -> String {
   if slash < 0 {
     value
   } else {
-    value[slash + 1:].to_string()
+    value[slash + 1:].to_owned()
   }
 }
 
@@ -681,9 +681,9 @@ fn source_query_name(relative : String) -> String? {
 ///|
 fn source_corpus_name(relative : String) -> String? {
   if relative.has_prefix("test/corpus/") && relative.has_suffix(".txt") {
-    Some(relative[12:].to_string())
+    Some(relative[12:].to_owned())
   } else if relative.has_prefix("corpus/") && relative.has_suffix(".txt") {
-    Some(relative[7:].to_string())
+    Some(relative[7:].to_owned())
   } else {
     None
   }
@@ -709,9 +709,9 @@ fn load_tree_sitter_source(
         ),
       )
   }
-  let queries : Map[String, String] = Map::new()
-  let corpus : Map[String, String] = Map::new()
-  let source_files : Map[String, Bytes] = Map::new()
+  let queries : Map[String, String] = Map([])
+  let corpus : Map[String, String] = Map([])
+  let source_files : Map[String, Bytes] = Map([])
   source_files["grammar.json"] = @utf8.encode(grammar_json)
   let tree_sitter_json = read_optional_pack_file(
     pack_join(directory, "tree-sitter.json"),
@@ -971,7 +971,7 @@ fn pack_concat(parts : Array[String]) -> String {
 ///|
 fn pack_extension_name(value : String) -> String {
   if value.has_prefix(".") {
-    value[1:].to_string()
+    value[1:].to_owned()
   } else {
     value
   }
@@ -1023,7 +1023,7 @@ fn pack_vscode_extension_name(pack_id : String) -> String {
       None => ()
     }
   }
-  let normalized = buf.to_string().trim_end(chars=['-']).to_string()
+  let normalized = buf.to_string().trim_end(chars=['-']).to_owned()
   "moonparse-" + (if normalized.is_empty() { "language" } else { normalized })
 }
 
@@ -2094,7 +2094,7 @@ fn pack_write_toolgen_report(
 fn prompt(label : String, default : String) -> String? {
   print_info(label + " [" + default + "]: ")
   match read_line() {
-    Some(value) if !value.trim().is_empty() => Some(value.trim().to_string())
+    Some(value) if !value.trim().is_empty() => Some(value.trim().to_owned())
     Some(_) => Some(default)
     None => None
   }

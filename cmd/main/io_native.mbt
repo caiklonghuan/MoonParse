@@ -8,7 +8,7 @@
 
 ///|
 fn str_to_cstr(s : String) -> Bytes {
-  let buf = @buffer.new(size_hint=s.length() + 1)
+  let buf = Buffer()
   buf.write_string_utf8(s)
   buf.write_byte(b'\x00')
   buf.to_bytes()
@@ -16,7 +16,7 @@ fn str_to_cstr(s : String) -> Bytes {
 
 ///|
 fn str_to_utf8(s : String) -> Bytes {
-  let buf = @buffer.new(size_hint=s.length())
+  let buf = Buffer()
   buf.write_string_utf8(s)
   buf.to_bytes()
 }
@@ -160,7 +160,7 @@ fn write_file_impl(path : String, content : String) -> Result[Unit, String] {
 ///|
 fn read_stdin_impl() -> String {
   // 分块读取 stdin（fd=0）直到 EOF
-  let out = @buffer.new(size_hint=4096)
+  let out = Buffer()
   let chunk = Bytes::new(4096)
   let mut n = c_read(0, chunk, 4096)
   while n > 0 {
@@ -173,7 +173,7 @@ fn read_stdin_impl() -> String {
 
 ///|
 fn read_line_impl() -> String? {
-  let out = @buffer.new()
+  let out = Buffer()
   let byte = Bytes::new(1)
   let mut read = c_read(0, byte, 1)
   if read <= 0 {
@@ -201,7 +201,7 @@ fn run_file_listing(command : String) -> Array[String]? {
     while end < buf.length() && buf[end] != b'\x00' {
       end = end + 1
     }
-    let line = @utf8.decode_lossy(buf[0:end]).trim().to_string()
+    let line = @utf8.decode_lossy(buf[0:end]).trim().to_owned()
     if !line.is_empty() {
       result.push(line)
     }

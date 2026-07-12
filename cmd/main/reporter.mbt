@@ -81,7 +81,7 @@ fn spaces(n : Int) -> String {
   if n <= 0 {
     return ""
   }
-  let buf = @buffer.new(size_hint=n)
+  let buf = StringBuilder()
   for _ in 0..<n {
     buf.write_char(' ')
   }
@@ -97,14 +97,14 @@ fn get_source_line(source : String, line_no : Int) -> String? {
   for i in 0..<len {
     if source[i] == '\n' {
       if cur == line_no {
-        return Some(source[line_begin:i].to_string())
+        return Some(source[line_begin:i].to_owned())
       }
       cur = cur + 1
       line_begin = i + 1
     }
   }
   if cur == line_no {
-    return Some(source[line_begin:len].to_string())
+    return Some(source[line_begin:len].to_owned())
   }
   None
 }
