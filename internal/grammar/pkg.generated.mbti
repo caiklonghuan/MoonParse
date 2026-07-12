@@ -4,17 +4,157 @@ package "caiklonghuan/MoonParse/internal/grammar"
 import {
   "caiklonghuan/MoonParse/internal/model",
   "caiklonghuan/MoonParse/internal/regex",
+  "moonbitlang/core/debug",
 }
 
 // Values
+pub fn normalize(GrammarAst) -> NormalizedGrammar raise GrammarParseError
+
+pub fn parse_grammar(String) -> GrammarAst raise GrammarParseError
 
 // Errors
+pub(all) suberror GrammarParseError {
+  InvalidGrammar(byte_offset~ : Int, code~ : String, reason~ : String)
+} derive(Eq, @debug.Debug)
 
 // Types and methods
+pub(all) enum Associativity {
+  None
+  Left
+  Right
+  NonAssoc
+  Dynamic
+} derive(Eq, @debug.Debug)
+
+pub(all) struct GrammarAst {
+  start : String?
+  rules : Array[RuleDecl]
+  extras : Array[GrammarPattern]
+  externals : Array[String]
+  word : String?
+  conflicts : Array[Array[String]]
+  supertypes : Array[String]
+  precedences : Array[PrecedenceDecl]
+  reserved_sets : Array[ReservedSet]
+} derive(Eq, @debug.Debug)
+
 pub(all) struct GrammarModelLink {
   format : @model.PackFormatVersion
   regex : @regex.RegexModelLink
 }
+
+pub(all) enum GrammarPattern {
+  Ref(String)
+  Literal(String)
+  Regex(String, @regex.RegexIr)
+  AnyScalar
+  Choice(Array[GrammarPattern])
+  Sequence(Array[GrammarPattern])
+  ZeroOrMore(GrammarPattern)
+  OneOrMore(GrammarPattern)
+  Optional(GrammarPattern)
+  RepeatRange(GrammarPattern, Int, Int)
+  Field(String, GrammarPattern)
+  Tagged(String, GrammarPattern)
+  Lookahead(GrammarPattern, Bool)
+  Precedence(Int, Associativity, GrammarPattern)
+  Alias(String, Bool, GrammarPattern)
+  LexicalPrecedence(Int, GrammarPattern)
+  Reserved(String, GrammarPattern)
+} derive(Eq, @debug.Debug)
+
+pub(all) enum LookaheadKind {
+  Positive
+  Negative
+} derive(Eq, @debug.Debug)
+
+pub(all) struct NormalizedElement {
+  symbol_id : Int
+  field : String?
+  alias_name : String?
+  alias_is_named : Bool
+  lookahead : LookaheadKind?
+  reserved_set : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct NormalizedGrammar {
+  start_symbol : Int
+  symbols : Array[NormalizedSymbol]
+  productions : Array[NormalizedProduction]
+  tokens : Array[NormalizedToken]
+  extras : Array[Int]
+  word_symbol : Int?
+  conflicts : Array[Array[Int]]
+  supertypes : Array[Int]
+  inline_symbols : Array[Int]
+  reserved_sets : Array[NormalizedReservedSet]
+} derive(Eq, @debug.Debug)
+pub fn NormalizedGrammar::canonical_key(Self) -> String
+
+pub(all) struct NormalizedProduction {
+  id : Int
+  lhs : Int
+  rhs : Array[NormalizedElement]
+  precedence : Int
+  associativity : Associativity
+  dynamic_precedence : Int
+} derive(Eq, @debug.Debug)
+
+pub(all) struct NormalizedReservedSet {
+  name : String
+  words : Array[String]
+} derive(Eq, @debug.Debug)
+
+pub(all) struct NormalizedSymbol {
+  id : Int
+  name : String
+  kind : NormalizedSymbolKind
+  declaration_order : Int
+} derive(Eq, @debug.Debug)
+
+pub(all) enum NormalizedSymbolKind {
+  NamedNonterminal
+  AnonymousNonterminal
+  NamedTerminal
+  LiteralTerminal
+  RegexTerminal
+  AnyTerminal
+  ExternalTerminal
+} derive(Eq, @debug.Debug)
+
+pub(all) struct NormalizedToken {
+  symbol_id : Int
+  pattern : GrammarPattern
+  immediate : Bool
+  lexical_precedence : Int
+  declaration_order : Int
+} derive(Eq, @debug.Debug)
+
+pub(all) struct PrecedenceDecl {
+  associativity : Associativity
+  rules : Array[String]
+  declaration_order : Int
+} derive(Eq, @debug.Debug)
+
+pub(all) struct ReservedSet {
+  name : String
+  words : Array[String]
+  declaration_order : Int
+} derive(Eq, @debug.Debug)
+
+pub(all) enum RuleAttribute {
+  Inline
+  Hidden
+} derive(Eq, @debug.Debug)
+
+pub(all) struct RuleDecl {
+  name : String
+  pattern : GrammarPattern
+  is_token : Bool
+  immediate : Bool
+  declaration_order : Int
+  attributes : Array[RuleAttribute]
+} derive(Eq, @debug.Debug)
 
 // Type aliases
 
