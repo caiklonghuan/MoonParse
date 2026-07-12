@@ -14,6 +14,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  history-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify frozen history anchors
+        run: node tools/quality/run-gate.mjs V00 --profile pr
+
+  strict-quality:
+    name: strict-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up locked MoonBit toolchain
+        uses: hustcer/setup-moonbit@v1
+        with:
+          version: 0.1.20260703+6fbf8c3
+      - name: Run V01 strict quality gate
+        run: node tools/quality/run-gate.mjs V01 --profile pr
+      - name: Upload V01 evidence receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v01-${{ matrix.os }}
+          path: _build/evidence/**/V01
+          if-no-files-found: warn
+
   moonbit:
     runs-on: ubuntu-latest
     steps:
