@@ -20,7 +20,8 @@ reviewprompt.md
 .claude/
 方向.md
 harmonymd
-todo/
+todo/*
+!todo/plan.md
 website/public/moonparse.js
 website/public/moonparse.wasm
 website/src/data/precompiledTables.js
