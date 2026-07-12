@@ -3,16 +3,68 @@ package "caiklonghuan/MoonParse/internal/regex"
 
 import {
   "caiklonghuan/MoonParse/internal/model",
+  "moonbitlang/core/debug",
 }
 
 // Values
+pub fn compile(RegexIr) -> Nfa
+
+pub fn compile_source(String) -> Nfa raise RegexParseError
+
+pub fn parse(String) -> RegexIr raise RegexParseError
 
 // Errors
+pub(all) suberror RegexParseError {
+  InvalidRegex(byte_offset~ : Int, reason~ : String)
+} derive(Eq, @debug.Debug)
 
 // Types and methods
+pub(all) struct CharRange {
+  lo : Char
+  hi : Char
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Nfa {
+  start : Int
+  accept : Int
+  states : Array[Array[NfaEdge]]
+} derive(Eq, @debug.Debug)
+pub fn Nfa::canonical_key(Self) -> String
+pub fn Nfa::longest_prefix(Self, String) -> Int?
+pub fn Nfa::matches(Self, String) -> Bool
+
+pub(all) struct NfaEdge {
+  label : NfaLabel
+  target : Int
+} derive(Eq, @debug.Debug)
+
+pub(all) enum NfaLabel {
+  Epsilon
+  Scalar(Char)
+  ScalarRange(Char, Char)
+  AnyScalar
+  ScalarClass(Array[CharRange], Bool)
+} derive(Eq, @debug.Debug)
+
+pub(all) enum RegexIr {
+  Empty
+  Literal(Char)
+  AnyScalar
+  CharClass(Array[CharRange], Bool)
+  Concat(Array[RegexIr])
+  Alternate(Array[RegexIr])
+  Repeat(RegexIr, RepeatKind)
+} derive(Eq, @debug.Debug)
+
 pub(all) struct RegexModelLink {
   format : @model.PackFormatVersion
 }
+
+pub(all) enum RepeatKind {
+  ZeroOrMore
+  OneOrMore
+  ZeroOrOne
+} derive(Eq, @debug.Debug)
 
 // Type aliases
 
